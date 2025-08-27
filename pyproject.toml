@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bdq-multi"
+version = "0.1.0"
+description = "Multirecord BDQ Measures (worker + CLI)"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+bdq-multi = "bdq_multi.runner:main"
+
