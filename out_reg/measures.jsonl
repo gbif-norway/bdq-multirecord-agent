@@ -1,2 +1,0 @@
-{"label": "AggregateFromSingleLabel:VALIDATION_COUNTRYCODE_STANDARD", "status": "RUN_HAS_RESULT", "result": 1, "qualifier": {"target_label": "VALIDATION_COUNTRYCODE_STANDARD", "count_result": "COMPLIANT"}}
-{"label": "AggregateFromSingleLabel:VALIDATION_COUNTRY_FOUND", "status": "RUN_HAS_RESULT", "result": 0, "qualifier": {"target_label": "VALIDATION_COUNTRY_FOUND", "count_result": "COMPLIANT"}}
