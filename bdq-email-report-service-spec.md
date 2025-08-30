@@ -7,7 +7,7 @@ A lightweight service that lets users **email a Darwin Core core file** (e.g. `o
 - the **raw BDQ test results**, and
 - an **amended dataset** with proposed fixes applied.
 
-Runs on **Google Cloud Run (free tier)**, polls a **Gmail inbox**, calls the **BDQ API** (hosted on Cloud Run), and replies by email with attachments. All state is in Gmail (labels), so no database.
+Runs on **Google Cloud Run (free tier)**, polls a **Gmail inbox**, calls the **BDQ API** (hosted on Cloud Run), and replies by email with attachments. All state is in Gmail (labels), so no database. Develop in Docker. For local development use a docker compose with a local env file which should be excluded from git.
 
 ---
 
