@@ -430,7 +430,8 @@ def count_validation_failures(raw_rows: List[Dict[str, Any]]) -> Counter:
         if rr.get("test_type") != "Validation":
             continue
         res = (rr.get("result") or "").upper()
-        if res and res != "COMPLIANT":
+        # Do not count INTERNAL_PREREQUISITES_NOT_MET as a failure
+        if res and res not in {"COMPLIANT", "INTERNAL_PREREQUISITES_NOT_MET"}:
             acted = rr.get("acted_upon", "")
             for col in [x for x in acted.split(",") if x]:
                 c[col] += 1
@@ -541,4 +542,3 @@ def process_message(msg: MessageHandle):
 if __name__ == "__main__":
     port = int(os.getenv("PORT", "8080"))
     app.run(host="0.0.0.0", port=port)
-
