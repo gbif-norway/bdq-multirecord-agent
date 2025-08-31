@@ -32,16 +32,36 @@ email_service = None
 bdq_service = None
 csv_service = None
 
+# Initialize services with better error handling
 try:
+    from services.email_service import EmailService
     email_service = EmailService()
-    bdq_service = BDQService()
-    csv_service = CSVService()
-    logger.info("All services initialized successfully")
-    print("STDOUT: All services initialized successfully")
+    logger.info("Email service initialized")
+    print("STDOUT: Email service initialized")
 except Exception as e:
-    logger.warning(f"Failed to initialize services (app will continue): {e}")
-    print(f"STDOUT: Failed to initialize services (app will continue): {e}")
-    # Don't raise - allow app to start for health checks
+    logger.warning(f"Failed to initialize email service: {e}")
+    print(f"STDOUT: Failed to initialize email service: {e}")
+
+try:
+    from services.bdq_service import BDQService
+    bdq_service = BDQService()
+    logger.info("BDQ service initialized")
+    print("STDOUT: BDQ service initialized")
+except Exception as e:
+    logger.warning(f"Failed to initialize BDQ service: {e}")
+    print(f"STDOUT: Failed to initialize BDQ service: {e}")
+
+try:
+    from services.csv_service import CSVService
+    csv_service = CSVService()
+    logger.info("CSV service initialized")
+    print("STDOUT: CSV service initialized")
+except Exception as e:
+    logger.warning(f"Failed to initialize CSV service: {e}")
+    print(f"STDOUT: Failed to initialize CSV service: {e}")
+
+logger.info("Service initialization complete")
+print("STDOUT: Service initialization complete")
 
 @app.get("/")
 async def root():
@@ -97,6 +117,13 @@ async def readiness_check():
     logger.info("Readiness check called")
     print("STDOUT: Readiness check called")
     return {"status": "ready"}
+
+@app.get("/test")
+async def test_endpoint():
+    """Simple test endpoint that doesn't require services"""
+    logger.info("Test endpoint called")
+    print("STDOUT: Test endpoint called")
+    return {"message": "Test endpoint working", "timestamp": "2025-08-31T18:57:57Z"}
 
 @app.on_event("startup")
 async def startup_event():
@@ -228,4 +255,4 @@ if __name__ == "__main__":
     port = int(os.getenv("PORT", 8080))
     logger.info(f"Starting BDQ Email Report Service on port {port}")
     print(f"STDOUT: Starting BDQ Email Report Service on port {port}")
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
