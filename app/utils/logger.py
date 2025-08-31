@@ -37,11 +37,14 @@ def log_and_notify(level: str, message: str, exc_info: bool = False):
     logger = logging.getLogger(__name__)
     
     if level.upper() == "ERROR":
-        logger.error(message, exc_info=exc_info)
         send_discord_notification(f"ERROR: {message}")
+        logger.error(message, exc_info=exc_info)
     elif level.upper() == "WARNING":
+        send_discord_notification(f"WARNING: {message}")
         logger.warning(message)
     elif level.upper() == "INFO":
+        send_discord_notification(f"INFO: {message}")
         logger.info(message)
     else:
+        send_discord_notification(f"DEBUG: {message}")
         logger.debug(message)

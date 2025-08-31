@@ -10,7 +10,7 @@ from services.email_service import EmailService
 from services.bdq_service import BDQService
 from services.csv_service import CSVService
 from models.email_models import EmailPayload, EmailReply
-from utils.logger import setup_logging
+from utils.logger import setup_logging, send_discord_notification
 
 # Load environment variables
 load_dotenv()
@@ -38,6 +38,7 @@ async def root():
 @app.get("/health")
 async def health_check():
     """Detailed health check"""
+    send_discord_notification("Testing - health check")
     return {
         "status": "healthy",
         "service": "BDQ Email Report Service",
