@@ -1,19 +1,22 @@
-substitutions:
-  _SERVICE: bdq-multirecord-agent
-  _REGION: europe-west1
-  _IMAGE: gcr.io/$PROJECT_ID/github.com/gbif-norway/bdq-multirecord-agent:$COMMIT_SHA
+options:
+  logging: CLOUD_LOGGING_ONLY   # or your bucket option
 
 steps:
 - name: gcr.io/cloud-builders/docker
-  args: ['build','-t','$_IMAGE','.']
+  args: ['build',
+         '-t','gcr.io/${PROJECT_ID}/github.com/gbif-norway/bdq-multirecord-agent:${COMMIT_SHA}',
+         '.']
+
 - name: gcr.io/cloud-builders/docker
-  args: ['push','$_IMAGE']
+  args: ['push',
+         'gcr.io/${PROJECT_ID}/github.com/gbif-norway/bdq-multirecord-agent:${COMMIT_SHA}']
+
 - name: gcr.io/google.com/cloudsdktool/cloud-sdk
   entrypoint: gcloud
-  args: ['run','deploy','$_SERVICE','--image','$_IMAGE','--region','$_REGION','--allow-unauthenticated']
+  args: ['run','deploy','bdq-multirecord-agent',
+         '--image','gcr.io/${PROJECT_ID}/github.com/gbif-norway/bdq-multirecord-agent:${COMMIT_SHA}',
+         '--region','europe-west1',
+         '--allow-unauthenticated']
 
 images:
-- '$_IMAGE'
-
-options:
-  logging: CLOUD_LOGGING_ONLY
+- 'gcr.io/${PROJECT_ID}/github.com/gbif-norway/bdq-multirecord-agent:${COMMIT_SHA}'
