@@ -25,74 +25,24 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Initialize services (optional - allow app to start even if services fail)
-logger.info("Initializing services...")
-print("STDOUT: Initializing services...")
-email_service = None
-bdq_service = None
-csv_service = None
-
-# Initialize services with better error handling
-try:
-    from services.email_service import EmailService
-    email_service = EmailService()
-    logger.info("Email service initialized")
-    print("STDOUT: Email service initialized")
-except Exception as e:
-    logger.warning(f"Failed to initialize email service: {e}")
-    print(f"STDOUT: Failed to initialize email service: {e}")
-
-try:
-    from services.bdq_service import BDQService
-    bdq_service = BDQService()
-    logger.info("BDQ service initialized")
-    print("STDOUT: BDQ service initialized")
-except Exception as e:
-    logger.warning(f"Failed to initialize BDQ service: {e}")
-    print(f"STDOUT: Failed to initialize BDQ service: {e}")
-
-try:
-    from services.csv_service import CSVService
-    csv_service = CSVService()
-    logger.info("CSV service initialized")
-    print("STDOUT: CSV service initialized")
-except Exception as e:
-    logger.warning(f"Failed to initialize CSV service: {e}")
-    print(f"STDOUT: Failed to initialize CSV service: {e}")
-
-logger.info("Service initialization complete")
-print("STDOUT: Service initialization complete")
+# Initialize services
+email_service = EmailService()
+bdq_service = BDQService()
+csv_service = CSVService()
 
 @app.get("/")
 async def root():
-    """Root endpoint - basic health check"""
-    logger.info("Root endpoint called")
-    print("STDOUT: Root endpoint called")
-    return {
-        "message": "BDQ Email Report Service is running",
-        "status": "ok",
-        "version": "1.0.0"
-    }
+    """Health check endpoint"""
+    return {"message": "BDQ Email Report Service is running"}
 
 @app.get("/health")
 async def health_check():
     """Detailed health check"""
     logger.info("Health check endpoint called")
-    print("STDOUT: Health check endpoint called")
-    
-    # Check service status
-    services_status = {
-        "email_service": email_service is not None,
-        "bdq_service": bdq_service is not None,
-        "csv_service": csv_service is not None
-    }
-    
-    # Determine overall health
-    all_services_healthy = all(services_status.values())
-    overall_status = "healthy" if all_services_healthy else "degraded"
-    
-    health_info = {
-        "status": overall_status,
+    print("STDOUT:   check endpoint called")
+    send_discord_notification("Testing - health check")
+    return {
+        "status": "healthy",
         "service": "BDQ Email Report Service",
         "version": "1.0.0",
         "services": services_status,
@@ -102,43 +52,6 @@ async def health_check():
             "discord_webhook_configured": bool(os.getenv("DISCORD_WEBHOOK"))
         }
     }
-    
-    # Send Discord notification for debugging
-    try:
-        send_discord_notification(f"Health check: {overall_status}")
-    except Exception as e:
-        logger.warning(f"Failed to send Discord notification: {e}")
-    
-    return health_info
-
-@app.get("/ready")
-async def readiness_check():
-    """Readiness probe for Cloud Run"""
-    logger.info("Readiness check called")
-    print("STDOUT: Readiness check called")
-    return {"status": "ready"}
-
-@app.get("/test")
-async def test_endpoint():
-    """Simple test endpoint that doesn't require services"""
-    logger.info("Test endpoint called")
-    print("STDOUT: Test endpoint called")
-    return {"message": "Test endpoint working", "timestamp": "2025-08-31T18:57:57Z"}
-
-@app.on_event("startup")
-async def startup_event():
-    """Log startup event"""
-    logger.info("BDQ Email Report Service is starting up")
-    print("STDOUT: BDQ Email Report Service is starting up")
-    
-    # Log environment info
-    port = os.getenv("PORT", "8080")
-    logger.info(f"Service starting on port {port}")
-    print(f"STDOUT: Service starting on port {port}")
-    
-    # Test that the app is working
-    logger.info("FastAPI app is ready to serve requests")
-    print("STDOUT: FastAPI app is ready to serve requests")
 
 @app.post("/email/incoming")
 async def process_incoming_email(request: Request):
@@ -146,15 +59,6 @@ async def process_incoming_email(request: Request):
     Process incoming email with CSV attachment for BDQ testing
     """
     print("STDOUT: /email/incoming endpoint called")  # Explicit stdout
-    
-    # Check if services are available
-    if not all([email_service, bdq_service, csv_service]):
-        logger.error("Services not initialized - cannot process email")
-        return JSONResponse(
-            status_code=503, 
-            content={"error": "Service unavailable - services not initialized"}
-        )
-    
     try:
         # Log the raw request for debugging
         body = await request.body()
@@ -253,6 +157,4 @@ async def process_incoming_email(request: Request):
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8080))
-    logger.info(f"Starting BDQ Email Report Service on port {port}")
-    print(f"STDOUT: Starting BDQ Email Report Service on port {port}")
-    uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
+    uvicorn.run(app, host="0.0.0.0", port=port)
