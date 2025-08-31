@@ -38,6 +38,8 @@ async def root():
 @app.get("/health")
 async def health_check():
     """Detailed health check"""
+    logger.info("Health check endpoint called")
+    print("STDOUT: Health check endpoint called")
     send_discord_notification("Testing - health check")
     return {
         "status": "healthy",
@@ -50,10 +52,12 @@ async def process_incoming_email(request: Request):
     """
     Process incoming email with CSV attachment for BDQ testing
     """
+    print("STDOUT: /email/incoming endpoint called")  # Explicit stdout
     try:
         # Log the raw request for debugging
         body = await request.body()
         logger.info(f"Received request with {len(body)} bytes")
+        print(f"STDOUT: Received request with {len(body)} bytes")  # Explicit stdout
         send_discord_notification(f"Received email request: {len(body)} bytes")
         
         # Try to parse as JSON
@@ -61,6 +65,7 @@ async def process_incoming_email(request: Request):
             import json
             raw_data = json.loads(body.decode('utf-8'))
             logger.info(f"Parsed JSON data keys: {list(raw_data.keys())}")
+            print(f"STDOUT: Parsed JSON data keys: {list(raw_data.keys())}")  # Explicit stdout
         except Exception as parse_error:
             logger.error(f"Failed to parse JSON: {parse_error}")
             logger.error(f"Raw body (first 500 chars): {body[:500]}")
@@ -71,6 +76,7 @@ async def process_incoming_email(request: Request):
         try:
             email_data = EmailPayload(**raw_data)
             logger.info(f"Successfully parsed email from {email_data.from_email}")
+            print(f"STDOUT: Successfully parsed email from {email_data.from_email}")  # Explicit stdout
         except Exception as model_error:
             logger.error(f"Failed to create EmailPayload model: {model_error}")
             logger.error(f"Raw data: {raw_data}")

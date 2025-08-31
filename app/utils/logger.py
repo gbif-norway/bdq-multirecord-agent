@@ -7,13 +7,29 @@ def setup_logging():
     """Setup logging configuration"""
     log_level = os.getenv("LOG_LEVEL", "INFO").upper()
     
+    # Clear any existing handlers
+    for handler in logging.root.handlers[:]:
+        logging.root.removeHandler(handler)
+    
+    # Create a console handler that explicitly writes to stdout
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(getattr(logging, log_level))
+    
+    # Create formatter
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    console_handler.setFormatter(formatter)
+    
+    # Configure root logger
     logging.basicConfig(
         level=getattr(logging, log_level),
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.StreamHandler(),
-        ]
+        handlers=[console_handler],
+        force=True
     )
+    
+    # Test that logging is working
+    logger = logging.getLogger(__name__)
+    logger.info(f"Logging configured with level: {log_level}")
+    print(f"STDOUT: Logging configured with level: {log_level}")  # Also print to ensure it shows up
 
 def send_discord_notification(message: str, webhook_url: Optional[str] = None):
     """Send notification to Discord webhook for debugging"""
