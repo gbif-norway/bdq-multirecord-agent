@@ -6,6 +6,8 @@ This document describes the design for a lightweight email-based service that ru
 
 A dedicated Gmail account receives dataset submissions by email. A Google Apps Script polls this mailbox every minute and forwards all new emails (including attachments) to this BDQ processing endpoint (running on Google Cloud Run). This service then processes the dataset, runs BDQ tests, and replies with the results.
 
+Don't deploy or test locally, CI/CD is set up on google cloud run so each commit to main gets built and deployed on google servers.
+
 ## Flow
 
 1. **Email ingestion**
