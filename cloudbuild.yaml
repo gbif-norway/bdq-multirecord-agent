@@ -1,0 +1,16 @@
+substitutions:
+  _SERVICE: bdq-multirecord-agent
+  _REGION: europe-west1
+  _IMAGE: gcr.io/$PROJECT_ID/github.com/gbif-norway/bdq-multirecord-agent:$COMMIT_SHA
+
+steps:
+- name: gcr.io/cloud-builders/docker
+  args: ['build','-t','$_IMAGE','.']
+- name: gcr.io/cloud-builders/docker
+  args: ['push','$_IMAGE']
+- name: gcr.io/google.com/cloudsdktool/cloud-sdk
+  entrypoint: gcloud
+  args: ['run','deploy','$_SERVICE','--image','$_IMAGE','--region','$_REGION','--allow-unauthenticated']
+
+images:
+- '$_IMAGE'
