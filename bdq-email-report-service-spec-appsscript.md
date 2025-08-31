@@ -1,10 +1,10 @@
 # BDQ Email Report Service
 
-This document describes the design for a lightweight email-based service that runs Biodiversity Data Quality (BDQ) tests on incoming datasets and replies with results.
+This document describes the design for a lightweight email-based service that runs Biodiversity Data Quality (BDQ) tests on incoming datasets and replies with results. Currently we don't have anything in place apart from a light skeleton.
 
 ## Overview
 
-A dedicated Gmail account receives dataset submissions by email. A Google Apps Script polls this mailbox every minute and forwards all new emails (including attachments) to the BDQ processing endpoint (running on Google Cloud Run). The service then processes the dataset, runs BDQ tests, and replies with the results.
+A dedicated Gmail account receives dataset submissions by email. A Google Apps Script polls this mailbox every minute and forwards all new emails (including attachments) to this BDQ processing endpoint (running on Google Cloud Run). This service then processes the dataset, runs BDQ tests, and replies with the results.
 
 ## Flow
 
@@ -21,7 +21,7 @@ A dedicated Gmail account receives dataset submissions by email. A Google Apps S
       - Occurrence core if header contains `occurrenceID`.
       - Taxon core if header contains `taxonID`.
       If there is no occurrenceID or taxonID header, reply to the sender notifying them that a CSV with a known ID header is required and stop processing.
-   c) Discover tests from `GET https://bdq-api-638241344017.europe-west1.run.app/api/v1/tests` (just hardcode this for the moment), make a list of tests to be applied
+   c) Discover tests from `GET {BDQ_AP}/api/v1/tests` (just hardcode this for the moment), make a list of tests to be applied
       - For each test, if all `actedUpon` columns exist in the CSV header, include it.
       - Split into Validations and Amendments by the `type` field
       - e.g. of 2 results:
@@ -116,10 +116,10 @@ A dedicated Gmail account receives dataset submissions by email. A Google Apps S
 
 ## Email reply mechanism
 
-- Another Apps Script deployed as a Web app acts as a "send mail" webhook, this avoids oauth and periodic reauth
+- Another Apps Script deployed as a Web app acts as a "send mail" webhook, this avoids oauth and periodic reauth. Need to add GMAIL_SEND env var to Google Cloud Run with endpoint.
 - Call example: 
    ```
-   curl -X POST "https://script.google.com/macros/s/AKfycb.../exec" \
+   curl -X POST "{GMAIL_SEND}" \
    -H "Content-Type: application/json" \
    -d '{
       "threadId": "1873e0a1f1c8fabc",        // use this to reply in-thread
@@ -152,3 +152,7 @@ A dedicated Gmail account receives dataset submissions by email. A Google Apps S
 - Heavy processing (BDQ tests, file handling, reply composition) happens in Cloud Run, not Apps Script.
 - No HMAC or authentication is used in this sandbox test. 
 - Expected email volume is very low (~3 per week), so quotas are not a concern.
+
+## Debugging
+
+- Send debugging messages to {DISCORD_WEBHOOK}
