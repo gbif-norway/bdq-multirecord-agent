@@ -46,12 +46,36 @@ async def health_check():
     }
 
 @app.post("/email/incoming")
-async def process_incoming_email(email_data: EmailPayload):
+async def process_incoming_email(request: Request):
     """
     Process incoming email with CSV attachment for BDQ testing
     """
     try:
-        logger.info(f"Processing email from {email_data.from_email}")
+        # Log the raw request for debugging
+        body = await request.body()
+        logger.info(f"Received request with {len(body)} bytes")
+        send_discord_notification(f"Received email request: {len(body)} bytes")
+        
+        # Try to parse as JSON
+        try:
+            import json
+            raw_data = json.loads(body.decode('utf-8'))
+            logger.info(f"Parsed JSON data keys: {list(raw_data.keys())}")
+        except Exception as parse_error:
+            logger.error(f"Failed to parse JSON: {parse_error}")
+            logger.error(f"Raw body (first 500 chars): {body[:500]}")
+            send_discord_notification(f"JSON parse error: {str(parse_error)}")
+            return JSONResponse(status_code=400, content={"error": "Invalid JSON payload"})
+        
+        # Convert to EmailPayload model
+        try:
+            email_data = EmailPayload(**raw_data)
+            logger.info(f"Successfully parsed email from {email_data.from_email}")
+        except Exception as model_error:
+            logger.error(f"Failed to create EmailPayload model: {model_error}")
+            logger.error(f"Raw data: {raw_data}")
+            send_discord_notification(f"Model validation error: {str(model_error)}")
+            return JSONResponse(status_code=400, content={"error": "Invalid email payload structure"})
         
         # Extract and validate CSV attachment
         csv_data = email_service.extract_csv_attachment(email_data)
@@ -105,6 +129,7 @@ async def process_incoming_email(email_data: EmailPayload):
         
     except Exception as e:
         logger.error(f"Error processing email: {str(e)}", exc_info=True)
+        send_discord_notification(f"Processing error: {str(e)}")
         
         # Try to send error reply if we have email data
         try:
