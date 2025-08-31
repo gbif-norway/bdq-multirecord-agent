@@ -20,6 +20,9 @@ This service receives dataset submissions via email, processes CSV files, runs B
 # Gmail Send Webhook (Apps Script deployed as web app)
 GMAIL_SEND=https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec
 
+# HMAC Secret for authenticating requests to Apps Script
+HMAC_SECRET=your_long_random_secret
+
 # Discord Webhook for debugging notifications
 DISCORD_WEBHOOK=https://discord.com/api/webhooks/YOUR_WEBHOOK_URL
 
@@ -44,7 +47,7 @@ PORT=8080
 4. **Test Discovery**: Fetch applicable BDQ tests from API
 5. **Test Execution**: Run tests with unique value deduplication
 6. **Result Generation**: Create raw results and amended dataset CSVs
-7. **Email Reply**: Send results back to sender with attachments
+7. **Email Reply**: Send results back to sender with attachments (using HMAC authentication)
 
 ## CSV Requirements
 

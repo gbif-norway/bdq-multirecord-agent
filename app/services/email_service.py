@@ -2,6 +2,9 @@ import base64
 import logging
 import requests
 import os
+import hmac
+import hashlib
+import json
 from typing import Optional, List
 from models.email_models import EmailPayload, EmailAttachment, ProcessingSummary
 
@@ -12,6 +15,20 @@ class EmailService:
     
     def __init__(self):
         self.gmail_send_endpoint = os.getenv("GMAIL_SEND")
+        self.hmac_secret = os.getenv("HMAC_SECRET")
+    
+    def _generate_hmac_signature(self, body: str) -> str:
+        """Generate HMAC signature for request body"""
+        if not self.hmac_secret:
+            raise ValueError("HMAC_SECRET environment variable not set")
+        
+        signature = hmac.new(
+            self.hmac_secret.encode(),
+            body.encode(),
+            hashlib.sha256
+        ).hexdigest()
+        
+        return f"sha256={signature}"
     
     def extract_csv_attachment(self, email_data: EmailPayload) -> Optional[str]:
         """Extract CSV attachment from email data"""
@@ -48,20 +65,29 @@ class EmailService:
                 logger.error("GMAIL_SEND endpoint not configured")
                 return
             
-            body_text = f"BDQ Processing Error\n\n{error_message}\n\nPlease check your CSV file and try again."
+            if not self.hmac_secret:
+                logger.error("HMAC_SECRET not configured")
+                return
+            
             body_html = f"<h3>BDQ Processing Error</h3><p>{error_message}</p><p>Please check your CSV file and try again.</p>"
             
             reply_data = {
                 "threadId": email_data.thread_id,
-                "bodyText": body_text,
-                "bodyHtml": body_html,
+                "htmlBody": body_html,
                 "attachments": []
             }
             
+            # Convert to JSON string for HMAC
+            body_json = json.dumps(reply_data)
+            signature = self._generate_hmac_signature(body_json)
+            
             response = requests.post(
                 self.gmail_send_endpoint,
-                json=reply_data,
-                headers={"Content-Type": "application/json"},
+                data=body_json,
+                headers={
+                    "Content-Type": "application/json",
+                    "X-Signature": signature
+                },
                 timeout=30
             )
             response.raise_for_status()
@@ -79,8 +105,11 @@ class EmailService:
                 logger.error("GMAIL_SEND endpoint not configured")
                 return
             
+            if not self.hmac_secret:
+                logger.error("HMAC_SECRET not configured")
+                return
+            
             # Generate email body
-            body_text = self._generate_summary_text(summary)
             body_html = self._generate_summary_html(summary)
             
             # Prepare attachments
@@ -99,15 +128,21 @@ class EmailService:
             
             reply_data = {
                 "threadId": email_data.thread_id,
-                "bodyText": body_text,
-                "bodyHtml": body_html,
+                "htmlBody": body_html,
                 "attachments": attachments
             }
             
+            # Convert to JSON string for HMAC
+            body_json = json.dumps(reply_data)
+            signature = self._generate_hmac_signature(body_json)
+            
             response = requests.post(
                 self.gmail_send_endpoint,
-                json=reply_data,
-                headers={"Content-Type": "application/json"},
+                data=body_json,
+                headers={
+                    "Content-Type": "application/json",
+                    "X-Signature": signature
+                },
                 timeout=30
             )
             response.raise_for_status()

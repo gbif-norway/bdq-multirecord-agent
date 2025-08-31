@@ -108,7 +108,6 @@ A dedicated Gmail account receives dataset submissions by email. A Google Apps S
      - Examples/samples of common issues
      - Note that the amended dataset applies proposed changes.
    - Attach Raw results csv and Amended dataset csv
-   - Uses the Gmail API (`messages.send`) to reply in-thread to the sender (Query - is this actually possible?)
    - The reply email includes:
      - A summary report in the email body
      - Raw BDQ results attached
