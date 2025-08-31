@@ -45,8 +45,14 @@ except Exception as e:
 
 @app.get("/")
 async def root():
-    """Health check endpoint"""
-    return {"message": "BDQ Email Report Service is running"}
+    """Root endpoint - basic health check"""
+    logger.info("Root endpoint called")
+    print("STDOUT: Root endpoint called")
+    return {
+        "message": "BDQ Email Report Service is running",
+        "status": "ok",
+        "version": "1.0.0"
+    }
 
 @app.get("/health")
 async def health_check():
@@ -85,11 +91,27 @@ async def health_check():
     
     return health_info
 
+@app.get("/ready")
+async def readiness_check():
+    """Readiness probe for Cloud Run"""
+    logger.info("Readiness check called")
+    print("STDOUT: Readiness check called")
+    return {"status": "ready"}
+
 @app.on_event("startup")
 async def startup_event():
     """Log startup event"""
     logger.info("BDQ Email Report Service is starting up")
     print("STDOUT: BDQ Email Report Service is starting up")
+    
+    # Log environment info
+    port = os.getenv("PORT", "8080")
+    logger.info(f"Service starting on port {port}")
+    print(f"STDOUT: Service starting on port {port}")
+    
+    # Test that the app is working
+    logger.info("FastAPI app is ready to serve requests")
+    print("STDOUT: FastAPI app is ready to serve requests")
 
 @app.post("/email/incoming")
 async def process_incoming_email(request: Request):
