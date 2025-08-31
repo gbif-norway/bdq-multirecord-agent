@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  bdq-email-service:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - LOG_LEVEL=DEBUG
+      - PYTHONUNBUFFERED=1
+    volumes:
+      # Mount source code for development (hot reload)
+      - ./app:/app
+      # Mount environment file if it exists
+      - ./.env:/app/.env:ro
+    command: ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080", "--reload"]
+    restart: unless-stopped
