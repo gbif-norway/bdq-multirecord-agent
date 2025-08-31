@@ -16,8 +16,6 @@ This service receives dataset submissions via email, processes CSV files, runs B
 
 ### Environment Variables
 
-Create a `.env` file with the following variables:
-
 ```bash
 # Gmail Send Webhook (Apps Script deployed as web app)
 GMAIL_SEND=https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec
@@ -30,61 +28,6 @@ LOG_LEVEL=INFO
 
 # Port for the service (default: 8080)
 PORT=8080
-```
-
-### Docker (Recommended)
-
-The easiest way to run the service is using Docker:
-
-#### Quick Start
-```bash
-# Build and start the service
-make build
-make up
-
-# View logs
-make logs
-
-# Stop the service
-make down
-```
-
-#### Development Mode
-```bash
-# Start with hot reload for development
-make dev
-
-# View development logs
-make dev-logs
-```
-
-#### Manual Docker Commands
-```bash
-# Build the image
-docker-compose build
-
-# Start the service
-docker-compose up -d
-
-# View logs
-docker-compose logs -f bdq-email-service
-
-# Stop the service
-docker-compose down
-```
-
-### Local Development (Alternative)
-
-If you prefer to run locally without Docker:
-
-1. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
-
-2. Run the service:
-```bash
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
 ```
 
 ## API Endpoints
