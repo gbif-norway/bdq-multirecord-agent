@@ -11,7 +11,7 @@ def setup_logging():
     for handler in logging.root.handlers[:]:
         logging.root.removeHandler(handler)
     
-    # Create a console handler that explicitly writes to stdout
+    # Create a console handler
     console_handler = logging.StreamHandler()
     console_handler.setLevel(getattr(logging, log_level))
     
@@ -29,7 +29,6 @@ def setup_logging():
     # Test that logging is working
     logger = logging.getLogger(__name__)
     logger.info(f"Logging configured with level: {log_level}")
-    print(f"STDOUT: Logging configured with level: {log_level}")  # Also print to ensure it shows up
 
 def send_discord_notification(message: str, webhook_url: Optional[str] = None):
     """Send notification to Discord webhook for debugging"""

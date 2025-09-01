@@ -50,22 +50,54 @@ class EmailService:
                 logger.warning("No CSV attachments found in email")
                 return None
 
-            csv_attachment = csv_attachments[0]
+            # Try attachments in order; skip empties/undecodable
+            for csv_attachment in csv_attachments:
+                b64_raw = (csv_attachment.content_base64 or '')
+                b64 = b64_raw.strip()
+                b64_len = len(b64)
+                logger.info(
+                    f"CSV attachment candidate: filename={csv_attachment.filename}, "
+                    f"mime={csv_attachment.mime_type}, size={csv_attachment.size}, b64_len={b64_len}"
+                )
 
-            # Robust base64/url-safe base64 decode
-            b64 = (csv_attachment.content_base64 or '').strip()
-            pad = (-len(b64)) % 4
-            if pad:
-                b64 += '=' * pad
-            try:
-                decoded_bytes = base64.urlsafe_b64decode(b64.encode('utf-8'))
-            except Exception:
-                decoded_bytes = base64.b64decode(b64.encode('utf-8'))
+                if not b64:
+                    logger.warning(f"Attachment {csv_attachment.filename} has empty base64 content; skipping")
+                    continue
 
-            csv_content = decoded_bytes.decode('utf-8', errors='replace')
+                # Robust base64/url-safe base64 decode
+                pad = (-len(b64)) % 4
+                if pad:
+                    b64 += '=' * pad
+                try:
+                    decoded_bytes = base64.urlsafe_b64decode(b64.encode('utf-8'))
+                except Exception:
+                    try:
+                        decoded_bytes = base64.b64decode(b64.encode('utf-8'))
+                    except Exception as decode_err:
+                        logger.error(
+                            f"Failed to decode base64 for {csv_attachment.filename}: {decode_err}"
+                        )
+                        continue
 
-            logger.info(f"Extracted CSV attachment: {csv_attachment.filename} ({len(csv_content)} chars)")
-            return csv_content
+                if not decoded_bytes:
+                    logger.warning(f"Attachment {csv_attachment.filename} decoded to 0 bytes; skipping")
+                    continue
+
+                try:
+                    csv_content = decoded_bytes.decode('utf-8', errors='replace')
+                except Exception as enc_err:
+                    logger.error(
+                        f"Failed to decode bytes to UTF-8 for {csv_attachment.filename}: {enc_err}"
+                    )
+                    continue
+
+                logger.info(
+                    f"Extracted CSV attachment: {csv_attachment.filename} ({len(csv_content)} chars)"
+                )
+                return csv_content
+
+            logger.warning("All CSV-like attachments were empty or undecodable")
+            return None
 
         except Exception as e:
             logger.error(f"Error extracting CSV attachment: {e}")
@@ -96,6 +128,7 @@ class EmailService:
             
             response = requests.post(
                 self.gmail_send_endpoint,
+                params={"X-Signature": signature},  # Apps Script can't reliably read headers
                 data=body_json,
                 headers={
                     "Content-Type": "application/json",
@@ -104,11 +137,17 @@ class EmailService:
                 timeout=30
             )
             response.raise_for_status()
-            
-            logger.info(f"Sent error reply to {email_data.from_email}")
+            logger.info(
+                f"Sent error reply to {email_data.from_email}; status={response.status_code}; body={(response.text or '')[:200]}"
+            )
             
         except Exception as e:
-            logger.error(f"Error sending error reply: {e}")
+            try:
+                status = getattr(e.response, 'status_code', None) if hasattr(e, 'response') else None
+                text = getattr(e.response, 'text', '') if hasattr(e, 'response') else ''
+                logger.error(f"Error sending error reply: {e}; status={status}; body={(text or '')[:200]}")
+            except Exception:
+                logger.error(f"Error sending error reply: {e}")
     
     async def send_results_reply(self, email_data: EmailPayload, summary: ProcessingSummary, 
                                raw_results_csv: str, amended_dataset_csv: str):
@@ -151,6 +190,7 @@ class EmailService:
             
             response = requests.post(
                 self.gmail_send_endpoint,
+                params={"X-Signature": signature},  # Apps Script can't reliably read headers
                 data=body_json,
                 headers={
                     "Content-Type": "application/json",
@@ -159,11 +199,17 @@ class EmailService:
                 timeout=30
             )
             response.raise_for_status()
-            
-            logger.info(f"Sent results reply to {email_data.from_email}")
+            logger.info(
+                f"Sent results reply to {email_data.from_email}; status={response.status_code}; body={(response.text or '')[:200]}"
+            )
             
         except Exception as e:
-            logger.error(f"Error sending results reply: {e}")
+            try:
+                status = getattr(e.response, 'status_code', None) if hasattr(e, 'response') else None
+                text = getattr(e.response, 'text', '') if hasattr(e, 'response') else ''
+                logger.error(f"Error sending results reply: {e}; status={status}; body={(text or '')[:200]}")
+            except Exception:
+                logger.error(f"Error sending results reply: {e}")
     
     def _generate_summary_text(self, summary: ProcessingSummary) -> str:
         """Generate text summary for email body"""

@@ -1,6 +1,6 @@
 import os
 import logging
-from typing import Optional, List, Dict, Any
+from typing import Dict, Any
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 import uvicorn
@@ -10,7 +10,7 @@ import base64
 from services.email_service import EmailService
 from services.bdq_service import BDQService
 from services.csv_service import CSVService
-from models.email_models import EmailPayload, EmailReply
+from models.email_models import EmailPayload
 from utils.logger import setup_logging, send_discord_notification
 
 # Load environment variables
@@ -77,7 +77,6 @@ async def root():
 async def health_check():
     """Detailed health check"""
     logger.info("Health check endpoint called")
-    print("STDOUT:   check endpoint called")
     send_discord_notification("Testing - health check")
     
     # Check service health status
@@ -104,12 +103,10 @@ async def process_incoming_email(request: Request):
     """
     Process incoming email with CSV attachment for BDQ testing
     """
-    print("STDOUT: /email/incoming endpoint called")  # Explicit stdout
     try:
         # Log the raw request for debugging
         body = await request.body()
         logger.info(f"Received request with {len(body)} bytes")
-        print(f"STDOUT: Received request with {len(body)} bytes")  # Explicit stdout
         send_discord_notification(f"Received email request: {len(body)} bytes")
         
         # Try to parse as JSON
@@ -117,7 +114,6 @@ async def process_incoming_email(request: Request):
             import json
             raw_data = json.loads(body.decode('utf-8'))
             logger.info(f"Parsed JSON data keys: {list(raw_data.keys())}")
-            print(f"STDOUT: Parsed JSON data keys: {list(raw_data.keys())}")  # Explicit stdout
         except Exception as parse_error:
             logger.error(f"Failed to parse JSON: {parse_error}")
             logger.error(f"Raw body (first 500 chars): {body[:500]}")
@@ -129,7 +125,6 @@ async def process_incoming_email(request: Request):
             normalized = _normalize_apps_script_payload(raw_data)
             email_data = EmailPayload(**normalized)
             logger.info(f"Successfully parsed email from {email_data.from_email}")
-            print(f"STDOUT: Successfully parsed email from {email_data.from_email}")  # Explicit stdout
         except Exception as model_error:
             logger.error(f"Failed to create EmailPayload model: {model_error}")
             logger.error(f"Raw data: {raw_data}")
