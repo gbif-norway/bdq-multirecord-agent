@@ -121,7 +121,7 @@ class EmailService:
                 "htmlBody": body_html,
                 "attachments": []
             }
-            logger.info(f"Reply data: {reply_data}")
+            logger.info(f"Error reply data: {reply_data}")
             
             # Convert to JSON string for HMAC
             body_json = json.dumps(reply_data)
@@ -184,6 +184,7 @@ class EmailService:
                 "htmlBody": body_html,
                 "attachments": attachments
             }
+            logger.info(f"Results reply data: {reply_data}")
             
             # Convert to JSON string for HMAC
             body_json = json.dumps(reply_data)
