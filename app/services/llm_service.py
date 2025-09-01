@@ -13,6 +13,7 @@ class LLMService:
         self.api_key = os.getenv("GOOGLE_API_KEY")
         if not self.api_key:
             logger.warning("GOOGLE_API_KEY not set - LLM summaries will be disabled")
+            logger.info("GOOGLE_API_KEY not set - LLM summaries will be disabled")
             self.enabled = False
         else:
             genai.configure(api_key=self.api_key)
