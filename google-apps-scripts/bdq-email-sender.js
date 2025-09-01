@@ -22,16 +22,16 @@ function doPost(e) {
     const raw = e.postData?.contents || '';
     const sig = e.parameter['X-Signature'] || e.parameter['signature'] || (e.headers && e.headers['X-Signature']) || '';
     if (!verify_(raw, sig)) {
-      return ContentService.createTextOutput('bad sig').setMimeType(ContentService.MimeType.TEXT).setResponseCode(401);
+      return ContentService.createTextOutput('bad sig').setMimeType(ContentService.MimeType.TEXT);
     }
 
     const data = JSON.parse(raw);
     if (!data || !data.threadId) {
-      return ContentService.createTextOutput('bad request').setMimeType(ContentService.MimeType.TEXT).setResponseCode(400);
+      return ContentService.createTextOutput('bad request').setMimeType(ContentService.MimeType.TEXT);
     }
 
     const thread = GmailApp.getThreadById(String(data.threadId));
-    if (!thread) return ContentService.createTextOutput('no thread').setMimeType(ContentService.MimeType.TEXT).setResponseCode(404);
+    if (!thread) return ContentService.createTextOutput('no thread').setMimeType(ContentService.MimeType.TEXT);
 
     const opts = { htmlBody: String(data.htmlBody || 'Done.') };
     if (Array.isArray(data.attachments) && data.attachments.length) {
@@ -40,17 +40,17 @@ function doPost(e) {
           Utilities.newBlob(Utilities.base64Decode(String(a.contentBase64 || '')), String(a.mimeType || 'application/octet-stream'), String(a.filename || 'file.bin'))
         );
       } catch (blobErr) {
-        return ContentService.createTextOutput('bad attachment').setMimeType(ContentService.MimeType.TEXT).setResponseCode(400);
+        return ContentService.createTextOutput('bad attachment').setMimeType(ContentService.MimeType.TEXT);
       }
     }
 
     thread.reply('', opts);
-    return ContentService.createTextOutput('ok').setMimeType(ContentService.MimeType.TEXT).setResponseCode(200);
+    return ContentService.createTextOutput('ok').setMimeType(ContentService.MimeType.TEXT);
   } catch (err) {
-    return ContentService.createTextOutput('error').setMimeType(ContentService.MimeType.TEXT).setResponseCode(500);
+    return ContentService.createTextOutput('error').setMimeType(ContentService.MimeType.TEXT);
   }
 }
 
 function doGet() {
-  return ContentService.createTextOutput('ok').setMimeType(ContentService.MimeType.TEXT).setResponseCode(200);
+  return ContentService.createTextOutput('ok').setMimeType(ContentService.MimeType.TEXT);
 }
