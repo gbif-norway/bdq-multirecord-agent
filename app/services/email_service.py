@@ -5,7 +5,7 @@ import os
 import hmac
 import hashlib
 import json
-from typing import Optional, List
+from typing import Optional
 from models.email_models import EmailPayload, EmailAttachment, ProcessingSummary
 
 logger = logging.getLogger(__name__)
@@ -34,26 +34,39 @@ class EmailService:
         """Extract CSV attachment from email data"""
         try:
             csv_attachments = []
-            
+
             for attachment in email_data.attachments:
-                # Check if it's a CSV file
-                if (attachment.filename.lower().endswith('.csv') or 
-                    'csv' in attachment.mime_type.lower()):
+                fn = (attachment.filename or '').lower()
+                mt = (attachment.mime_type or '').lower()
+                if (
+                    fn.endswith(('.csv', '.tsv', '.txt'))
+                    or 'csv' in mt
+                    or 'text/plain' in mt
+                    or 'tab-separated' in mt
+                ):
                     csv_attachments.append(attachment)
-            
+
             if not csv_attachments:
                 logger.warning("No CSV attachments found in email")
                 return None
-            
-            # Use the first CSV attachment
+
             csv_attachment = csv_attachments[0]
-            
-            # Decode base64 content
-            csv_content = base64.b64decode(csv_attachment.content_base64).decode('utf-8')
-            
+
+            # Robust base64/url-safe base64 decode
+            b64 = (csv_attachment.content_base64 or '').strip()
+            pad = (-len(b64)) % 4
+            if pad:
+                b64 += '=' * pad
+            try:
+                decoded_bytes = base64.urlsafe_b64decode(b64.encode('utf-8'))
+            except Exception:
+                decoded_bytes = base64.b64decode(b64.encode('utf-8'))
+
+            csv_content = decoded_bytes.decode('utf-8', errors='replace')
+
             logger.info(f"Extracted CSV attachment: {csv_attachment.filename} ({len(csv_content)} chars)")
             return csv_content
-            
+
         except Exception as e:
             logger.error(f"Error extracting CSV attachment: {e}")
             return None

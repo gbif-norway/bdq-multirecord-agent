@@ -1,6 +1,6 @@
 # BDQ Email Report Service
 
-This document describes the design for a lightweight email-based service that runs Biodiversity Data Quality (BDQ) tests on incoming datasets and replies with results. Currently we don't have anything in place apart from a light skeleton.
+This document describes the design for a lightweight email-based service that runs Biodiversity Data Quality (BDQ) tests on incoming datasets and replies with results. 
 
 ## Overview
 

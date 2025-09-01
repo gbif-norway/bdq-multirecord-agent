@@ -4,13 +4,13 @@ A lightweight email-based service that runs Biodiversity Data Quality (BDQ) test
 
 ## Overview
 
-This service receives dataset submissions via email, processes CSV files, runs BDQ tests, and replies with detailed results including validation failures and proposed amendments.
+This service receives dataset submissions via email, processes CSV files, runs BDQ tests, and replies with detailed results including validation failures and proposed amendments. It is currently deployed on google cloud run at https://bdq-multirecord-agent-638241344017.europe-west1.run.app/
 
 ## Architecture
 
-- **Google Apps Script**: Polls Gmail inbox and forwards emails to this service
-- **Google Cloud Run**: This FastAPI service processes datasets and runs BDQ tests
-- **BDQ API**: External REST API for running biodiversity data quality tests
+- **Google Apps Script**: Polls Gmail inbox and forwards emails to this service, as well as providing an "endpoint" for email replies. Code for this is in this repo, in google-apps-scripts/
+- **Google Cloud Run**: This FastAPI service, which processes datasets and runs BDQ tests for the entire dataset
+- **BDQ API**: External REST API for running single BDQ tests
 
 ## Setup
 
@@ -48,6 +48,8 @@ PORT=8080
 5. **Test Execution**: Run tests with unique value deduplication
 6. **Result Generation**: Create raw results and amended dataset CSVs
 7. **Email Reply**: Send results back to sender with attachments (using HMAC authentication)
+
+More information about each of these is in the buildspec.md.
 
 ## CSV Requirements
 

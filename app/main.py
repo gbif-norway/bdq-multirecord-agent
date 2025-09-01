@@ -1,10 +1,11 @@
 import os
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Optional, List, Dict, Any
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 import uvicorn
 from dotenv import load_dotenv
+import base64
 
 from services.email_service import EmailService
 from services.bdq_service import BDQService
@@ -29,6 +30,43 @@ app = FastAPI(
 email_service = EmailService()
 bdq_service = BDQService()
 csv_service = CSVService()
+
+def _normalize_apps_script_payload(raw_data: Dict[str, Any]) -> Dict[str, Any]:
+    headers = raw_data.get('headers') or {}
+    body = raw_data.get('body') or {}
+
+    norm_atts = []
+    for a in (raw_data.get('attachments') or []):
+        content = a.get('contentBase64') or a.get('content_base64')
+        if isinstance(content, list):
+            try:
+                b = bytes(int(x) for x in content)
+                content_b64 = base64.b64encode(b).decode('utf-8')
+            except Exception:
+                content_b64 = ''
+        elif isinstance(content, str):
+            content_b64 = content
+        else:
+            content_b64 = ''
+
+        norm_atts.append({
+            'filename': a.get('filename', ''),
+            'mime_type': a.get('mimeType') or a.get('mime_type') or '',
+            'content_base64': content_b64,
+            'size': a.get('size')
+        })
+
+    return {
+        'message_id': raw_data.get('messageId') or raw_data.get('message_id') or '',
+        'thread_id': raw_data.get('threadId') or raw_data.get('thread_id') or '',
+        'from_email': headers.get('from', ''),
+        'to_email': headers.get('to', ''),
+        'subject': headers.get('subject', ''),
+        'body_text': body.get('text') if isinstance(body, dict) else None,
+        'body_html': body.get('html') if isinstance(body, dict) else None,
+        'attachments': norm_atts,
+        'headers': headers if isinstance(headers, dict) else {}
+    }
 
 @app.get("/")
 async def root():
@@ -88,7 +126,8 @@ async def process_incoming_email(request: Request):
         
         # Convert to EmailPayload model
         try:
-            email_data = EmailPayload(**raw_data)
+            normalized = _normalize_apps_script_payload(raw_data)
+            email_data = EmailPayload(**normalized)
             logger.info(f"Successfully parsed email from {email_data.from_email}")
             print(f"STDOUT: Successfully parsed email from {email_data.from_email}")  # Explicit stdout
         except Exception as model_error:
