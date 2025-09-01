@@ -208,11 +208,32 @@ function buildPayload_(message) {
   for (const p of parts) {
     if (p.filename && p.body && p.body.attachmentId) {
       const att = Gmail.Users.Messages.Attachments.get('me', message.id, p.body.attachmentId);
+      let dataStr = (att && typeof att.data === 'string') ? att.data : '';
+      let usedFallback = false;
+      if (!dataStr) {
+        // Fallback to GmailApp (blobs) if Advanced Gmail API returns empty data
+        try {
+          const msg = GmailApp.getMessageById(String(message.id));
+          const blobs = msg.getAttachments({ includeInlineImages: true, includeAttachments: true });
+          const match = blobs.find(b => {
+            try {
+              return b && b.getName && b.getName() === p.filename;
+            } catch (e) { return false; }
+          });
+          if (match) {
+            dataStr = Utilities.base64Encode(match.getBytes()); // standard base64 (server can handle both)
+            usedFallback = true;
+          }
+        } catch (e) {
+          log('attach:fallback error', String(e && e.message || e));
+        }
+      }
+      log('attach:get', { filename: p.filename, size: (att && att.size) || 0, hasData: !!dataStr, fallback: usedFallback });
       attachments.push({
         filename: p.filename,
         mimeType: p.mimeType || 'application/octet-stream',
-        size: att.size || 0,
-        contentBase64: att.data // base64url
+        size: (att && att.size) || (match && match.getBytes && match.getBytes().length) || 0,
+        contentBase64: dataStr // base64 or base64url
       });
     }
   }

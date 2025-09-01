@@ -5,6 +5,7 @@ const SECRET_PROP = 'SHARED_SECRET';
 function verify_(raw, sigHeader) {
   if (!sigHeader || !sigHeader.startsWith('sha256=')) return false;
   const secret = PropertiesService.getScriptProperties().getProperty(SECRET_PROP);
+  if (!secret) return false;
   const hmac = Utilities.computeHmacSha256Signature(raw, secret);
   const hex = hmac.map(b => ('0' + (b & 0xff).toString(16)).slice(-2)).join('');
   return Utilities.safeCompare(hex, sigHeader.slice(7));
@@ -17,21 +18,35 @@ function verify_(raw, sigHeader) {
 //   "attachments": [{ "filename": "a.csv", "mimeType": "text/csv", "contentBase64": "..." }]
 // }
 function doPost(e) {
-  const raw = e.postData?.contents || '';
-  const ok = verify_(raw, e.parameter['X-Signature'] || e.headers['X-Signature']);
-  if (!ok) return ContentService.createTextOutput('bad sig').setMimeType(ContentService.MimeType.TEXT).setResponseCode(401);
+  try {
+    const raw = e.postData?.contents || '';
+    const sig = e.parameter['X-Signature'] || (e.headers && e.headers['X-Signature']) || '';
+    if (!verify_(raw, sig)) {
+      return ContentService.createTextOutput('bad sig').setMimeType(ContentService.MimeType.TEXT).setResponseCode(401);
+    }
 
-  const data = JSON.parse(raw);
-  const thread = GmailApp.getThreadById(String(data.threadId));
-  if (!thread) return ContentService.createTextOutput('no thread').setResponseCode(404);
+    const data = JSON.parse(raw);
+    if (!data || !data.threadId) {
+      return ContentService.createTextOutput('bad request').setMimeType(ContentService.MimeType.TEXT).setResponseCode(400);
+    }
 
-  const opts = { htmlBody: data.htmlBody || 'Done.' };
-  if (Array.isArray(data.attachments) && data.attachments.length) {
-    opts.attachments = data.attachments.map(a =>
-      Utilities.newBlob(Utilities.base64Decode(a.contentBase64), a.mimeType || 'application/octet-stream', a.filename || 'file.bin')
-    );
+    const thread = GmailApp.getThreadById(String(data.threadId));
+    if (!thread) return ContentService.createTextOutput('no thread').setMimeType(ContentService.MimeType.TEXT).setResponseCode(404);
+
+    const opts = { htmlBody: String(data.htmlBody || 'Done.') };
+    if (Array.isArray(data.attachments) && data.attachments.length) {
+      try {
+        opts.attachments = data.attachments.map(a =>
+          Utilities.newBlob(Utilities.base64Decode(String(a.contentBase64 || '')), String(a.mimeType || 'application/octet-stream'), String(a.filename || 'file.bin'))
+        );
+      } catch (blobErr) {
+        return ContentService.createTextOutput('bad attachment').setMimeType(ContentService.MimeType.TEXT).setResponseCode(400);
+      }
+    }
+
+    thread.reply('', opts);
+    return ContentService.createTextOutput('ok').setMimeType(ContentService.MimeType.TEXT).setResponseCode(200);
+  } catch (err) {
+    return ContentService.createTextOutput('error').setMimeType(ContentService.MimeType.TEXT).setResponseCode(500);
   }
-
-  thread.reply('', opts);
-  return ContentService.createTextOutput('ok');
 }

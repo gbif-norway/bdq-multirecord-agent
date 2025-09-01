@@ -45,13 +45,22 @@ class BDQService:
     def filter_applicable_tests(self, tests: List[BDQTest], csv_columns: List[str]) -> List[BDQTest]:
         """Filter tests that can be applied to the CSV columns"""
         applicable_tests = []
-        
+
+        # Build index of CSV columns by normalized name (lowercase, strip dwc: prefix)
+        col_index = {self._normalize_field_name(c): c for c in csv_columns}
+
         for test in tests:
-            # Check if all required columns exist in CSV
-            required_columns = test.actedUpon
-            if all(col in csv_columns for col in required_columns):
+            # Check if all required columns exist in CSV (after normalization)
+            required_columns = test.actedUpon or []
+            all_present = True
+            for rc in required_columns:
+                norm = self._normalize_field_name(rc)
+                if norm not in col_index:
+                    all_present = False
+                    break
+            if all_present:
                 applicable_tests.append(test)
-        
+
         logger.info(f"Found {len(applicable_tests)} applicable tests out of {len(tests)} total tests")
         return applicable_tests
     
@@ -62,12 +71,26 @@ class BDQService:
         
         all_results = []
         
+        # Column index for mapping actedUpon to actual DataFrame columns
+        col_index = {self._normalize_field_name(c): c for c in df.columns}
+
         for test in applicable_tests:
             try:
                 logger.info(f"Running test: {test.id}")
                 
+                # Resolve actedUpon to actual DataFrame column names
+                resolved_cols = []
+                for rc in (test.actedUpon or []):
+                    norm = self._normalize_field_name(rc)
+                    actual = col_index.get(norm)
+                    if actual:
+                        resolved_cols.append(actual)
+                if len(resolved_cols) != len(test.actedUpon or []):
+                    logger.warning(f"Skipping test {test.id}: required columns not found in CSV")
+                    continue
+
                 # Get unique tuples for this test's actedUpon columns
-                unique_tuples = csv_service.get_unique_tuples(df, test.actedUpon)
+                unique_tuples = csv_service.get_unique_tuples(df, resolved_cols)
                 
                 if not unique_tuples:
                     logger.warning(f"No unique tuples found for test {test.id}")
@@ -86,7 +109,7 @@ class BDQService:
                 
                 # Map results back to all rows
                 test_results = csv_service.map_results_to_rows(
-                    df, cached_results, test.id, test.actedUpon, core_type
+                    df, cached_results, test.id, resolved_cols, core_type
                 )
                 
                 all_results.extend(test_results)
@@ -98,6 +121,15 @@ class BDQService:
         
         logger.info(f"Completed all tests: {len(all_results)} total results")
         return all_results
+
+    def _normalize_field_name(self, name: str) -> str:
+        """Normalize field names by lowercasing and stripping common prefixes like 'dwc:'"""
+        if not isinstance(name, str):
+            return ''
+        s = name.strip()
+        if s.lower().startswith('dwc:'):
+            s = s[4:]
+        return s.lower()
     
     async def _run_single_test(self, test_id: str, params: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Run a single BDQ test with given parameters"""
