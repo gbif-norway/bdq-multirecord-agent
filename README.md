@@ -23,6 +23,9 @@ GMAIL_SEND=https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec
 # HMAC Secret for authenticating requests to Apps Script
 HMAC_SECRET=your_long_random_secret
 
+# Google API Key for Gemini LLM summaries
+GOOGLE_API_KEY=your_google_api_key_here
+
 # Discord Webhook for debugging notifications
 DISCORD_WEBHOOK=https://discord.com/api/webhooks/YOUR_WEBHOOK_URL
 
@@ -47,7 +50,8 @@ PORT=8080
 4. **Test Discovery**: Fetch applicable BDQ tests from API
 5. **Test Execution**: Run tests with unique value deduplication
 6. **Result Generation**: Create raw results and amended dataset CSVs
-7. **Email Reply**: Send results back to sender with attachments (using HMAC authentication)
+7. **LLM Summary**: Generate intelligent, contextual email summaries using Google Gemini
+8. **Email Reply**: Send results back to sender with attachments (using HMAC authentication)
 
 More information about each of these is in the buildspec.md.
 
@@ -61,6 +65,16 @@ More information about each of these is in the buildspec.md.
 
 - **bdq_raw_results.csv**: Detailed test results for each record
 - **amended_dataset.csv**: Original dataset with proposed amendments applied
+
+## LLM Integration
+
+The service now uses Google Gemini to generate intelligent, contextual email summaries that:
+- Analyze the user's original email context and subject
+- Provide data quality scores and insights
+- Explain issues in plain language for biologists
+- Offer actionable advice for improving data quality
+- Maintain a helpful, encouraging tone
+- Fall back to basic summaries if the LLM is unavailable
 
 ## Error Handling
 

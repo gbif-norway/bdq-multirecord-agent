@@ -5,3 +5,4 @@ requests>=2.32.0
 python-multipart>=0.0.12
 pydantic>=2.10.0
 python-dotenv>=1.0.0
+google-generativeai>=0.8.0

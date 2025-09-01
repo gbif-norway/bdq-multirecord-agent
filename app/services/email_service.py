@@ -5,8 +5,8 @@ import os
 import hmac
 import hashlib
 import json
-from typing import Optional
-from models.email_models import EmailPayload, EmailAttachment, ProcessingSummary
+from typing import Optional, List
+from models.email_models import EmailPayload, EmailAttachment, ProcessingSummary, TestExecutionResult
 
 logger = logging.getLogger(__name__)
 
@@ -151,7 +151,8 @@ class EmailService:
                 logger.error(f"Error sending error reply: {e}")
     
     async def send_results_reply(self, email_data: EmailPayload, summary: ProcessingSummary, 
-                               raw_results_csv: str, amended_dataset_csv: str):
+                               raw_results_csv: str, amended_dataset_csv: str, 
+                               test_results: List[TestExecutionResult], core_type: str):
         """Send results reply email with attachments"""
         try:
             if not self.gmail_send_endpoint:
@@ -162,8 +163,17 @@ class EmailService:
                 logger.error("HMAC_SECRET not configured")
                 return
             
-            # Generate email body
-            body_html = self._generate_summary_html(summary)
+            # Import LLM service here to avoid circular imports
+            from services.llm_service import LLMService
+            
+            # Generate intelligent summary using LLM
+            llm_service = LLMService()
+            llm_summary = await llm_service.generate_intelligent_summary(
+                summary, test_results, email_data, core_type
+            )
+            
+            # Use LLM-generated summary
+            body_html = llm_summary['html']
             
             # Prepare attachments
             attachments = [

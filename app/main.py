@@ -175,7 +175,9 @@ async def process_incoming_email(request: Request):
             email_data,
             summary,
             raw_results_csv,
-            amended_dataset_csv
+            amended_dataset_csv,
+            test_results,
+            core_type
         )
         
         logger.info(f"Successfully processed email from {email_data.from_email}")
