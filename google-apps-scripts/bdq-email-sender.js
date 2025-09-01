@@ -44,13 +44,26 @@ function doPost(e) {
       }
     }
 
-    thread.reply('', opts);
+    try {
+      thread.reply('', opts);
+    } catch (replyErr) {
+      console.log('reply error', String(replyErr && replyErr.message || replyErr));
+      return ContentService.createTextOutput('reply error: ' + String(replyErr && replyErr.message || replyErr))
+        .setMimeType(ContentService.MimeType.TEXT);
+    }
     return ContentService.createTextOutput('ok').setMimeType(ContentService.MimeType.TEXT);
   } catch (err) {
-    return ContentService.createTextOutput('error').setMimeType(ContentService.MimeType.TEXT);
+    console.log('doPost error', String(err && err.message || err));
+    return ContentService.createTextOutput('error: ' + String(err && err.message || err)).setMimeType(ContentService.MimeType.TEXT);
   }
 }
 
 function doGet() {
-  return ContentService.createTextOutput('ok').setMimeType(ContentService.MimeType.TEXT);
+  // Touch Gmail scope so Test deployments prompts for authorization
+  try {
+    var unread = GmailApp.getInboxUnreadCount();
+    return ContentService.createTextOutput('ok auth, unread=' + unread).setMimeType(ContentService.MimeType.TEXT);
+  } catch (e) {
+    return ContentService.createTextOutput('auth error: ' + String(e && e.message || e)).setMimeType(ContentService.MimeType.TEXT);
+  }
 }
