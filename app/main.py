@@ -7,7 +7,6 @@ from fastapi.responses import JSONResponse
 import uvicorn
 from dotenv import load_dotenv
 import base64
-import asyncio
 
 from services.email_service import EmailService
 from services.bdq_service import BDQService
@@ -173,9 +172,7 @@ async def process_incoming_email(request: Request, background_tasks: BackgroundT
     # Log the raw request for debugging
     body = await request.body()
     logger.info(f"Received request with {len(body)} bytes")
-    # Defer network call to Discord until after response is returned
-    background_tasks.add_task(send_discord_notification, f"Received email request: {len(body)} bytes")
-
+    
     # Try to parse as JSON
     try:
         import json
@@ -202,9 +199,11 @@ async def process_incoming_email(request: Request, background_tasks: BackgroundT
         # Still return 200 to avoid blocking the forwarder
         return JSONResponse(status_code=200, content={"status": "error", "message": "Invalid email payload structure"})
 
-    # Schedule background processing and return immediately
-    # Use the running loop to schedule the async handler without blocking the response
-    asyncio.create_task(_handle_email_processing(email_data))
+    # Schedule ALL processing in background tasks and return immediately
+    background_tasks.add_task(_handle_email_processing, email_data)
+    background_tasks.add_task(send_discord_notification, f"Received email request: {len(body)} bytes")
+    
+    # Return immediately with minimal response
     return JSONResponse(status_code=200, content={"status": "accepted", "message": "Email queued for processing"})
 
 if __name__ == "__main__":
