@@ -124,7 +124,7 @@ CONTEXT:
 - Dataset type: {context['core_type']} core
 - Total records: {context['summary'].total_records:,}
 - Total tests run: {context['summary'].total_tests_run:,}
-- Data quality score: {context['context']['data_quality_score']}%
+- Data quality score: {context['data_quality_score']}%
 - Amendments applied: {context['summary'].amendments_applied}
 
 USER'S ORIGINAL EMAIL:
