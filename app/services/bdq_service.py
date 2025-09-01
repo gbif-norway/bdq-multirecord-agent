@@ -2,6 +2,7 @@ import requests
 import logging
 from typing import List, Dict, Any, Optional, Tuple
 from models.email_models import BDQTest, BDQTestResult, TestExecutionResult, ProcessingSummary
+from utils.logger import send_discord_notification
 
 logger = logging.getLogger(__name__)
 
@@ -64,12 +65,16 @@ class BDQService:
         logger.info(f"Found {len(applicable_tests)} applicable tests out of {len(tests)} total tests")
         return applicable_tests
     
-    async def run_tests_on_dataset(self, df, applicable_tests: List[BDQTest], core_type: str) -> List[TestExecutionResult]:
-        """Run BDQ tests on dataset with unique value deduplication"""
+    async def run_tests_on_dataset(self, df, applicable_tests: List[BDQTest], core_type: str) -> Tuple[List[TestExecutionResult], List[str]]:
+        """Run BDQ tests on dataset with unique value deduplication.
+
+        Returns (all_results, skipped_tests)
+        """
         from services.csv_service import CSVService
         csv_service = CSVService()
         
-        all_results = []
+        all_results: List[TestExecutionResult] = []
+        skipped_tests: List[str] = []
         
         # Column index for mapping actedUpon to actual DataFrame columns
         col_index = {self._normalize_field_name(c): c for c in df.columns}
@@ -97,7 +102,9 @@ class BDQService:
                     continue
                 
                 # Run test for each unique tuple and cache results
-                cached_results = {}
+                cached_results: Dict[Tuple, Dict[str, Any]] = {}
+                success_count = 0
+                failure_count = 0
                 for tuple_values in unique_tuples:
                     # Create parameters dict
                     params = dict(zip(test.actedUpon, tuple_values))
@@ -106,6 +113,24 @@ class BDQService:
                     result = await self._run_single_test(test.id, params)
                     if result:
                         cached_results[tuple_values] = result
+                        success_count += 1
+                    else:
+                        failure_count += 1
+                
+                # If everything failed for this test, consider it skipped and alert once
+                if success_count == 0 and failure_count > 0:
+                    skipped_tests.append(test.id)
+                    msg = (
+                        f"BDQ API error: Skipping test {test.id}. "
+                        f"API returned no results for {len(unique_tuples)} parameter sets."
+                    )
+                    logger.error(msg)
+                    try:
+                        send_discord_notification(f"ERROR: {msg}")
+                    except Exception:
+                        # Don't let Discord failures affect processing
+                        logger.warning("Failed to send Discord alert for skipped test")
+                    continue
                 
                 # Map results back to all rows
                 test_results = csv_service.map_results_to_rows(
@@ -117,10 +142,16 @@ class BDQService:
                 
             except Exception as e:
                 logger.error(f"Error running test {test.id}: {e}")
+                # Mark as skipped on unexpected errors at test-level
+                skipped_tests.append(test.id)
+                try:
+                    send_discord_notification(f"ERROR: BDQ test {test.id} failed with exception: {e}")
+                except Exception:
+                    logger.warning("Failed to send Discord alert for test-level error")
                 continue
         
-        logger.info(f"Completed all tests: {len(all_results)} total results")
-        return all_results
+        logger.info(f"Completed all tests: {len(all_results)} total results, {len(skipped_tests)} tests skipped")
+        return all_results, skipped_tests
 
     def _normalize_field_name(self, name: str) -> str:
         """Normalize field names by lowercasing and stripping common prefixes like 'dwc:'"""
@@ -183,7 +214,7 @@ class BDQService:
         else:
             return "Unknown"
     
-    def generate_summary(self, test_results: List[TestExecutionResult], total_records: int) -> ProcessingSummary:
+    def generate_summary(self, test_results: List[TestExecutionResult], total_records: int, skipped_tests: Optional[List[str]] = None) -> ProcessingSummary:
         """Generate processing summary from test results"""
         try:
             # Count validation failures by field
@@ -218,10 +249,14 @@ class BDQService:
                 total_tests_run=len(test_results),
                 validation_failures=validation_failures,
                 common_issues=common_issues,
-                amendments_applied=amendments_applied
+                amendments_applied=amendments_applied,
+                skipped_tests=list(skipped_tests or [])
             )
             
-            logger.info(f"Generated summary: {total_records} records, {len(test_results)} tests, {len(validation_failures)} failure types")
+            logger.info(
+                f"Generated summary: {total_records} records, {len(test_results)} tests, "
+                f"{len(validation_failures)} failure types, {len(summary.skipped_tests)} tests skipped"
+            )
             return summary
             
         except Exception as e:

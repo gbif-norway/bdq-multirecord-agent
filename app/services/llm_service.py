@@ -112,7 +112,8 @@ class LLMService:
                 'from_email': email_data.from_email
             },
             'core_type': core_type,
-            'total_records': summary.total_records
+            'total_records': summary.total_records,
+            'skipped_tests': list(summary.skipped_tests or [])
         }
     
     def _create_summary_prompt(self, context: Dict[str, Any]) -> str:
@@ -148,6 +149,12 @@ VALIDATION RESULTS:
         if context['amendment_insights']:
             prompt += f"\nAMENDMENTS APPLIED:\n"
             prompt += f"{context['summary'].amendments_applied} records were automatically improved with standardized values.\n"
+        
+        if context['skipped_tests']:
+            prompt += "\nNOTE ON TECHNICAL LIMITATIONS:\n"
+            prompt += "The following tests could not be run due to a temporary technical issue and were skipped for this run. We can try these again later without you needing to resend the data.\n"
+            for t in context['skipped_tests'][:10]:
+                prompt += f"- {t}\n"
         
         prompt += """
 
@@ -209,6 +216,11 @@ We've processed {summary.total_records:,} records and run {summary.total_tests_r
         
         if summary.amendments_applied > 0:
             text += f"\nWe've automatically applied {summary.amendments_applied} improvements to standardize your data.\n"
+        
+        if getattr(summary, 'skipped_tests', None):
+            text += "\nA few tests could not be run due to a temporary technical issue and were skipped this time. We'll retry them in a future run without needing anything from you.\n"
+            for t in summary.skipped_tests[:10]:
+                text += f"- {t}\n"
         
         text += """
 Please review the attached files:

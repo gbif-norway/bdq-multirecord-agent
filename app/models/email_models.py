@@ -63,3 +63,4 @@ class ProcessingSummary(BaseModel):
     validation_failures: Dict[str, int] = Field(default_factory=dict)
     common_issues: List[str] = Field(default_factory=list)
     amendments_applied: int = 0
+    skipped_tests: List[str] = Field(default_factory=list)

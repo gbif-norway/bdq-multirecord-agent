@@ -133,14 +133,14 @@ async def _handle_email_processing(email_data: EmailPayload):
             return
 
         # Run BDQ tests
-        test_results = await bdq_service.run_tests_on_dataset(df, applicable_tests, core_type)
+        test_results, skipped_tests = await bdq_service.run_tests_on_dataset(df, applicable_tests, core_type)
 
         # Generate result files
         raw_results_csv = csv_service.generate_raw_results_csv(test_results, core_type)
         amended_dataset_csv = csv_service.generate_amended_dataset(df, test_results, core_type)
 
-        # Generate summary
-        summary = bdq_service.generate_summary(test_results, len(df))
+        # Generate summary (include skipped tests)
+        summary = bdq_service.generate_summary(test_results, len(df), skipped_tests)
 
         # Send reply email
         await email_service.send_results_reply(

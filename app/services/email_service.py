@@ -247,6 +247,11 @@ Validation Results:
             for issue in summary.common_issues:
                 text += f"- {issue}\n"
         
+        if getattr(summary, 'skipped_tests', None):
+            text += "\nNote: Some tests could not be run due to a temporary technical issue and were skipped in this run. We can try them again later without you needing to resend the data.\n"
+            for t in summary.skipped_tests[:10]:
+                text += f"- {t}\n"
+        
         text += """
 Attachments:
 - bdq_raw_results.csv: Detailed test results for each record
@@ -283,6 +288,14 @@ Note: The amended dataset applies proposed changes from Amendment-type tests.
             html += "<h3>Most common issues</h3><ul>"
             for issue in summary.common_issues:
                 html += f"<li>{issue}</li>"
+            html += "</ul>"
+        
+        if getattr(summary, 'skipped_tests', None):
+            html += "<h3>Note on technical limitations</h3>"
+            html += "<p>Some tests could not be run due to a temporary technical issue and were skipped in this run. We can try them again later without you needing to resend the data.</p>"
+            html += "<ul>"
+            for t in summary.skipped_tests[:10]:
+                html += f"<li>{t}</li>"
             html += "</ul>"
         
         html += """
