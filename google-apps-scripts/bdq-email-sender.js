@@ -20,7 +20,7 @@ function verify_(raw, sigHeader) {
 function doPost(e) {
   try {
     const raw = e.postData?.contents || '';
-    const sig = e.parameter['X-Signature'] || (e.headers && e.headers['X-Signature']) || '';
+    const sig = e.parameter['X-Signature'] || e.parameter['signature'] || (e.headers && e.headers['X-Signature']) || '';
     if (!verify_(raw, sig)) {
       return ContentService.createTextOutput('bad sig').setMimeType(ContentService.MimeType.TEXT).setResponseCode(401);
     }
@@ -49,4 +49,8 @@ function doPost(e) {
   } catch (err) {
     return ContentService.createTextOutput('error').setMimeType(ContentService.MimeType.TEXT).setResponseCode(500);
   }
+}
+
+function doGet() {
+  return ContentService.createTextOutput('ok').setMimeType(ContentService.MimeType.TEXT).setResponseCode(200);
 }

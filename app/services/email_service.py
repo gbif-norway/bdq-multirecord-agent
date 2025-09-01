@@ -129,7 +129,7 @@ class EmailService:
             
             response = requests.post(
                 self.gmail_send_endpoint,
-                params={"X-Signature": signature},  # Apps Script can't reliably read headers
+                params={"X-Signature": signature, "signature": signature},  # Apps Script can't reliably read headers
                 data=body_json,
                 headers={
                     "Content-Type": "application/json",
@@ -192,7 +192,7 @@ class EmailService:
             
             response = requests.post(
                 self.gmail_send_endpoint,
-                params={"X-Signature": signature},  # Apps Script can't reliably read headers
+                params={"X-Signature": signature, "signature": signature},  # Apps Script can't reliably read headers
                 data=body_json,
                 headers={
                     "Content-Type": "application/json",

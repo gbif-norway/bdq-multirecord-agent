@@ -134,9 +134,25 @@ class BDQService:
     async def _run_single_test(self, test_id: str, params: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Run a single BDQ test with given parameters"""
         try:
+            # Sanitize params for JSON (avoid NaN/None and enforce strings)
+            safe_params: Dict[str, Any] = {}
+            for k, v in (params or {}).items():
+                if v is None:
+                    safe_params[k] = ""
+                    continue
+                try:
+                    # Detect NaN/inf for numeric inputs
+                    if isinstance(v, float):
+                        if v != v or v in (float('inf'), float('-inf')):
+                            safe_params[k] = ""
+                            continue
+                    safe_params[k] = str(v)
+                except Exception:
+                    safe_params[k] = ""
+
             payload = {
                 "id": test_id,
-                "params": params
+                "params": safe_params
             }
             
             response = requests.post(
