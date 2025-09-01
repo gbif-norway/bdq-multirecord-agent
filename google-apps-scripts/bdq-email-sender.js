@@ -8,7 +8,20 @@ function verify_(raw, sigHeader) {
   if (!secret) return false;
   const hmac = Utilities.computeHmacSha256Signature(raw, secret);
   const hex = hmac.map(b => ('0' + (b & 0xff).toString(16)).slice(-2)).join('');
-  return Utilities.safeCompare(hex, sigHeader.slice(7));
+  return timingSafeEqual(hex, String(sigHeader.slice(7)));
+}
+
+function timingSafeEqual(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  var lenA = a.length, lenB = b.length;
+  var len = Math.max(lenA, lenB);
+  var result = 0;
+  for (var i = 0; i < len; i++) {
+    var ca = i < lenA ? a.charCodeAt(i) : 0;
+    var cb = i < lenB ? b.charCodeAt(i) : 0;
+    result |= (ca ^ cb);
+  }
+  return result === 0 && lenA === lenB;
 }
 
 // Expected JSON body:
