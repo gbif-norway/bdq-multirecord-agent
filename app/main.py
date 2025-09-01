@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 import uvicorn
 from dotenv import load_dotenv
 import base64
+import asyncio
 
 from services.email_service import EmailService
 from services.bdq_service import BDQService
@@ -172,7 +173,8 @@ async def process_incoming_email(request: Request, background_tasks: BackgroundT
     # Log the raw request for debugging
     body = await request.body()
     logger.info(f"Received request with {len(body)} bytes")
-    send_discord_notification(f"Received email request: {len(body)} bytes")
+    # Defer network call to Discord until after response is returned
+    background_tasks.add_task(send_discord_notification, f"Received email request: {len(body)} bytes")
 
     # Try to parse as JSON
     try:
@@ -182,7 +184,8 @@ async def process_incoming_email(request: Request, background_tasks: BackgroundT
     except Exception as parse_error:
         logger.error(f"Failed to parse JSON: {parse_error}")
         logger.error(f"Raw body (first 500 chars): {body[:500]}")
-        send_discord_notification(f"JSON parse error: {str(parse_error)}")
+        # Defer network call to Discord
+        background_tasks.add_task(send_discord_notification, f"JSON parse error: {str(parse_error)}")
         # Still return 200 to avoid blocking the forwarder, but report error body
         return JSONResponse(status_code=200, content={"status": "error", "message": "Invalid JSON payload"})
 
@@ -194,12 +197,14 @@ async def process_incoming_email(request: Request, background_tasks: BackgroundT
     except Exception as model_error:
         logger.error(f"Failed to create EmailPayload model: {model_error}")
         logger.error(f"Raw data: {raw_data}")
-        send_discord_notification(f"Model validation error: {str(model_error)}")
+        # Defer network call to Discord
+        background_tasks.add_task(send_discord_notification, f"Model validation error: {str(model_error)}")
         # Still return 200 to avoid blocking the forwarder
         return JSONResponse(status_code=200, content={"status": "error", "message": "Invalid email payload structure"})
 
     # Schedule background processing and return immediately
-    background_tasks.add_task(_handle_email_processing, email_data)
+    # Use the running loop to schedule the async handler without blocking the response
+    asyncio.create_task(_handle_email_processing(email_data))
     return JSONResponse(status_code=200, content={"status": "accepted", "message": "Email queued for processing"})
 
 if __name__ == "__main__":
