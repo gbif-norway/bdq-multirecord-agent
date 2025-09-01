@@ -76,6 +76,101 @@ The service now uses Google Gemini to generate intelligent, contextual email sum
 - Maintain a helpful, encouraging tone
 - Fall back to basic summaries if the LLM is unavailable
 
+### LLM Setup
+
+#### 1. Get a Google API Key
+1. Visit [Google AI Studio](https://makersuite.google.com/app/apikey)
+2. Sign in with your Google account
+3. Click "Create API Key"
+4. Copy the generated key
+
+#### 2. Set Environment Variable
+Add to your Google Cloud Run service:
+```bash
+GOOGLE_API_KEY=your_google_api_key_here
+```
+
+**In Google Cloud Console:**
+1. Go to Cloud Run → Select `bdq-multirecord-agent`
+2. Click "EDIT & DEPLOY NEW REVISION"
+3. In "Variables & Secrets" section, add:
+   - **Variable name**: `GOOGLE_API_KEY`
+   - **Value**: Your Google API key
+
+#### 3. API Quotas and Limits
+- **Free tier**: 15 requests per minute, 1500 requests per day
+- **Paid tier**: $0.50 per 1M characters input, $1.50 per 1M characters output
+- **Rate limits**: 60 requests per minute for paid accounts
+
+For typical usage (3 emails per week), the free tier should be sufficient.
+
+### How LLM Summaries Work
+
+1. **Email received** → CSV processed → BDQ tests run
+2. **LLM Context Preparation** → Analyzes test results, user email, dataset info
+3. **Gemini API Call** → Generates intelligent summary
+4. **Email Reply** → Sends LLM-generated summary + attachments
+
+The LLM receives comprehensive context including:
+- Dataset type (Occurrence/Taxon core)
+- Test results with validation failures and amendments
+- User's original email content
+- Calculated data quality score
+- Field-specific issue categorization
+
+### Fallback Behavior
+
+If the LLM service is unavailable:
+- Automatically falls back to basic summary generation
+- No interruption to email processing
+- Logs warnings for monitoring
+- Service continues to work normally
+
+### Monitoring and Debugging
+
+#### Logs to Watch
+```bash
+# Check Cloud Run logs
+gcloud logs read --service=bdq-multirecord-agent --limit=50
+
+# Look for LLM-related messages:
+# - "LLM service disabled" → API key missing
+# - "Error generating LLM summary" → API issues
+# - "Falling back to basic summary" → LLM unavailable
+```
+
+#### Health Check
+The `/health` endpoint shows service status and environment variable configuration.
+
+### Troubleshooting
+
+**Common Issues:**
+1. **"LLM service disabled"** → Check `GOOGLE_API_KEY` environment variable
+2. **"Error generating LLM summary"** → Check API quotas, network connectivity, API key permissions
+3. **Fallback to basic summary** → LLM service unavailable, check logs for specific errors
+
+**Support:**
+- **Google AI Studio**: [makersuite.google.com](https://makersuite.google.com)
+- **Cloud Run Logs**: Use `gcloud logs` command
+- **Discord**: Check webhook notifications
+
+### Security Considerations
+
+1. **API Key Security**
+   - Never commit API keys to version control
+   - Use environment variables in Cloud Run
+   - Rotate keys periodically
+
+2. **Data Privacy**
+   - LLM prompts include user email content
+   - No data is stored by Google beyond the API call
+   - Consider data sensitivity in prompts
+
+3. **Rate Limiting**
+   - Monitor API usage
+   - Implement backoff for failed requests
+   - Graceful degradation to basic summaries
+
 ## Error Handling
 
 - Invalid CSV format
