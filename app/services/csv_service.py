@@ -21,7 +21,7 @@ class CSVService:
             delimiter = self._detect_delimiter(sample)
             
             # Parse CSV
-            df = pd.read_csv(io.StringIO(csv_data), delimiter=delimiter)
+            df = pd.read_csv(io.StringIO(csv_data), delimiter=delimiter, dtype=string)
             
             # Clean column names (remove quotes, whitespace)
             df.columns = df.columns.str.strip().str.strip('"\'')
