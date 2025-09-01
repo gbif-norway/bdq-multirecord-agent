@@ -95,7 +95,8 @@ async def health_check():
         "environment": {
             "gmail_send_configured": bool(os.getenv("GMAIL_SEND")),
             "hmac_secret_configured": bool(os.getenv("HMAC_SECRET")),
-            "discord_webhook_configured": bool(os.getenv("DISCORD_WEBHOOK"))
+            "discord_webhook_configured": bool(os.getenv("DISCORD_WEBHOOK")),
+            "google_api_key_configured": bool(os.getenv("GOOGLE_API_KEY"))
         }
     }
 
