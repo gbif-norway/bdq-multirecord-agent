@@ -159,6 +159,10 @@ public class BDQServer {
                 tmr.getTestId(), tmr.getLibrary(), tmr.getJavaClass(), tmr.getJavaMethod(),
                 tmr.getActedUpon(), tmr.getConsulted(), tmr.getParameters(), tmr.getTestType()
             );
+            // Set default parameters if provided
+            if (tmr.getDefaultParameters() != null) {
+                mapping.setDefaultParameters(tmr.getDefaultParameters());
+            }
             mappings.put(tmr.getTestId(), mapping);
         }
         
@@ -223,6 +227,7 @@ public class BDQServer {
             private List<String> consulted;
             private List<String> parameters;
             private String testType;
+            private Map<String, String> defaultParameters;
             
             // Getters and setters
             public String getTestId() { return testId; }
@@ -248,6 +253,9 @@ public class BDQServer {
             
             public String getTestType() { return testType; }
             public void setTestType(String testType) { this.testType = testType; }
+            
+            public Map<String, String> getDefaultParameters() { return defaultParameters; }
+            public void setDefaultParameters(Map<String, String> defaultParameters) { this.defaultParameters = defaultParameters; }
         }
     }
 }

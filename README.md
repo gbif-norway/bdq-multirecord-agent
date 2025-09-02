@@ -82,7 +82,7 @@ This service now includes the FilteredPush BDQ libraries directly, running in a 
 - **geo_ref_qc**: Georeference quality control (from rukayaj/geo_ref_qc fork)
 - **event_date_qc**: Event date quality control (v3.1.1-SNAPSHOT)
 - **sci_name_qc**: Scientific name quality control (v1.2.1-SNAPSHOT)
-- **rec_occur_qc**: Record/occurrence metadata quality control (coming soon - dependency issues being resolved)
+- **rec_occur_qc**: Record/occurrence metadata quality control (v1.1.1-SNAPSHOT)
 
 ## CSV Requirements
 

@@ -17,6 +17,7 @@ class TG2TestMapping:
     consulted: List[str]
     parameters: List[str]
     test_type: str
+    default_parameters: Dict[str, str]
     
 
 class TG2Parser:
@@ -84,6 +85,10 @@ class TG2Parser:
             # Determine test type from ID prefix
             test_type = self._determine_test_type(test_id)
             
+            # Parse default parameters
+            parameters_field = row.get('Parameters', '').strip()
+            default_parameters = self.parse_parameters_from_field(parameters_field)
+            
             return TG2TestMapping(
                 test_id=test_id,
                 library=library,
@@ -92,7 +97,8 @@ class TG2Parser:
                 acted_upon=acted_upon,
                 consulted=consulted,
                 parameters=parameters,
-                test_type=test_type
+                test_type=test_type,
+                default_parameters=default_parameters
             )
             
         except Exception as e:
@@ -107,6 +113,40 @@ class TG2Parser:
         # Split on comma, strip whitespace, filter empty
         fields = [f.strip() for f in field_value.split(',') if f.strip()]
         return fields
+    
+    def parse_parameters_from_field(self, field_value: str) -> Dict[str, str]:
+        """Parse parameters from TG2 Parameters field into a dict of default values"""
+        if not field_value or field_value.strip() == '':
+            return {}
+            
+        params = {}
+        # Split on comma and parse each parameter
+        for param_str in field_value.split(','):
+            param_str = param_str.strip()
+            if not param_str:
+                continue
+                
+            # Look for pattern: bdq:parameterName default = "value"
+            if 'default' in param_str and '=' in param_str:
+                # Extract parameter name (before 'default')
+                param_name = param_str.split('default')[0].strip()
+                # Extract default value (after '=' and inside quotes)
+                value_part = param_str.split('=', 1)[1].strip()
+                # Remove quotes and extra text
+                if '"' in value_part:
+                    value = value_part.split('"')[1]
+                    params[param_name] = value
+                elif "'" in value_part:
+                    value = value_part.split("'")[1] 
+                    params[param_name] = value
+                else:
+                    # If no quotes, just use the parameter name with empty value
+                    params[param_name] = ""
+            else:
+                # If no default specified, just add the parameter name with empty value
+                params[param_str] = ""
+        
+        return params
     
     def _parse_source_link(self, source_link: str) -> Tuple[Optional[str], Optional[str]]:
         """Extract library and Java class from source code URL"""
@@ -147,31 +187,58 @@ class TG2Parser:
         }
         
         package = class_packages.get(library, 'org.filteredpush.qc.unknown')
+        
+        # Use the *Defaults classes which have default parameter implementations
+        # as used by the official bdqtestrunner
+        if not class_name.endswith('Defaults'):
+            if class_name.endswith('DQ'):
+                class_name = class_name + 'Defaults'
+        
         return f"{package}.{class_name}"
     
     def _derive_method_name(self, test_id: str) -> str:
-        """Derive Java method name from test ID using convention"""
+        """Derive Java method name from test ID using actual BDQ convention"""
         # Check for manual override first
         if test_id in self.METHOD_OVERRIDES:
             return self.METHOD_OVERRIDES[test_id]
             
-        # Extract type prefix and remainder
-        parts = test_id.split('_', 1)
-        if len(parts) != 2:
+        # Based on actual method names found in *Defaults classes:
+        # VALIDATION_COORDINATES_COUNTRYCODE_CONSISTENT -> validationCoordinatesCountrycodeConsistent
+        # VALIDATION_COUNTRY_FOUND -> validationCountryFound
+        # VALIDATION_EVENTDATE_INRANGE -> validationEventdateInrange
+        
+        parts = test_id.split('_')
+        if len(parts) < 2:
             return test_id.lower()
+        
+        # First part is the type (validation, amendment, etc.) - lowercase
+        method_type = parts[0].lower()
+        
+        # Remaining parts: handle compound words and capitalize appropriately
+        test_parts = parts[1:]
+        result_parts = []
+        
+        for part in test_parts:
+            part_lower = part.lower()
             
-        type_prefix, remainder = parts
+            # Handle known compound words that should be joined
+            if part_lower in ['country', 'code'] and len(result_parts) > 0 and result_parts[-1].lower().endswith('country'):
+                # countrycode -> Countrycode (as one word)
+                result_parts[-1] = result_parts[-1] + part_lower
+            elif part_lower in ['event', 'date'] and len(result_parts) > 0 and result_parts[-1].lower().endswith('event'):
+                # eventdate -> Eventdate (as one word) 
+                result_parts[-1] = result_parts[-1] + part_lower
+            elif part_lower in ['occurrence', 'id'] and len(result_parts) > 0 and result_parts[-1].lower().endswith('occurrence'):
+                # occurrenceid -> Occurrenceid (as one word)
+                result_parts[-1] = result_parts[-1] + part_lower
+            elif part_lower in ['state', 'province'] and len(result_parts) > 0 and result_parts[-1].lower().endswith('state'):
+                # stateprovince -> Stateprovince (as one word)
+                result_parts[-1] = result_parts[-1] + part_lower
+            else:
+                # Regular part - capitalize first letter
+                result_parts.append(part_lower.capitalize())
         
-        # Convert type prefix to lowercase
-        method_prefix = type_prefix.lower()
-        
-        # Convert remainder to camelCase
-        remainder_parts = remainder.split('_')
-        camel_case_parts = [remainder_parts[0].lower()]
-        camel_case_parts.extend(part.capitalize() for part in remainder_parts[1:])
-        camel_case_suffix = ''.join(camel_case_parts)
-        
-        return f"{method_prefix}{camel_case_suffix}"
+        return f"{method_type}{''.join(result_parts)}"
     
     def _determine_test_type(self, test_id: str) -> str:
         """Determine test type from test ID prefix"""

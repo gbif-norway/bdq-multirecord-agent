@@ -7,8 +7,8 @@ COPY java/pom.xml java/pom.xml
 COPY java/geo_ref_qc/ java/geo_ref_qc/
 COPY java/event_date_qc/ java/event_date_qc/
 COPY java/sci_name_qc/ java/sci_name_qc/
-# TODO: Enable rec_occur_qc once dependency issues are resolved
-# COPY java/rec_occur_qc/ java/rec_occur_qc/
+COPY java/rec_occur_qc/ java/rec_occur_qc/
+COPY java/bdqtestrunner/ java/bdqtestrunner/
 COPY java/bdq-jvm-server/ java/bdq-jvm-server/
 
 # Build Java project

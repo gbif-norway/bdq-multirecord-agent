@@ -11,7 +11,7 @@ from pathlib import Path
 
 from services.tg2_parser import TG2Parser, TG2TestMapping
 from models.email_models import BDQTest, BDQTestResult, TestExecutionResult, ProcessingSummary
-from utils.logger import send_discord_notification
+from utils.logger import send_discord_notification, send_bdq_error_notification, send_bdq_progress_notification
 
 logger = logging.getLogger(__name__)
 
@@ -132,7 +132,8 @@ class BDQJVMClient:
                     "actedUpon": mapping.acted_upon,
                     "consulted": mapping.consulted,
                     "parameters": mapping.parameters,
-                    "testType": mapping.test_type
+                    "testType": mapping.test_type,
+                    "defaultParameters": getattr(mapping, 'default_parameters', {})
                 })
             
             warmup_request = {
@@ -207,7 +208,7 @@ class BDQJVMClient:
                 methodName=mapping.java_method,
                 actedUpon=mapping.acted_upon.copy(),
                 consulted=mapping.consulted.copy(),
-                parameters=mapping.parameters.copy()
+                parameters=list(getattr(mapping, 'default_parameters', {}).keys())
             )
             tests.append(test)
         
@@ -311,11 +312,15 @@ class BDQJVMClient:
                 # Convert tuples to string lists for JSON serialization
                 tuple_lists = [[str(val) if val is not None else "" for val in tup] for tup in unique_tuples]
                 
+                # Get default parameters from the mapping
+                mapping = self.test_mappings.get(test.id)
+                test_parameters = mapping.default_parameters.copy() if mapping and hasattr(mapping, 'default_parameters') else {}
+                
                 test_requests.append({
                     "testId": test.id,
                     "actedUpon": test.actedUpon,
                     "consulted": test.consulted or [],
-                    "parameters": {},  # TODO: Add parameter support
+                    "parameters": test_parameters,
                     "tuples": tuple_lists
                 })
                 
@@ -348,6 +353,9 @@ class BDQJVMClient:
                     send_discord_notification(f"Executing BDQ tests: {', '.join(test_names)}")
                 except Exception:
                     pass
+                
+                # Track progress
+                start_time = time.time()
                 
                 # Execute batch
                 jvm_response = self._send_request(jvm_request)
@@ -409,11 +417,50 @@ class BDQJVMClient:
                         logger.warning(f"No results returned for test {test_id}")
                         skipped_tests.append(test_id)
                 
-                # Check for errors
+                # Check for errors and send structured notifications
                 for error in jvm_response.get("errors", []):
-                    logger.error(f"JVM error for test {error['testId']}: {error['error']}")
-                    if error["testId"] not in skipped_tests:
-                        skipped_tests.append(error["testId"])
+                    error_test_id = error["testId"]
+                    error_message = error["error"]
+                    logger.error(f"JVM error for test {error_test_id}: {error_message}")
+                    
+                    # Send structured error notification
+                    try:
+                        # Find the test mapping for context
+                        mapping = self.test_mappings.get(error_test_id)
+                        if mapping:
+                            send_bdq_error_notification(
+                                request_id=request_id,
+                                test_id=error_test_id,
+                                java_class=mapping.java_class,
+                                java_method=mapping.java_method,
+                                tuple_sample={},  # No specific tuple for general test errors
+                                parameters=getattr(mapping, 'default_parameters', {}),
+                                exception_info={
+                                    "type": "TestExecutionError",
+                                    "message": error_message,
+                                    "stacktrace": ""
+                                }
+                            )
+                    except Exception as e:
+                        logger.warning(f"Failed to send structured error notification: {e}")
+                    
+                    if error_test_id not in skipped_tests:
+                        skipped_tests.append(error_test_id)
+                
+                # Send progress notification for completed batch
+                elapsed_time = int(time.time() - start_time)
+                try:
+                    total_tuples_in_batch = sum(len(req["tuples"]) for req in batch)
+                    send_bdq_progress_notification(
+                        test_id=f"BATCH_{i//batch_size + 1}",
+                        processed=total_tuples_in_batch,
+                        total=total_tuples_in_batch,
+                        success=len([req for req in batch if req["testId"] in jvm_response.get("results", {})]),
+                        fail=len(jvm_response.get("errors", [])),
+                        elapsed_sec=elapsed_time
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to send progress notification: {e}")
                 
             except Exception as e:
                 logger.error(f"Error executing test batch: {e}")

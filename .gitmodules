@@ -10,3 +10,6 @@
 [submodule "java/rec_occur_qc"]
 	path = java/rec_occur_qc
 	url = https://github.com/FilteredPush/rec_occur_qc.git
+[submodule "java/bdqtestrunner"]
+	path = java/bdqtestrunner
+	url = https://github.com/FilteredPush/bdqtestrunner.git

@@ -20,8 +20,8 @@
         <module>geo_ref_qc</module>
         <module>event_date_qc</module>
         <module>sci_name_qc</module>
-        <!-- TODO: Enable rec_occur_qc once dependency issues are resolved -->
-        <!-- <module>rec_occur_qc</module> -->
+        <module>rec_occur_qc</module>
+        <module>bdqtestrunner</module>
         <module>bdq-jvm-server</module>
     </modules>
     
@@ -77,14 +77,11 @@
                 <artifactId>sci_name_qc</artifactId>
                 <version>1.2.1-SNAPSHOT</version>
             </dependency>
-            <!-- TODO: Enable rec_occur_qc once dependency issues are resolved -->
-            <!--
             <dependency>
                 <groupId>org.filteredpush</groupId>
                 <artifactId>rec_occur_qc</artifactId>
                 <version>1.1.1-SNAPSHOT</version>
             </dependency>
-            -->
             
             <!-- JSON Processing -->
             <dependency>

@@ -24,67 +24,27 @@ Don't deploy or test locally, CI/CD is set up on google cloud run so each commit
       - Occurrence core if header contains `occurrenceID`.
       - Taxon core if header contains `taxonID`.
       If there is no occurrenceID or taxonID header, reply to the sender notifying them that a CSV with a known ID header is required and stop processing.
-   c) Discover tests from `GET {BDQ_AP}/api/v1/tests` (just hardcode this for the moment), make a list of tests to be applied
+   c) Discover tests from local TG2_tests.csv parsing, make a list of tests to be applied
       - For each test, if all `actedUpon` columns exist in the CSV header, include it.
       - Split into Validations and Amendments by the `type` field
-      - e.g. of 2 results:
+      - Tests are loaded from the local TG2_tests.csv file and parsed into:
       ```
          {
          id: "AMENDMENT_BASISOFRECORD_STANDARDIZED",
-         guid: "07c28ace-561a-476e-a9b9-3d5ad6e35933",
          type: "Amendment",
-         className: "org.filteredpush.qc.metadata.DwCMetadataDQDefaults",
-         methodName: "amendmentBasisofrecordStandardized",
-         actedUpon: [
-         "dwc:basisOfRecord"
-         ],
-         consulted: [ ],
-         parameters: [ ]
-         },
-         {
-         id: "AMENDMENT_COORDINATES_CONVERTED",
-         guid: "620749b9-7d9c-4890-97d2-be3d1cde6da8",
-         type: "Amendment",
-         className: "org.filteredpush.qc.georeference.DwCGeoRefDQ",
-         methodName: "amendmentCoordinatesConverted",
-         actedUpon: [
-         "dwc:decimalLatitude",
-         "dwc:decimalLongitude",
-         "dwc:coordinateUncertaintyInMeters",
-         "dwc:geodeticDatum",
-         "dwc:coordinatePrecision"
-         ],
-         consulted: [ ],
-         parameters: [ ]
-         }, ...
+         javaClass: "org.filteredpush.qc.metadata.DwCMetadataDQDefaults",
+         javaMethod: "amendmentBasisofrecordStandardized",
+         actedUpon: ["dwc:basisOfRecord"],
+         consulted: [],
+         parameters: [],
+         defaultParameters: {"bdq:sourceAuthority": "Darwin Core"}
+         }
       ```
    d) Unique-value dedup per test:
       - For each test, create a set of **unique tuples** = values of its `actedUpon` columns across **all rows**.
-      - For each unique tuple, **call `https://bdq-api-638241344017.europe-west1.run.app/api/v1/tests/run`** once. Cache the result by `(test_id, tuple)`.
-         - e.g. result: 
-         ```
-         rukayasj@Mac:~/Projects/bdq-api% curl -s -X POST "https://bdq-api-638241344017.europe-west1.run.app/api/v1/tests/run" \
-         -H "Content-Type: application/json" \
-         -d '{
-            "id": "VALIDATION_COORDINATESCOUNTRYCODE_CONSISTENT",
-            "params": {
-               "dwc:decimalLatitude": "51.5074",
-               "dwc:decimalLongitude": "-0.1278",
-               "dwc:countryCode": "GB"
-            }
-         }' | jq .
-         {
-         "status": "RUN_HAS_RESULT",
-         "result": "COMPLIANT",
-         "comment": "Provided coordinate lies within the bounds of the country specified by the country code."
-         }
-         <,\n      "dwc:countryCode": "US"\n    }\n  }' | jq .
-         {
-         "status": "RUN_HAS_RESULT",
-         "result": "COMPLIANT",
-         "comment": "Provided coordinate lies within the bounds of the country specified by the country code."
-         }
-         ```
+      - For each unique tuple, **execute the BDQ test locally** using our resident JVM server. Cache the result by `(test_id, tuple)`.
+         - Tests are executed via Unix domain socket communication with the local Java BDQ server
+         - Results include the same status values as the external API:
          Possible Status values:
          - `RUN_HAS_RESULT` - Completed run with a result
          - `AMENDED` - Proposed standardized/corrected value
@@ -145,8 +105,9 @@ Don't deploy or test locally, CI/CD is set up on google cloud run so each commit
 ## Stack
 
 - **Apps Script**: Polls Gmail, forwards new mail to Cloud Run. Separate Apps script deployed as a Web app sends email replies.
-- **Google Cloud Run**: (this app) Stateless HTTP service to run BDQ tests and do processing.
-- **BDQ API**: Existing REST API wrapper for FilteredPush BDQ libraries.
+- **Google Cloud Run**: (this app) Stateless HTTP service with resident JVM server for inline BDQ test execution.
+- **Inline BDQ Libraries**: FilteredPush BDQ libraries (geo_ref_qc, event_date_qc, sci_name_qc, rec_occur_qc) run locally in the same container.
+- **bdqtestrunner**: Official FilteredPush testing framework integrated for standards compliance.
 
 ## Apps Script Notes
 

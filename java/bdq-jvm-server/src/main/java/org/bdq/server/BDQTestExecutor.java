@@ -5,6 +5,8 @@ import org.bdq.server.model.BDQResponse.TupleResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.lang.reflect.Method;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -65,9 +67,10 @@ public class BDQTestExecutor {
                     }
                     results.add(result);
                 } catch (Exception e) {
-                    logger.error("Error executing test {} for tuple {}: {}", testId, i, e.getMessage());
+                    logger.error("Error executing test {} for tuple {}: {}", testId, i, e.getMessage(), e);
+                    String stackTrace = getStackTrace(e);
                     results.add(new TupleResult(i, "INTERNAL_PREREQUISITES_NOT_MET", null, 
-                                              "Execution error: " + e.getMessage()));
+                                              "Execution error: " + e.getMessage() + " (see logs for stack trace)"));
                 }
             }
             
@@ -84,21 +87,36 @@ public class BDQTestExecutor {
                                          Map<String, String> parameters, List<String> tuple, int tupleIndex) 
                                          throws Exception {
         
-        // Build parameter map combining actedUpon values with test parameters
-        Map<String, String> allParams = new HashMap<>();
+        // Build arguments for method invocation based on method signature
+        Object[] args = new Object[method.getParameterCount()];
+        Class<?>[] paramTypes = method.getParameterTypes();
         
-        // Add actedUpon values
-        for (int i = 0; i < actedUpon.size() && i < tuple.size(); i++) {
-            allParams.put(actedUpon.get(i), tuple.get(i));
+        int argIndex = 0;
+        
+        // First, add actedUpon values (usually String parameters with @ActedUpon annotations)
+        for (int i = 0; i < actedUpon.size() && i < tuple.size() && argIndex < args.length; i++) {
+            if (paramTypes[argIndex] == String.class) {
+                args[argIndex] = tuple.get(i);
+                argIndex++;
+            }
         }
         
-        // Add test-specific parameters
-        if (parameters != null) {
-            allParams.putAll(parameters);
+        // Then add consulted values if any
+        for (int i = 0; i < consulted.size() && argIndex < args.length; i++) {
+            if (paramTypes[argIndex] == String.class) {
+                args[argIndex] = ""; // Default empty value for consulted parameters
+                argIndex++;
+            }
         }
         
-        // Execute the method - most BDQ methods take a Map<String, String> parameter
-        Object result = method.invoke(instance, allParams);
+        // Finally, add parameters object if method expects it (some methods take parameters)
+        if (argIndex < args.length && Map.class.isAssignableFrom(paramTypes[argIndex])) {
+            args[argIndex] = parameters != null ? parameters : new HashMap<String, String>();
+            argIndex++;
+        }
+        
+        // Execute the method with individual parameters
+        Object result = method.invoke(instance, args);
         
         // Parse the result - BDQ methods typically return DQResponse objects
         return parseMethodResult(result, tupleIndex);
@@ -172,15 +190,29 @@ public class BDQTestExecutor {
             try {
                 Class<?> clazz = Class.forName(mapping.getJavaClass());
                 
-                // Look for method that takes Map<String, String> parameter
+                // Look for method with the matching name and appropriate parameters
                 Method[] methods = clazz.getMethods();
+                Method bestMatch = null;
+                
                 for (Method method : methods) {
-                    if (method.getName().equals(mapping.getJavaMethod()) &&
-                        method.getParameterCount() == 1 &&
-                        Map.class.isAssignableFrom(method.getParameterTypes()[0])) {
-                        logger.info("Resolved method {}", key);
-                        return method;
+                    if (method.getName().equals(mapping.getJavaMethod())) {
+                        // Prefer methods that match the expected parameter count
+                        int expectedParams = mapping.getActedUpon().size() + mapping.getConsulted().size();
+                        
+                        if (method.getParameterCount() == expectedParams ||
+                            method.getParameterCount() == expectedParams + 1) { // +1 for parameters
+                            bestMatch = method;
+                            break;
+                        } else if (bestMatch == null) {
+                            // Keep first match as fallback
+                            bestMatch = method;
+                        }
                     }
+                }
+                
+                if (bestMatch != null) {
+                    logger.info("Resolved method {} with {} parameters", key, bestMatch.getParameterCount());
+                    return bestMatch;
                 }
                 
                 throw new NoSuchMethodException("Method not found: " + key);
@@ -248,5 +280,15 @@ public class BDQTestExecutor {
         synchronized (cache) {
             cache.put(tuple, result);
         }
+    }
+    
+    /**
+     * Get stack trace as string for error reporting
+     */
+    private String getStackTrace(Exception e) {
+        StringWriter sw = new StringWriter();
+        PrintWriter pw = new PrintWriter(sw);
+        e.printStackTrace(pw);
+        return sw.toString();
     }
 }

@@ -1,6 +1,8 @@
 package org.bdq.server.model;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class TestMapping {
     private String testId;
@@ -11,6 +13,7 @@ public class TestMapping {
     private List<String> consulted;
     private List<String> parameters;
     private String testType;
+    private Map<String, String> defaultParameters;
     
     public TestMapping() {}
     
@@ -24,6 +27,7 @@ public class TestMapping {
         this.consulted = consulted;
         this.parameters = parameters;
         this.testType = testType;
+        this.defaultParameters = new HashMap<>();
     }
     
     public String getTestId() { return testId; }
@@ -49,4 +53,7 @@ public class TestMapping {
     
     public String getTestType() { return testType; }
     public void setTestType(String testType) { this.testType = testType; }
+    
+    public Map<String, String> getDefaultParameters() { return defaultParameters; }
+    public void setDefaultParameters(Map<String, String> defaultParameters) { this.defaultParameters = defaultParameters; }
 }
