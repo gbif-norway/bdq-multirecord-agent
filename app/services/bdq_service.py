@@ -1,5 +1,7 @@
 import requests
 import logging
+import asyncio
+import time
 from typing import List, Dict, Any, Optional, Tuple
 from models.email_models import BDQTest, BDQTestResult, TestExecutionResult, ProcessingSummary
 from utils.logger import send_discord_notification
@@ -105,6 +107,9 @@ class BDQService:
                 cached_results: Dict[Tuple, Dict[str, Any]] = {}
                 success_count = 0
                 failure_count = 0
+                processed_count = 0
+                total_tuples = len(unique_tuples)
+                test_start_time = time.time()
                 for tuple_values in unique_tuples:
                     # Create parameters dict
                     params = dict(zip(test.actedUpon, tuple_values))
@@ -116,6 +121,21 @@ class BDQService:
                         success_count += 1
                     else:
                         failure_count += 1
+                    processed_count += 1
+
+                    # Periodic progress logging every 200 tuples and at ~1 min intervals
+                    if processed_count % 200 == 0 or (time.time() - test_start_time) > 60:
+                        logger.info(
+                            f"Progress for {test.id}: {processed_count}/{total_tuples} "
+                            f"(success={success_count}, failure={failure_count})"
+                        )
+                        try:
+                            send_discord_notification(
+                                f"Progress {test.id}: {processed_count}/{total_tuples} processed"
+                            )
+                        except Exception:
+                            logger.warning("Failed to send Discord progress update")
+                        test_start_time = time.time()
                 
                 # If everything failed for this test, consider it skipped and alert once
                 if success_count == 0 and failure_count > 0:
@@ -163,7 +183,7 @@ class BDQService:
         return s.lower()
     
     async def _run_single_test(self, test_id: str, params: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Run a single BDQ test with given parameters with retries/backoff"""
+        """Run a single BDQ test with given parameters with retries/backoff (non-blocking)."""
         # Sanitize params for JSON (avoid NaN/None and enforce strings)
         try:
             safe_params: Dict[str, Any] = {}
@@ -191,12 +211,15 @@ class BDQService:
         last_error: Optional[Exception] = None
         for attempt in range(1, max_attempts + 1):
             try:
-                response = requests.post(
-                    self.run_test_endpoint,
-                    json=payload,
-                    headers={"Content-Type": "application/json"},
-                    timeout=30
-                )
+                loop = asyncio.get_running_loop()
+                def _do_request():
+                    return requests.post(
+                        self.run_test_endpoint,
+                        json=payload,
+                        headers={"Content-Type": "application/json"},
+                        timeout=30
+                    )
+                response = await loop.run_in_executor(None, _do_request)
                 response.raise_for_status()
                 result = response.json()
                 result['test_type'] = self._get_test_type_from_id(test_id)
@@ -206,8 +229,7 @@ class BDQService:
                 logger.warning(f"Attempt {attempt}/{max_attempts} failed for {test_id}: {e}")
                 if attempt < max_attempts:
                     try:
-                        import time
-                        time.sleep(backoff_seconds)
+                        await asyncio.sleep(backoff_seconds)
                     except Exception:
                         pass
                     backoff_seconds *= 2
