@@ -102,7 +102,7 @@ class CSVService:
             amendments_applied = 0
             for record_id, results in results_by_record.items():
                 for result in results:
-                    if result.amendment and result.status == "AMENDED":
+                    if result.amendment and result.status in ("AMENDED", "FILLED_IN"):
                         # Apply the amendment
                         for field, new_value in result.amendment.items():
                             if field in amended_df.columns:

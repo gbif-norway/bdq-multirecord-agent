@@ -8,9 +8,14 @@ This service receives dataset submissions via email, processes CSV files, runs B
 
 ## Architecture
 
+All local development should be done in docker containers.
+
 - **Google Apps Script**: Polls Gmail inbox and forwards emails to this service, as well as providing an "endpoint" for email replies. Code for this is in this repo, in google-apps-scripts/
 - **Google Cloud Run**: This FastAPI service, which processes datasets and runs BDQ tests for the entire dataset
-- **BDQ API**: External REST API for running single BDQ tests
+- **Inline BDQ Libraries**: Local JVM server with resident FilteredPush BDQ libraries, eliminating external API dependencies
+  - Java server runs BDQ tests locally using Unix domain socket communication
+  - Test mappings driven by TG2_tests.csv for comprehensive BDQ test coverage
+  - Significantly faster than HTTP-based external API calls
 
 ## Setup
 
@@ -47,13 +52,37 @@ PORT=8080
 1. **Email Ingestion**: Apps Script forwards emails to `/email/incoming`
 2. **CSV Processing**: Extract and parse CSV attachment
 3. **Core Detection**: Identify occurrence or taxon core type
-4. **Test Discovery**: Fetch applicable BDQ tests from API
-5. **Test Execution**: Run tests with unique value deduplication
-6. **Result Generation**: Create raw results and amended dataset CSVs
-7. **LLM Summary**: Generate intelligent, contextual email summaries using Google Gemini
-8. **Email Reply**: Send results back to sender with attachments (using HMAC authentication)
+4. **Test Discovery**: Load applicable BDQ tests from TG2_tests.csv mapping
+5. **JVM Server Startup**: Launch resident Java server with FilteredPush BDQ libraries
+6. **Test Execution**: Run tests locally via Unix socket with batched processing and unique value deduplication
+7. **Result Generation**: Create raw results and amended dataset CSVs
+8. **LLM Summary**: Generate intelligent, contextual email summaries using Google Gemini
+9. **Email Reply**: Send results back to sender with attachments (using HMAC authentication)
 
 More information about each of these is in the buildspec.md.
+
+## Inline BDQ Implementation
+
+This service now includes the FilteredPush BDQ libraries directly, running in a local JVM process instead of calling external APIs:
+
+### Architecture
+- **Local JVM Server**: Resident Java process with BDQ libraries loaded
+- **Unix Socket Communication**: JSON-RPC over Unix domain socket for high performance
+- **Test Mapping**: TG2_tests.csv drives the mapping from test IDs to Java class/method implementations
+- **Batched Processing**: Multiple tests processed together for efficiency
+- **Caching**: Per-test, per-unique-tuple caching to avoid redundant computations
+
+### Benefits
+- **Performance**: Eliminates HTTP overhead, significantly faster test execution
+- **Reliability**: No external API dependencies, works offline
+- **Consistency**: Uses official FilteredPush implementations directly
+- **Scalability**: Local processing scales with container resources
+
+### Supported Libraries
+- **geo_ref_qc**: Georeference quality control (from rukayaj/geo_ref_qc fork)
+- **event_date_qc**: Event date quality control (v3.1.1-SNAPSHOT)
+- **sci_name_qc**: Scientific name quality control (v1.2.1-SNAPSHOT)
+- **rec_occur_qc**: Record/occurrence metadata quality control (v1.1.1-SNAPSHOT)
 
 ## CSV Requirements
 
