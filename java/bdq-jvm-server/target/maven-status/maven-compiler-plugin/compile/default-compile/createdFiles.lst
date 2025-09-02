@@ -1,0 +1,12 @@
+org/bdq/server/BDQServer$WarmupRequest$TestMappingRequest.class
+org/bdq/server/BDQTestExecutor.class
+org/bdq/server/model/BDQResponse$TestError.class
+org/bdq/server/model/TestMapping.class
+org/bdq/server/Main.class
+org/bdq/server/BDQServer.class
+org/bdq/server/model/BDQRequest.class
+org/bdq/server/model/BDQResponse$TestResults.class
+org/bdq/server/BDQServer$WarmupRequest.class
+org/bdq/server/model/BDQResponse$TupleResult.class
+org/bdq/server/model/BDQRequest$TestRequest.class
+org/bdq/server/model/BDQResponse.class

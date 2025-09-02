@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    
+    <groupId>org.bdq</groupId>
+    <artifactId>bdq-parent</artifactId>
+    <version>1.0.0</version>
+    <packaging>pom</packaging>
+    
+    <properties>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+    
+    <modules>
+        <module>geo_ref_qc</module>
+        <module>event_date_qc</module>
+        <module>sci_name_qc</module>
+        <!-- TODO: Enable rec_occur_qc once dependency issues are resolved -->
+        <!-- <module>rec_occur_qc</module> -->
+        <module>bdq-jvm-server</module>
+    </modules>
+    
+    <repositories>
+        <repository>
+            <id>gbif-all</id>
+            <url>https://repository.gbif.org/content/groups/gbif</url>
+            <releases>
+                <enabled>true</enabled>
+            </releases>
+            <snapshots>
+                <enabled>true</enabled>
+            </snapshots>
+        </repository>
+        <repository>
+            <id>gbif-releases</id>
+            <url>https://repository.gbif.org/content/repositories/releases</url>
+            <releases>
+                <enabled>true</enabled>
+            </releases>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+        </repository>
+        <repository>
+            <id>osgeo</id>
+            <name>Open Source Geospatial Foundation Repository</name>
+            <url>https://repo.osgeo.org/repository/geotools-releases/</url>
+            <releases>
+                <enabled>true</enabled>
+            </releases>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+        </repository>
+    </repositories>
+    
+    <dependencyManagement>
+        <dependencies>
+            <!-- BDQ Libraries - using local builds for all libraries -->
+            <dependency>
+                <groupId>org.filteredpush</groupId>
+                <artifactId>geo_ref_qc</artifactId>
+                <version>2.1.2-SNAPSHOT</version>
+            </dependency>
+            <dependency>
+                <groupId>org.filteredpush</groupId>
+                <artifactId>event_date_qc</artifactId>
+                <version>3.1.1-SNAPSHOT</version>
+            </dependency>
+            <dependency>
+                <groupId>org.filteredpush</groupId>
+                <artifactId>sci_name_qc</artifactId>
+                <version>1.2.1-SNAPSHOT</version>
+            </dependency>
+            <!-- TODO: Enable rec_occur_qc once dependency issues are resolved -->
+            <!--
+            <dependency>
+                <groupId>org.filteredpush</groupId>
+                <artifactId>rec_occur_qc</artifactId>
+                <version>1.1.1-SNAPSHOT</version>
+            </dependency>
+            -->
+            
+            <!-- JSON Processing -->
+            <dependency>
+                <groupId>com.fasterxml.jackson.core</groupId>
+                <artifactId>jackson-databind</artifactId>
+                <version>2.17.1</version>
+            </dependency>
+            
+            <!-- Logging -->
+            <dependency>
+                <groupId>org.slf4j</groupId>
+                <artifactId>slf4j-simple</artifactId>
+                <version>2.0.13</version>
+            </dependency>
+            
+            <!-- Unix Domain Sockets (JEP 380 - built into JDK 16+) -->
+            <!-- No additional dependency needed for JDK 17+ -->
+        </dependencies>
+    </dependencyManagement>
+    
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>3.11.0</version>
+                    <configuration>
+                        <source>17</source>
+                        <target>17</target>
+                    </configuration>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
+</project>

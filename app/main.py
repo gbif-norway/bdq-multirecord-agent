@@ -11,7 +11,7 @@ import base64
 import asyncio
 
 from services.email_service import EmailService
-from services.bdq_service import BDQService
+from services.bdq_jvm_client import BDQJVMClient
 from services.csv_service import CSVService
 from models.email_models import EmailPayload
 from utils.logger import setup_logging, send_discord_notification
@@ -31,7 +31,7 @@ app = FastAPI(
 
 # Initialize services
 email_service = EmailService()
-bdq_service = BDQService()
+bdq_service = BDQJVMClient()
 csv_service = CSVService()
 
 
@@ -42,6 +42,11 @@ async def on_startup():
         send_discord_notification("Instance starting")
     except Exception:
         logger.warning("Failed to send Discord startup notification")
+    # Ensure JVM server is started and warmed up at service start
+    try:
+        bdq_service.ensure_jvm_running()
+    except Exception as e:
+        logger.error(f"Failed to start/warmup BDQ JVM service: {e}")
 
 
 @app.on_event("shutdown")
@@ -51,6 +56,12 @@ async def on_shutdown():
         send_discord_notification("Instance shutting down")
     except Exception:
         logger.warning("Failed to send Discord shutdown notification")
+    
+    # Clean up JVM process
+    try:
+        bdq_service.shutdown()
+    except Exception as e:
+        logger.warning(f"Error shutting down BDQ JVM service: {e}")
 
 def _normalize_apps_script_payload(raw_data: Dict[str, Any]) -> Dict[str, Any]:
     headers = raw_data.get('headers') or {}
@@ -107,6 +118,19 @@ async def health_check():
         "csv_service": "healthy"
     }
     
+    # Probe JVM status if possible
+    jvm_ready = False
+    warmed_up = getattr(bdq_service, 'is_warmed_up', False)
+    try:
+        bdq_service.ensure_jvm_running()
+        jvm_ready = True
+    except Exception:
+        jvm_ready = False
+    services_status.update({
+        "bdq_jvm_ready": jvm_ready,
+        "bdq_jvm_warmed_up": warmed_up
+    })
+
     return {
         "status": "healthy",
         "service": "BDQ Email Report Service",
@@ -141,7 +165,7 @@ async def _handle_email_processing(email_data: EmailPayload):
             return
 
         # Get available BDQ tests
-        tests = await bdq_service.get_available_tests()
+        tests = bdq_service.get_available_tests()
         applicable_tests = bdq_service.filter_applicable_tests(tests, df.columns.tolist())
 
         if not applicable_tests:
