@@ -1,19 +1,18 @@
 /**
- * Gmail → HTTPS forwarder (polls ALL new mail and POSTs JSON to your endpoint).
+ * Gmail → HTTPS forwarder (polls unprocessed emails and POSTs JSON to your endpoint).
  *
  * Setup:
  * 1) In Apps Script editor: Services → enable "Gmail API" (Advanced Gmail Service).
  * 2) Edit ENDPOINT_URL and SHARED_SECRET below.
  * 3) Triggers → Add Trigger: choose poll, Event source: Time-driven, Every minute.
- * 4) First run: execute init() once to set the starting historyId.
+ * 4) First run: execute init() once to ensure the processed label exists.
  */
 
 const ENDPOINT_URL = 'https://bdq-multirecord-agent-638241344017.europe-west1.run.app/email/incoming';
 const SHARED_SECRET = ''; // optional HMAC; set '' to disable
 const LABEL_PROCESSED = 'bdq/processed';
 const MAX_PER_RUN = 50;      // safety cap per minute
-const SAFETY_LOOKBACK = '2d';// extra search window
-const MAX_SAFETY = 200;      // cap for safety search
+
 
 function log() {
   try {
@@ -25,96 +24,23 @@ function log() {
 }
 
 function init() {
-  const profile = Gmail.Users.getProfile('me');
-  const startHistory = Gmail.Users.Messages.list('me', {maxResults: 1});
-  const current = Gmail.Users.GetProfile ? Gmail.Users.GetProfile('me') : profile;
-
-  let historyId;
-  if (startHistory.messages && startHistory.messages.length) {
-    const msg = Gmail.Users.Messages.get('me', startHistory.messages[0].id);
-    historyId = msg.historyId;
-  } else {
-    historyId = '';
-  }
-  PropertiesService.getScriptProperties().setProperty('lastHistoryId', historyId);
+  // Just ensure the processed label exists
   ensureLabel(LABEL_PROCESSED);
-  log('init:set lastHistoryId', historyId || '(empty)');
+  log('init:processed label ensured');
 }
 
 function poll() {
   log('poll:start', new Date().toISOString());
-  const props = PropertiesService.getScriptProperties();
-  const lastHistoryId = props.getProperty('lastHistoryId') || '';
-  log('poll:lastHistoryId', lastHistoryId || '(empty)');
-
-  if (!lastHistoryId) {
-    log('poll:first-run catch-up');
-    const ids = listRecentInboxIds_(MAX_PER_RUN * 10);
-    log('poll:first-run backlog ids', ids.length, ids.slice(0, 20));
-    processMessageIds_(ids);
-    const newest = ids[0]
-      ? Gmail.Users.Messages.get('me', ids[0]).historyId
-      : getCurrentHistoryId_();
-    if (newest) props.setProperty('lastHistoryId', String(newest));
-    log('poll:end:first-run set historyId', newest || '(none)');
-    return;
-  }
-
-  // History since lastHistoryId
-  const collectedIds = [];
-  let pageToken = null;
-  let processed = 0;
-
-  do {
-    const req = {
-      startHistoryId: lastHistoryId,
-      labelId: 'INBOX',
-      pageToken: pageToken,
-      historyTypes: ['messageAdded']
-    };
-    const hist = Gmail.Users.History.list('me', req);
-    if (hist.history) {
-      for (const h of hist.history) {
-        if (h.messagesAdded) {
-          for (const m of h.messagesAdded) {
-            collectedIds.push(m.message.id);
-            processed++;
-            if (processed >= MAX_PER_RUN) break;
-          }
-        }
-        if (processed >= MAX_PER_RUN) break;
-      }
-    }
-    pageToken = hist.nextPageToken || null;
-  } while (pageToken && processed < MAX_PER_RUN);
-
-  log('poll:history collected', collectedIds.length);
-
-  // Safety pass: recent unprocessed INBOX
-  const safety = findUnprocessedRecentIds_(SAFETY_LOOKBACK, MAX_SAFETY);
-  log('poll:safety ids', safety.length);
-
-  // Union + dedupe
-  const ids = uniqueIds_(collectedIds.concat(safety));
-  log('poll:unique ids to process', ids.length, ids.slice(0, 20));
-
-  if (ids.length) processMessageIds_(ids);
-
-  // Advance cursor
-  let newHistoryId = lastHistoryId;
+  
+  // Simple approach: just get unprocessed emails that aren't replies
+  const ids = findUnprocessedNonReplyIds_();
+  log('poll:found', ids.length, 'unprocessed non-reply emails');
+  
   if (ids.length) {
-    let maxH = BigInt(lastHistoryId || '0');
-    for (const id of ids) {
-      const msg = Gmail.Users.Messages.get('me', id, {format: 'minimal'});
-      if (msg.historyId && BigInt(msg.historyId) > maxH) maxH = BigInt(msg.historyId);
-    }
-    newHistoryId = String(maxH);
-  } else {
-    const current = getCurrentHistoryId_();
-    if (current) newHistoryId = String(current);
+    processMessageIds_(ids);
   }
-  props.setProperty('lastHistoryId', newHistoryId);
-  log('poll:end newHistoryId', newHistoryId);
+  
+  log('poll:end');
 }
 
 /* ---------------- helpers ---------------- */
@@ -154,7 +80,7 @@ function processMessageIds_(ids) {
         log('process:reply no attachment', id);
         replyNoAttachment_(full, hdr);
       } else {
-        ok = postToEndpoint_(payload); // logs on non-2xx
+        ok = postToEndpoint_(payload);
       }
 
       if (ok) {
@@ -168,24 +94,24 @@ function processMessageIds_(ids) {
   log('process:end');
 }
 
-function listRecentInboxIds_(limit) {
-  const q = 'in:inbox';
+function findUnprocessedNonReplyIds_() {
+  // Query for unprocessed emails that aren't replies
+  const q = `-label:"${LABEL_PROCESSED}" -in:spam -in:trash -in:replies`;
   const out = [];
   let pageToken = null;
+  
   do {
     const res = Gmail.Users.Messages.list('me', {q, maxResults: 100, pageToken});
-    if (res.messages) out.push(...res.messages.map(m => m.id));
+    if (res.messages) {
+      out.push(...res.messages.map(m => m.id));
+    }
     pageToken = res.nextPageToken || null;
-  } while (pageToken && out.length < limit);
-  return out.slice(0, limit);
+  } while (pageToken && out.length < MAX_PER_RUN);
+  
+  return out.slice(0, MAX_PER_RUN);
 }
 
-function getCurrentHistoryId_() {
-  const res = Gmail.Users.Messages.list('me', {maxResults: 1});
-  if (!res.messages || !res.messages.length) return '';
-  const msg = Gmail.Users.Messages.get('me', res.messages[0].id, {format: 'minimal'});
-  return msg.historyId || '';
-}
+
 
 function ensureLabel(name) {
   const labelsRes = Gmail.Users.Labels.list('me');
@@ -351,18 +277,6 @@ function postToEndpoint_(payload) {
   }
 }
 
-function uniqueIds_(arr) {
-  return Array.from(new Set(arr));
-}
 
-function findUnprocessedRecentIds_(window, limit) {
-  const q = `-label:"${LABEL_PROCESSED}" -in:spam -in:trash newer_than:${window}`;
-  const out = [];
-  let pageToken = null;
-  do {
-    const res = Gmail.Users.Messages.list('me', {q, maxResults: 100, pageToken});
-    if (res.messages) out.push(...res.messages.map(m => m.id));
-    pageToken = res.nextPageToken || null;
-  } while (pageToken && out.length < limit);
-  return out.slice(0, limit);
-}
+
+
