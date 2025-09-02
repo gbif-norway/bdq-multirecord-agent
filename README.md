@@ -137,6 +137,10 @@ gcloud logs read --service=bdq-multirecord-agent --limit=50
 # - "LLM service disabled" → API key missing
 # - "Error generating LLM summary" → API issues
 # - "Falling back to basic summary" → LLM unavailable
+# General operational messages to note:
+# - "Instance starting/shutting down" → lifecycle events (also sent to Discord)
+# - "GET /email/incoming ... returning 405" → unsolicited probes blocked (Discord alert)
+# - "BDQ API call failed ... after N attempts" → upstream BDQ issues (Discord alert)
 ```
 
 #### Health Check
@@ -148,6 +152,7 @@ The `/health` endpoint shows service status and environment variable configurati
 1. **"LLM service disabled"** → Check `GOOGLE_API_KEY` environment variable
 2. **"Error generating LLM summary"** → Check API quotas, network connectivity, API key permissions
 3. **Fallback to basic summary** → LLM service unavailable, check logs for specific errors
+4. **Container restarted during processing** → Now captured by global exception handlers. Check logs for "Unhandled exception" and Discord alerts. BDQ API calls have retries with exponential backoff.
 
 **Support:**
 - **Google AI Studio**: [makersuite.google.com](https://makersuite.google.com)

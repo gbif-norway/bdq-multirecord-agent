@@ -19,6 +19,7 @@ Don't deploy or test locally, CI/CD is set up on google cloud run so each commit
 2. **Run BDQ tests on data**
    a) This Cloud Run service should receive the JSON payload and extracts the dataset file (CSV), saving it locally. Make an /email/incoming endpoint
    b) Immediately return 200 so the Apps Script stops processing, Apps Script will label the message with `bdq/replied` in Gmail. If the file is not a CSV or there is no attachment it should reply to the sender with a warning message and stop processing.
+   - Note: `GET /email/incoming` explicitly returns 405 and sends a Discord alert to surface unsolicited probes.
    c) Load the core file into memory** (detect delimiter, header). Determine core type by header presence:
       - Occurrence core if header contains `occurrenceID`.
       - Taxon core if header contains `taxonID`.
@@ -157,3 +158,9 @@ Don't deploy or test locally, CI/CD is set up on google cloud run so each commit
 ## Debugging
 
 - Send debugging messages to {DISCORD_WEBHOOK}
+  - Service sends Discord notifications for lifecycle events (startup/shutdown), unexpected GET probes to `/email/incoming`, uncaught exceptions, and persistent BDQ API failures after retries.
+
+## Reliability
+
+- All unhandled exceptions are captured by FastAPI exception handlers, logged with stack traces, and notified to Discord.
+- BDQ API calls use exponential backoff (1s → 2s → 4s → 8s) up to 4 attempts per parameter set; persistent failures raise a single Discord alert per test.

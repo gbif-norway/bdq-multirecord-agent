@@ -2,6 +2,7 @@ import os
 import logging
 from typing import Dict, Any
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi import BackgroundTasks
 from fastapi.responses import JSONResponse
 import uvicorn
@@ -32,6 +33,24 @@ app = FastAPI(
 email_service = EmailService()
 bdq_service = BDQService()
 csv_service = CSVService()
+
+
+@app.on_event("startup")
+async def on_startup():
+    logger.info("Service instance starting")
+    try:
+        send_discord_notification("Instance starting")
+    except Exception:
+        logger.warning("Failed to send Discord startup notification")
+
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    logger.info("Service instance shutting down")
+    try:
+        send_discord_notification("Instance shutting down")
+    except Exception:
+        logger.warning("Failed to send Discord shutdown notification")
 
 def _normalize_apps_script_payload(raw_data: Dict[str, Any]) -> Dict[str, Any]:
     headers = raw_data.get('headers') or {}
@@ -210,6 +229,48 @@ async def process_incoming_email(request: Request, background_tasks: BackgroundT
     send_discord_notification(f"Email from {email_data.from_email} queued for processing")
     
     return JSONResponse(status_code=200, content={"status": "accepted", "message": "Email queued for processing"})
+
+
+@app.get("/email/incoming")
+async def reject_incoming_email_get(request: Request):
+    """Explicitly reject GET requests to /email/incoming with 405 and alert."""
+    client_ip = getattr(request.client, "host", "unknown")
+    logger.warning(f"GET /email/incoming from {client_ip} - returning 405")
+    try:
+        send_discord_notification(f"Suspicious GET /email/incoming from {client_ip}")
+    except Exception:
+        logger.warning("Failed to send Discord notification for GET /email/incoming")
+    return JSONResponse(status_code=405, content={"detail": "Method Not Allowed"})
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    logger.error(f"HTTPException {exc.status_code}: {exc.detail}", exc_info=True)
+    try:
+        send_discord_notification(f"HTTPException {exc.status_code}: {exc.detail}")
+    except Exception:
+        logger.warning("Failed to send Discord notification for HTTPException")
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    logger.error("Request validation error", exc_info=True)
+    try:
+        send_discord_notification("Request validation error on incoming request")
+    except Exception:
+        logger.warning("Failed to send Discord notification for validation error")
+    return JSONResponse(status_code=422, content={"detail": exc.errors()})
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Unhandled exception: {exc}", exc_info=True)
+    try:
+        send_discord_notification(f"Unhandled exception: {exc}")
+    except Exception:
+        logger.warning("Failed to send Discord notification for unhandled exception")
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8080))

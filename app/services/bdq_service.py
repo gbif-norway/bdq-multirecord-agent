@@ -163,16 +163,15 @@ class BDQService:
         return s.lower()
     
     async def _run_single_test(self, test_id: str, params: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Run a single BDQ test with given parameters"""
+        """Run a single BDQ test with given parameters with retries/backoff"""
+        # Sanitize params for JSON (avoid NaN/None and enforce strings)
         try:
-            # Sanitize params for JSON (avoid NaN/None and enforce strings)
             safe_params: Dict[str, Any] = {}
             for k, v in (params or {}).items():
                 if v is None:
                     safe_params[k] = ""
                     continue
                 try:
-                    # Detect NaN/inf for numeric inputs
                     if isinstance(v, float):
                         if v != v or v in (float('inf'), float('-inf')):
                             safe_params[k] = ""
@@ -180,30 +179,48 @@ class BDQService:
                     safe_params[k] = str(v)
                 except Exception:
                     safe_params[k] = ""
-
-            payload = {
-                "id": test_id,
-                "params": safe_params
-            }
-            
-            response = requests.post(
-                self.run_test_endpoint,
-                json=payload,
-                headers={"Content-Type": "application/json"},
-                timeout=30
-            )
-            response.raise_for_status()
-            
-            result = response.json()
-            
-            # Add test type information
-            result['test_type'] = self._get_test_type_from_id(test_id)
-            
-            return result
-            
         except Exception as e:
-            logger.error(f"Error running test {test_id}: {e}")
+            logger.error(f"Parameter sanitization failed for {test_id}: {e}")
             return None
+
+        payload = {"id": test_id, "params": safe_params}
+
+        # Retry with exponential backoff on network/server errors
+        max_attempts = 4
+        backoff_seconds = 1.0
+        last_error: Optional[Exception] = None
+        for attempt in range(1, max_attempts + 1):
+            try:
+                response = requests.post(
+                    self.run_test_endpoint,
+                    json=payload,
+                    headers={"Content-Type": "application/json"},
+                    timeout=30
+                )
+                response.raise_for_status()
+                result = response.json()
+                result['test_type'] = self._get_test_type_from_id(test_id)
+                return result
+            except Exception as e:
+                last_error = e
+                logger.warning(f"Attempt {attempt}/{max_attempts} failed for {test_id}: {e}")
+                if attempt < max_attempts:
+                    try:
+                        import time
+                        time.sleep(backoff_seconds)
+                    except Exception:
+                        pass
+                    backoff_seconds *= 2
+                else:
+                    # Final failure - alert once per test_id
+                    try:
+                        send_discord_notification(
+                            f"BDQ API call failed for {test_id} after {max_attempts} attempts: {e}"
+                        )
+                    except Exception:
+                        logger.warning("Failed to send Discord alert for persistent BDQ API failure")
+        logger.error(f"Error running test {test_id}: {last_error}")
+        return None
     
     def _get_test_type_from_id(self, test_id: str) -> str:
         """Determine test type from test ID"""
