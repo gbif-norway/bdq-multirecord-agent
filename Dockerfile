@@ -2,10 +2,11 @@
 FROM maven:3.9-eclipse-temurin-17 AS bdqbuild
 WORKDIR /workspace
 
-# Copy Java project files - copy the entire java directory to match the expected structure
-COPY java/ .
+# Copy Java project files - copy the entire java directory structure
+COPY java/ java/
 
-# Build Java project - now the modules should be found correctly
+# Build Java project - run Maven from the java directory
+WORKDIR /workspace/java
 RUN mvn -q -DskipTests package
 
 # Second stage: Runtime image with Python and JRE
@@ -20,7 +21,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy Java BDQ server from build stage
-COPY --from=bdqbuild /workspace/bdq-jvm-server/target/bdq-jvm-server.jar /opt/bdq/bdq-jvm-server.jar
+COPY --from=bdqbuild /workspace/java/bdq-jvm-server/target/bdq-jvm-server.jar /opt/bdq/bdq-jvm-server.jar
 
 # Install Python dependencies
 COPY requirements.txt .
