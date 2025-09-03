@@ -57,3 +57,5 @@ docker-compose*.yml
 # Environment files (will be mounted separately)
 .env
 .env.*
+
+# Note: TG2_tests.csv is intentionally included (needed for BDQ test mappings)
