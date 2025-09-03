@@ -7,7 +7,7 @@ WORKDIR /workspace
 COPY java/ java/
 
 # Copy Maven settings for SNAPSHOT dependencies
-COPY bdq-api-files-for-debugging/.mvn.settings.xml /root/.m2/settings.xml
+COPY .mvn.settings.xml /root/.m2/settings.xml
 
 # Use vendored FilteredPush libraries in the repo (avoid network flakiness)
 
@@ -17,10 +17,14 @@ WORKDIR /workspace/java
 # Temporarily remove the problematic bdqtestrunner module from parent POM
 RUN sed -i '/<module>bdqtestrunner<\/module>/d' pom.xml
 
-
+# Disable git-commit-id-maven-plugin in vendored modules (no .git in container context)
+RUN set -eux; \
+  for pom in geo_ref_qc/pom.xml event_date_qc/pom.xml sci_name_qc/pom.xml rec_occur_qc/pom.xml; do \
+    perl -i -pe 'BEGIN{undef $/;} s|<plugin>\s*<groupId>io\.github\.git-commit-id</groupId>.*?</plugin>||smg' "$pom"; \
+  done
 
 # Now build the main project with locally installed libraries
-RUN mvn -B -ntp -Dgit.commit.id.skip=true clean package -DskipTests
+RUN mvn -B -ntp clean package -DskipTests
 
 # Runtime image
 FROM python:3.11-slim
