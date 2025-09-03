@@ -17,8 +17,10 @@ class TestMainApp:
 
     def test_health_endpoint(self, client):
         """Test the detailed health check endpoint"""
-        with patch('app.main.bdq_service.test_connection') as mock_test_conn:
-            mock_test_conn.return_value = True
+        with patch('app.main.get_bdq_service') as mock_get_bdq:
+            mock_service = Mock()
+            mock_service.test_connection.return_value = True
+            mock_get_bdq.return_value = mock_service
             
             response = client.get("/health")
             assert response.status_code == 200
@@ -33,8 +35,10 @@ class TestMainApp:
 
     def test_health_endpoint_cli_failure(self, client):
         """Test health endpoint when CLI connection fails"""
-        with patch('app.main.bdq_service.test_connection') as mock_test_conn:
-            mock_test_conn.return_value = False
+        with patch('app.main.get_bdq_service') as mock_get_bdq:
+            mock_service = Mock()
+            mock_service.test_connection.return_value = False
+            mock_get_bdq.return_value = mock_service
             
             response = client.get("/health")
             assert response.status_code == 200
@@ -176,15 +180,17 @@ class TestMainApp:
     async def test_startup_event(self, client):
         """Test application startup event"""
         with patch('app.main.send_discord_notification') as mock_discord:
-            with patch('app.main.bdq_service.test_connection') as mock_test_conn:
-                mock_test_conn.return_value = True
+            with patch('app.main.get_bdq_service') as mock_get_bdq:
+                mock_service = Mock()
+                mock_service.test_connection.return_value = True
+                mock_get_bdq.return_value = mock_service
                 
                 # Import and call the startup function directly
                 from app.main import on_startup
                 await on_startup()
                 
                 mock_discord.assert_called_with("Instance starting")
-                mock_test_conn.assert_called_once()
+                mock_get_bdq.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_shutdown_event(self, client):

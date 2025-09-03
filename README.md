@@ -25,7 +25,7 @@ All local development should be done in docker containers.
 - **Google Cloud Run**: This FastAPI service, which processes datasets and runs BDQ tests for the entire dataset
 - **Inline BDQ Libraries**: Local JVM CLI with resident FilteredPush BDQ libraries, eliminating external API dependencies
   - Java CLI executes BDQ tests locally using file-based I/O (JSON input/output)
-  - Test mappings driven by TG2_tests.csv for comprehensive BDQ test coverage
+  - Test mappings from official TDWG BDQ specification (via git submodule) for comprehensive BDQ test coverage
   - Significantly faster than HTTP-based external API calls
 
 ## Setup
@@ -63,7 +63,7 @@ PORT=8080
 1. **Email Ingestion**: Apps Script forwards emails to `/email/incoming`
 2. **CSV Processing**: Extract and parse CSV attachment
 3. **Core Detection**: Identify occurrence or taxon core type
-4. **Test Discovery**: Load applicable BDQ tests from TG2_tests.csv mapping
+4. **Test Discovery**: Load applicable BDQ tests from TDWG BDQ specification (bdq-spec submodule)
 5. **CLI Execution**: Execute BDQ tests via Java CLI with JSON input/output files
 6. **Test Execution**: Run tests locally via CLI with proper error handling and result processing
 7. **Result Generation**: Create raw results and amended dataset CSVs
@@ -79,7 +79,7 @@ This service now includes the FilteredPush BDQ libraries directly, running in a 
 ### Architecture
 - **Local JVM CLI**: Java command-line application with BDQ libraries loaded
 - **File-based Communication**: JSON input/output files for simple, reliable execution
-- **Test Mapping**: TG2_tests.csv drives the mapping from test IDs to Java class/method implementations
+- **Test Mapping**: Official TDWG BDQ specification drives the mapping from test IDs to Java class/method implementations
 - **Stateless Execution**: Each request spawns a new CLI process for isolation
 - **Subprocess Management**: Python manages CLI execution with proper error handling
 
@@ -219,9 +219,13 @@ The `/health` endpoint shows service status and environment variable configurati
 ## Development
 
 ### Local Development Setup
-All development should be done in Docker containers for consistency:
+All development should be done in Docker containers for consistency.
 
+#### First-time Setup
 ```bash
+# Initialize git submodules to get BDQ test specifications
+git submodule update --init --recursive
+
 # Build and run tests
 docker compose -f docker-compose.test.yml run --rm test-runner
 
@@ -230,6 +234,17 @@ docker compose -f docker-compose.test.yml run --rm test-runner python -m pytest 
 
 # Run with coverage
 docker compose -f docker-compose.test.yml run --rm test-runner-coverage
+```
+
+#### BDQ Test Specification Updates
+The project uses the official TDWG BDQ test specification via git submodule:
+```bash
+# Update to latest BDQ tests (when TDWG releases updates)
+git submodule update --remote bdq-spec
+
+# Pin to specific BDQ specification version
+cd bdq-spec && git checkout <commit-hash> && cd ..
+git add bdq-spec && git commit -m "Pin BDQ spec to version X"
 ```
 
 ### Test Suite

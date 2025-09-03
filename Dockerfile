@@ -43,7 +43,7 @@ COPY --from=build /workspace/java/bdq-cli/target/bdq-cli-1.0.0.jar /opt/bdq/bdq-
 # Copy Python application code
 COPY app/ app/
 COPY requirements.txt .
-COPY TG2_tests.csv .
+COPY bdq-spec/tg2/core/TG2_tests.csv .
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt

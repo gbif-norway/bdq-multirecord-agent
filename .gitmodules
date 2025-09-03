@@ -13,3 +13,6 @@
 [submodule "java/bdqtestrunner"]
 	path = java/bdqtestrunner
 	url = https://github.com/FilteredPush/bdqtestrunner.git
+[submodule "bdq-spec"]
+	path = bdq-spec
+	url = https://github.com/tdwg/bdq.git

@@ -24,10 +24,22 @@ load_dotenv()
 setup_logging()
 logger = logging.getLogger(__name__)
 
-# Initialize services
+# Initialize services (BDQ service lazy-loaded to handle missing TG2_tests.csv gracefully)
 email_service = EmailService()
-bdq_service = BDQCLIService(skip_validation=True)  # Skip validation in test mode
+bdq_service = None  # Lazy-loaded when first needed
 csv_service = CSVService()
+
+def get_bdq_service():
+    """Get BDQ service instance, initializing if needed"""
+    global bdq_service
+    if bdq_service is None:
+        try:
+            bdq_service = BDQCLIService(skip_validation=True)
+            logger.info("BDQ CLI Service initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize BDQ CLI Service: {e}")
+            raise
+    return bdq_service
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -39,7 +51,7 @@ async def lifespan(app: FastAPI):
         logger.warning("Failed to send Discord startup notification")
     # Test CLI connection at service start
     try:
-        if bdq_service.test_connection():
+        if get_bdq_service().test_connection():
             logger.info("BDQ CLI connection test successful")
         else:
             logger.warning("BDQ CLI connection test failed")
@@ -71,7 +83,7 @@ async def on_startup():
         logger.warning("Failed to send Discord startup notification")
     # Test CLI connection at service start
     try:
-        if bdq_service.test_connection():
+        if get_bdq_service().test_connection():
             logger.info("BDQ CLI connection test successful")
         else:
             logger.warning("BDQ CLI connection test failed")
@@ -144,7 +156,7 @@ async def health_check():
     # Probe CLI status if possible
     cli_ready = False
     try:
-        cli_ready = bdq_service.test_connection()
+        cli_ready = get_bdq_service().test_connection()
     except Exception:
         cli_ready = False
     services_status.update({
@@ -185,8 +197,8 @@ async def _handle_email_processing(email_data: EmailPayload):
             return
 
         # Get available BDQ tests
-        tests = bdq_service.get_available_tests()
-        applicable_tests = bdq_service.filter_applicable_tests(tests, df.columns.tolist())
+        tests = get_bdq_service().get_available_tests()
+        applicable_tests = get_bdq_service().filter_applicable_tests(tests, df.columns.tolist())
 
         if not applicable_tests:
             await email_service.send_error_reply(
@@ -196,14 +208,14 @@ async def _handle_email_processing(email_data: EmailPayload):
             return
 
         # Run BDQ tests
-        test_results, skipped_tests = await bdq_service.run_tests_on_dataset(df, applicable_tests, core_type)
+        test_results, skipped_tests = await get_bdq_service().run_tests_on_dataset(df, applicable_tests, core_type)
 
         # Generate result files
         raw_results_csv = csv_service.generate_raw_results_csv(test_results, core_type)
         amended_dataset_csv = csv_service.generate_amended_dataset(df, test_results, core_type)
 
         # Generate summary (include skipped tests)
-        summary = bdq_service.generate_summary(test_results, len(df), skipped_tests)
+        summary = get_bdq_service().generate_summary(test_results, len(df), skipped_tests)
 
         # Send reply email
         await email_service.send_results_reply(

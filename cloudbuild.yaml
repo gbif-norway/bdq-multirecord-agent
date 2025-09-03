@@ -2,6 +2,10 @@ options:
   logging: CLOUD_LOGGING_ONLY   # or your bucket option
 
 steps:
+# Initialize git submodules (needed for TDWG BDQ test specifications)
+- name: gcr.io/cloud-builders/git
+  args: ['submodule', 'update', '--init', '--recursive']
+
 - name: gcr.io/cloud-builders/docker
   args: ['build',
          '-t','gcr.io/${PROJECT_ID}/github.com/gbif-norway/bdq-multirecord-agent:${COMMIT_SHA}',

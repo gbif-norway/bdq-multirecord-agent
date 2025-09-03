@@ -62,7 +62,6 @@ Thumbs.db
 
 # Project specific
 *.csv
-!TG2_tests.csv  # Essential BDQ test mapping file
 *.log
 *.tmp
 out/

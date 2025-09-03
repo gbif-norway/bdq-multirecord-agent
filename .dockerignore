@@ -58,4 +58,4 @@ docker-compose*.yml
 .env
 .env.*
 
-# Note: TG2_tests.csv is intentionally included (needed for BDQ test mappings)
+# Note: bdq-spec/ submodule is intentionally included (needed for BDQ test mappings)
