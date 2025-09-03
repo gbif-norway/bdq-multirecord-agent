@@ -23,14 +23,19 @@ class BDQCLIService:
         self.test_mappings: Dict[str, TG2TestMapping] = {}
         self.skip_validation = skip_validation
         
+        # Always load test mappings, even in test mode
+        try:
+            self._load_test_mappings()
+            logger.info(f"Loaded {len(self.test_mappings)} test mappings")
+        except Exception as e:
+            logger.warning(f"Failed to load test mappings: {e}")
+            if not skip_validation:
+                raise
+        
         if not skip_validation:
             # Validate CLI JAR exists
             if not os.path.exists(self.cli_jar_path):
                 raise FileNotFoundError(f"BDQ CLI JAR not found at: {self.cli_jar_path}")
-            
-            # Parse TG2 mappings on startup
-            self._load_test_mappings()
-            
             logger.info(f"BDQ CLI Service initialized with JAR: {self.cli_jar_path}")
         else:
             logger.info(f"BDQ CLI Service initialized in test mode (validation skipped)")
@@ -67,13 +72,49 @@ class BDQCLIService:
         applicable_tests = []
         csv_columns_lower = [col.lower() for col in csv_columns]
         
+        # Darwin Core term to common CSV column mapping
+        dwc_mapping = {
+            'dwc:countrycode': ['countrycode', 'country_code', 'countrycode'],
+            'dwc:country': ['country'],
+            'dwc:dateidentified': ['dateidentified', 'date_identified', 'dateidentified'],
+            'dwc:phylum': ['phylum'],
+            'dwc:minimumdepthinmeters': ['minimumdepthinmeters', 'min_depth', 'mindepth'],
+            'dwc:maximumdepthinmeters': ['maximumdepthinmeters', 'max_depth', 'maxdepth'],
+            'dwc:decimallatitude': ['decimallatitude', 'latitude', 'lat', 'decimallatitude'],
+            'dwc:decimallongitude': ['decimallongitude', 'longitude', 'lon', 'decimallongitude'],
+            'dwc:verbatimcoordinates': ['verbatimcoordinates', 'coordinates', 'coords'],
+            'dwc:geodeticdatum': ['geodeticdatum', 'datum'],
+            'dwc:scientificname': ['scientificname', 'scientific_name', 'sciname'],
+            'dwc:year': ['year'],
+            'dwc:month': ['month'],
+            'dwc:day': ['day'],
+            'dwc:eventdate': ['eventdate', 'event_date', 'date'],
+            'dwc:basisofrecord': ['basisofrecord', 'basis_of_record', 'basis'],
+            'dwc:occurrenceid': ['occurrenceid', 'occurrence_id', 'id'],
+            'dwc:taxonid': ['taxonid', 'taxon_id', 'id']
+        }
+        
         for test in tests:
             # Check if test requires columns that are present in CSV
             test_columns = test.actedUpon + test.consulted
             test_columns_lower = [col.lower() for col in test_columns]
             
-            # Simple check: if any required column is missing, skip the test
-            if all(col in csv_columns_lower for col in test_columns_lower):
+            # Check if all required test columns can be mapped to CSV columns
+            all_columns_present = True
+            for test_col in test_columns_lower:
+                if test_col in dwc_mapping:
+                    # Check if any of the mapped CSV columns are present
+                    mapped_cols = dwc_mapping[test_col]
+                    if not any(mapped_col in csv_columns_lower for mapped_col in mapped_cols):
+                        all_columns_present = False
+                        break
+                else:
+                    # Direct match if no mapping exists
+                    if test_col not in csv_columns_lower:
+                        all_columns_present = False
+                        break
+            
+            if all_columns_present:
                 applicable_tests.append(test)
             else:
                 logger.debug(f"Skipping test {test.id} - missing columns: {test_columns}")
@@ -170,15 +211,18 @@ class BDQCLIService:
     def generate_summary(self, test_results: List[BDQTestExecutionResult], total_records: int, skipped_tests: List[str]) -> ProcessingSummary:
         """Generate a summary of test execution results"""
         total_tests = len(test_results) + len(skipped_tests)
-        successful_tests = len([r for r in test_results if r.successful_records > 0])
-        failed_tests = len([r for r in test_results if r.failed_records > 0])
+        
+        # Count tests by status
+        successful_tests = len([r for r in test_results if r.status in ['COMPLIANT', 'AMENDED', 'FILLED_IN']])
+        failed_tests = len([r for r in test_results if r.status in ['NOT_COMPLIANT', 'NOT_AMENDED']])
+        amendments_applied = len([r for r in test_results if r.status in ['AMENDED', 'FILLED_IN']])
         
         return ProcessingSummary(
             total_records=total_records,
             total_tests_run=total_tests,
             validation_failures={},  # CLI doesn't provide detailed failure info
             common_issues=[],
-            amendments_applied=0,
+            amendments_applied=amendments_applied,
             skipped_tests=skipped_tests
         )
     

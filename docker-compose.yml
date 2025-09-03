@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  bdq-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PORT=8080
+      - PYTHONPATH=/app
+      - BDQ_CLI_JAR=/opt/bdq/bdq-cli.jar
+      - BDQ_JAVA_OPTS=-Xms256m -Xmx1024m
+      - GMAIL_SEND=test
+      - HMAC_SECRET=test-secret
+      - DISCORD_WEBHOOK=test
+      - GOOGLE_API_KEY=test
+    volumes:
+      # Mount the TG2 tests CSV for testing
+      - ./bdq-spec/tg2/core/TG2_tests.csv:/app/TG2_tests.csv:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+  # Test service for running tests
+  test-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    environment:
+      - PYTHONPATH=/app
+      - PYTHONUNBUFFERED=1
+      - BDQ_CLI_JAR=/opt/bdq/bdq-cli.jar
+      - BDQ_JAVA_OPTS=-Xms256m -Xmx1024m
+    volumes:
+      - ./tests:/app/tests:ro
+      - ./app:/app/app:ro
+      - ./bdq-spec/tg2/core/TG2_tests.csv:/app/TG2_tests.csv:ro
+      - ./requirements.txt:/app/requirements.txt:ro
+      - ./pytest.ini:/app/pytest.ini:ro
+    working_dir: /app
+    command: ["python", "-m", "pytest", "tests/", "-v", "--tb=short"]
+    profiles:
+      - test
+    depends_on:
+      - bdq-app
