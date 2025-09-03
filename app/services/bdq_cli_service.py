@@ -21,7 +21,9 @@ class BDQCLIService:
     
     def __init__(self, cli_jar_path: str = None, java_opts: str = None, skip_validation: bool = False):
         self.cli_jar_path = cli_jar_path or os.getenv('BDQ_CLI_JAR', '/opt/bdq/bdq-cli.jar')
-        self.java_opts = java_opts or os.getenv('BDQ_JAVA_OPTS', '-Xms256m -Xmx1024m')
+        # Optimized Java settings for better performance
+        default_java_opts = '-Xms512m -Xmx2048m -XX:+UseG1GC -XX:+UseStringDeduplication -XX:+OptimizeStringConcat'
+        self.java_opts = java_opts or os.getenv('BDQ_JAVA_OPTS', default_java_opts)
         self.test_mappings: Dict[str, TG2TestMapping] = {}
         self.skip_validation = skip_validation
         
@@ -473,7 +475,21 @@ class BDQCLIService:
                 
                 # Read and parse the output
                 with open(output_file_path, 'r') as f:
-                    response_data = json.load(f)
+                    output_content = f.read()
+                    logger.info(f"CLI output content preview: {output_content[:500]}...")
+                    response_data = json.loads(output_content)
+                
+                # Debug the response structure
+                logger.info(f"CLI response keys: {list(response_data.keys()) if isinstance(response_data, dict) else 'Not a dict'}")
+                if isinstance(response_data, dict) and 'results' in response_data:
+                    results = response_data['results']
+                    logger.info(f"Results contains {len(results)} test results")
+                    if results:
+                        first_test = list(results.keys())[0]
+                        first_result = results[first_test]
+                        logger.info(f"Sample result for {first_test}: {first_result}")
+                else:
+                    logger.error(f"Unexpected CLI response format: {response_data}")
                 
                 logger.info(f"Successfully executed {len(test_requests)} tests via CLI")
                 return response_data
@@ -522,12 +538,23 @@ class BDQCLIService:
         logger.info(f"CLI timeout set to {timeout_seconds} seconds")
         logger.warning("CLI execution may take several minutes for large datasets - this is normal")
         
+        # Add performance monitoring
+        cli_start_time = time.time()
         result = subprocess.run(
             java_cmd,
             capture_output=True,
             text=True,
             timeout=timeout_seconds
         )
+        cli_end_time = time.time()
+        
+        # Log performance details
+        execution_time = cli_end_time - cli_start_time
+        logger.info(f"CLI raw execution time: {execution_time:.1f} seconds")
+        if result.stdout:
+            logger.info(f"CLI stdout preview: {result.stdout[:200]}...")
+        if result.stderr:
+            logger.info(f"CLI stderr preview: {result.stderr[:200]}...")
         
         return result
     
