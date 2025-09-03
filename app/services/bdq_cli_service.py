@@ -4,11 +4,13 @@ import tempfile
 import os
 import logging
 import pandas as pd
+import time
 from typing import Dict, List, Any, Optional, Tuple
 from pathlib import Path
 
 from app.services.tg2_parser import TG2Parser, TG2TestMapping
 from app.models.email_models import BDQTest, BDQTestResult, BDQTestExecutionResult, ProcessingSummary
+from app.utils.logger import send_discord_notification
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +127,9 @@ class BDQCLIService:
         """Run BDQ tests on the dataset using the CLI (batched, with tuple dedup)."""
         test_results: List[BDQTestExecutionResult] = []
         skipped_tests: List[str] = []
+        
+        logger.info(f"Starting BDQ test execution on {len(df)} records with {len(applicable_tests)} applicable tests")
+        send_discord_notification(f"🧪 Starting BDQ tests: {len(applicable_tests)} tests on {len(df):,} records")
 
         # Identify record id column once
         id_col = None
@@ -133,11 +138,15 @@ class BDQCLIService:
             if cl == 'occurrenceid' or cl == 'taxonid':
                 id_col = c
                 break
+        
+        logger.info(f"Using record ID column: {id_col}")
 
         prepared_entries = []
 
         # Build requests for all tests with unique tuples and back-mapping to rows
-        for test in applicable_tests:
+        logger.info("Preparing test requests and deduplicating tuples...")
+        for i, test in enumerate(applicable_tests):
+            logger.info(f"Preparing test {i+1}/{len(applicable_tests)}: {test.id} [{test.type}]")
             try:
                 test_columns = test.actedUpon + test.consulted
 
@@ -194,6 +203,16 @@ class BDQCLIService:
                         unique_tuples.append(list(values))
                         unique_keys_order.append(key)
                     tuple_to_rows[key].append(idx)
+                
+                dedup_ratio = len(unique_tuples)/len(df) if len(df) > 0 else 0
+                logger.info(f"Test {test.id}: {len(df)} records -> {len(unique_tuples)} unique tuples (dedup ratio: {dedup_ratio:.2f})")
+                
+                # Warn about potentially slow tests
+                if len(unique_tuples) > 1000:
+                    logger.warning(f"Test {test.id} has {len(unique_tuples)} unique tuples - may take longer to execute")
+                    
+                # Log test details for debugging 
+                logger.debug(f"Test {test.id} details: actedUpon={test.actedUpon}, consulted={test.consulted}")
 
                 test_request = {
                     "testId": test.id,
@@ -214,11 +233,23 @@ class BDQCLIService:
                 skipped_tests.append(test.id)
 
         if not prepared_entries:
+            logger.warning("No tests prepared for execution")
             return test_results, skipped_tests
 
+        total_unique_tuples = sum(len(e["request"]["tuples"]) for e in prepared_entries)
+        logger.info(f"Total unique tuples across all tests: {total_unique_tuples}")
+        send_discord_notification(f"📊 Deduplication complete: {total_unique_tuples:,} unique tuples across {len(prepared_entries)} tests")
+        
         # Execute all tests in a single CLI call
+        logger.info("Executing BDQ CLI with batched test requests...")
+        send_discord_notification(f"⚙️ Starting CLI execution (timeout: 30min)...")
+        
+        start_time = time.time()
         try:
             response = self.execute_tests([e["request"] for e in prepared_entries])
+            execution_time = time.time() - start_time
+            logger.info(f"CLI execution completed successfully in {execution_time:.1f} seconds")
+            send_discord_notification(f"✅ CLI execution completed in {execution_time:.1f}s!")
         except Exception as e:
             logger.error(f"Batched CLI execution failed: {e}")
             # If batch fails, mark all tests as skipped
@@ -386,6 +417,7 @@ class BDQCLIService:
                 }
                 json.dump(request_data, input_file)
                 input_file_path = input_file.name
+                logger.info(f"Created CLI input file: {input_file_path} (size: {os.path.getsize(input_file_path)} bytes)")
             
             # Create temporary output file
             with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as output_file:
@@ -393,13 +425,27 @@ class BDQCLIService:
             
             try:
                 # Execute the CLI
+                logger.info(f"Starting CLI execution with input: {input_file_path}, output: {output_file_path}")
                 result = self._run_cli(input_file_path, output_file_path)
+                logger.info(f"CLI execution finished with return code: {result.returncode}")
                 
                 if result.returncode != 0:
                     logger.error(f"CLI execution failed with return code {result.returncode}")
                     logger.error(f"STDOUT: {result.stdout}")
                     logger.error(f"STDERR: {result.stderr}")
                     raise RuntimeError(f"CLI execution failed: {result.stderr}")
+                
+                # Check if output file was created and has content
+                if not os.path.exists(output_file_path):
+                    logger.error("CLI output file was not created")
+                    raise RuntimeError("CLI output file was not created")
+                
+                output_size = os.path.getsize(output_file_path)
+                logger.info(f"CLI output file created: {output_file_path} (size: {output_size} bytes)")
+                
+                if output_size == 0:
+                    logger.error("CLI output file is empty")
+                    raise RuntimeError("CLI output file is empty")
                 
                 # Read and parse the output
                 with open(output_file_path, 'r') as f:
@@ -445,14 +491,18 @@ class BDQCLIService:
             f'--output={output_file}'
         ])
         
-        logger.debug(f"Executing CLI command: {' '.join(java_cmd)}")
+        logger.info(f"Executing CLI command: {' '.join(java_cmd)}")
         
-        # Execute the command
+        # Execute the command with increased timeout for large datasets
+        timeout_seconds = 1800  # 30 minutes for large datasets
+        logger.info(f"CLI timeout set to {timeout_seconds} seconds")
+        logger.warning("CLI execution may take several minutes for large datasets - this is normal")
+        
         result = subprocess.run(
             java_cmd,
             capture_output=True,
             text=True,
-            timeout=300  # 5 minute timeout
+            timeout=timeout_seconds
         )
         
         return result
