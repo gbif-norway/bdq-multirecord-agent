@@ -9,20 +9,27 @@ COPY java/ java/
 # Copy Maven settings for SNAPSHOT dependencies
 COPY bdq-api-files-for-debugging/.mvn.settings.xml /root/.m2/settings.xml
 
-# Always fetch latest FilteredPush libraries (builds newest code)
-RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/* \
- && set -eux; \
-   for mod in sci_name_qc geo_ref_qc event_date_qc rec_occur_qc; do \
-     echo "Cloning latest $mod"; \
-     rm -rf "java/$mod"; \
-     git clone --depth 1 "https://github.com/FilteredPush/$mod.git" "java/$mod"; \
-   done
+# Use vendored FilteredPush libraries in the repo (avoid network flakiness)
 
 # Build Java project - run Maven from the java directory
 WORKDIR /workspace/java
 
 # Temporarily remove the problematic bdqtestrunner module from parent POM
 RUN sed -i '/<module>bdqtestrunner<\/module>/d' pom.xml
+
+# Ensure git is available and initialize minimal repos for vendored modules
+# The upstream modules use git-commit-id-plugin which expects a .git directory
+RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/* \
+ && set -eux; \
+   for mod in geo_ref_qc event_date_qc sci_name_qc rec_occur_qc; do \
+     echo "Initializing git repo in java/$mod"; \
+     cd "/workspace/java/$mod"; \
+     git init; \
+     git config user.email "build@example.com"; \
+     git config user.name "Build"; \
+     git add -A; \
+     git commit -m "vendored snapshot for build" || true; \
+   done
 
 # Now build the main project with locally installed libraries
 RUN mvn -B -ntp clean package -DskipTests

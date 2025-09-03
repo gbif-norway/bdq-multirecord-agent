@@ -23,8 +23,8 @@ class CSVService:
             # Parse CSV
             df = pd.read_csv(io.StringIO(csv_data), delimiter=delimiter, dtype=str)
             
-            # Clean column names (remove quotes, whitespace)
-            df.columns = df.columns.str.strip().str.strip('"\'')
+            # Clean column names (remove surrounding quotes, whitespace)
+            df.columns = df.columns.str.strip().str.strip("\"'")
             
             # Detect core type
             core_type = self._detect_core_type(df.columns.tolist())

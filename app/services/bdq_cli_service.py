@@ -122,30 +122,140 @@ class BDQCLIService:
         return applicable_tests
     
     async def run_tests_on_dataset(self, df, applicable_tests: List[BDQTest], core_type: str) -> Tuple[List[BDQTestExecutionResult], List[str]]:
-        """Run BDQ tests on the dataset using the CLI"""
-        test_results = []
-        skipped_tests = []
-        
+        """Run BDQ tests on the dataset using the CLI (batched, with tuple dedup)."""
+        test_results: List[BDQTestExecutionResult] = []
+        skipped_tests: List[str] = []
+
+        # Identify record id column once
+        id_col = None
+        for c in df.columns:
+            cl = c.lower()
+            if cl == 'occurrenceid' or cl == 'taxonid':
+                id_col = c
+                break
+
+        prepared_entries = []
+
+        # Build requests for all tests with unique tuples and back-mapping to rows
         for test in applicable_tests:
             try:
-                # Prepare test data for CLI
-                test_request = self._prepare_test_request(test, df, core_type)
-                
-                # Execute test via CLI
-                response = self.execute_tests([test_request])
-                
-                # Process results
-                if test.id in response.get('results', {}):
-                    result = self._process_cli_response(test, response['results'][test.id], df)
-                    test_results.append(result)
-                else:
-                    logger.warning(f"No results returned for test {test.id}")
-                    skipped_tests.append(test.id)
-                    
+                test_columns = test.actedUpon + test.consulted
+
+                # Column mapping with dwc: fallbacks (case-insensitive)
+                df_cols_lower = {c.lower(): c for c in df.columns}
+                dwc_mapping = {
+                    'dwc:countrycode': ['countrycode', 'country_code', 'countrycode'],
+                    'dwc:country': ['country'],
+                    'dwc:dateidentified': ['dateidentified', 'date_identified', 'dateidentified'],
+                    'dwc:phylum': ['phylum'],
+                    'dwc:minimumdepthinmeters': ['minimumdepthinmeters', 'min_depth', 'mindepth'],
+                    'dwc:maximumdepthinmeters': ['maximumdepthinmeters', 'max_depth', 'maxdepth'],
+                    'dwc:decimallatitude': ['decimallatitude', 'latitude', 'lat', 'decimallatitude'],
+                    'dwc:decimallongitude': ['decimallongitude', 'longitude', 'lon', 'decimallongitude'],
+                    'dwc:verbatimcoordinates': ['verbatimcoordinates', 'coordinates', 'coords'],
+                    'dwc:geodeticdatum': ['geodeticdatum', 'datum'],
+                    'dwc:scientificname': ['scientificname', 'scientific_name', 'sciname'],
+                    'dwc:year': ['year'],
+                    'dwc:month': ['month'],
+                    'dwc:day': ['day'],
+                    'dwc:eventdate': ['eventdate', 'event_date', 'date'],
+                    'dwc:basisofrecord': ['basisofrecord', 'basis_of_record', 'basis'],
+                    'dwc:occurrenceid': ['occurrenceid', 'occurrence_id', 'id'],
+                    'dwc:taxonid': ['taxonid', 'taxon_id', 'id']
+                }
+                column_mapping: Dict[str, str] = {}
+                for tc in test_columns:
+                    tcl = tc.lower()
+                    if tcl in df_cols_lower:
+                        column_mapping[tc] = df_cols_lower[tcl]
+                        continue
+                    if tcl in dwc_mapping:
+                        for alias in dwc_mapping[tcl]:
+                            if alias in df_cols_lower:
+                                column_mapping[tc] = df_cols_lower[alias]
+                                break
+
+                # Build unique tuples and mapping to row indices
+                unique_tuples: List[List[str]] = []
+                unique_keys_order: List[Tuple[str, ...]] = []
+                tuple_to_rows: Dict[Tuple[str, ...], List[int]] = {}
+
+                for idx, row in df.iterrows():
+                    values: List[str] = []
+                    for tc in test_columns:
+                        if tc in column_mapping:
+                            val = row[column_mapping[tc]]
+                            values.append(str(val) if pd.notna(val) else "")
+                        else:
+                            values.append("")
+                    key = tuple(values)
+                    if key not in tuple_to_rows:
+                        tuple_to_rows[key] = []
+                        unique_tuples.append(list(values))
+                        unique_keys_order.append(key)
+                    tuple_to_rows[key].append(idx)
+
+                test_request = {
+                    "testId": test.id,
+                    "actedUpon": test.actedUpon,
+                    "consulted": test.consulted,
+                    "parameters": test.parameters or {},
+                    "tuples": unique_tuples,
+                }
+
+                prepared_entries.append({
+                    "test": test,
+                    "request": test_request,
+                    "keys": unique_keys_order,
+                    "tuple_to_rows": tuple_to_rows,
+                })
             except Exception as e:
-                logger.error(f"Error running test {test.id}: {e}")
+                logger.error(f"Error preparing test {test.id}: {e}")
                 skipped_tests.append(test.id)
-        
+
+        if not prepared_entries:
+            return test_results, skipped_tests
+
+        # Execute all tests in a single CLI call
+        try:
+            response = self.execute_tests([e["request"] for e in prepared_entries])
+        except Exception as e:
+            logger.error(f"Batched CLI execution failed: {e}")
+            # If batch fails, mark all tests as skipped
+            skipped_tests.extend([e["test"].id for e in prepared_entries])
+            return test_results, skipped_tests
+
+        # Process response per test, expanding tuple results to all matching rows
+        res_map = response.get('results', {}) if isinstance(response, dict) else {}
+        for entry in prepared_entries:
+            test = entry["test"]
+            cli_result = res_map.get(test.id)
+            if not cli_result:
+                logger.warning(f"No results returned for test {test.id}")
+                skipped_tests.append(test.id)
+                continue
+
+            tuple_results = cli_result.get('tupleResults') or []
+            for i, tr in enumerate(tuple_results):
+                if i >= len(entry["keys"]):
+                    continue
+                key = entry["keys"][i]
+                row_indices = entry["tuple_to_rows"].get(key, [])
+                for idx in row_indices:
+                    try:
+                        record_id = str(df.iloc[idx][id_col]) if (id_col is not None) else f"record_{idx}"
+                    except Exception:
+                        record_id = f"record_{idx}"
+                    test_results.append(BDQTestExecutionResult(
+                        record_id=record_id,
+                        test_id=test.id,
+                        status=tr.get('status', 'UNKNOWN'),
+                        result=tr.get('result'),
+                        comment=tr.get('comment', ''),
+                        amendment=None,
+                        test_type=test.type
+                    ))
+
         return test_results, skipped_tests
     
     def _prepare_test_request(self, test: BDQTest, df, core_type: str) -> Dict[str, Any]:
@@ -153,13 +263,41 @@ class BDQCLIService:
         # Extract unique tuples for the test
         test_columns = test.actedUpon + test.consulted
         
-        # Map CSV columns to test columns (case-insensitive)
-        column_mapping = {}
+        # Map CSV columns to test columns (case-insensitive) with dwc: mapping fallbacks
+        column_mapping: Dict[str, str] = {}
+        df_cols_lower = {c.lower(): c for c in df.columns}
+        dwc_mapping = {
+            'dwc:countrycode': ['countrycode', 'country_code', 'countrycode'],
+            'dwc:country': ['country'],
+            'dwc:dateidentified': ['dateidentified', 'date_identified', 'dateidentified'],
+            'dwc:phylum': ['phylum'],
+            'dwc:minimumdepthinmeters': ['minimumdepthinmeters', 'min_depth', 'mindepth'],
+            'dwc:maximumdepthinmeters': ['maximumdepthinmeters', 'max_depth', 'maxdepth'],
+            'dwc:decimallatitude': ['decimallatitude', 'latitude', 'lat', 'decimallatitude'],
+            'dwc:decimallongitude': ['decimallongitude', 'longitude', 'lon', 'decimallongitude'],
+            'dwc:verbatimcoordinates': ['verbatimcoordinates', 'coordinates', 'coords'],
+            'dwc:geodeticdatum': ['geodeticdatum', 'datum'],
+            'dwc:scientificname': ['scientificname', 'scientific_name', 'sciname'],
+            'dwc:year': ['year'],
+            'dwc:month': ['month'],
+            'dwc:day': ['day'],
+            'dwc:eventdate': ['eventdate', 'event_date', 'date'],
+            'dwc:basisofrecord': ['basisofrecord', 'basis_of_record', 'basis'],
+            'dwc:occurrenceid': ['occurrenceid', 'occurrence_id', 'id'],
+            'dwc:taxonid': ['taxonid', 'taxon_id', 'id']
+        }
         for test_col in test_columns:
-            for csv_col in df.columns:
-                if test_col.lower() == csv_col.lower():
-                    column_mapping[test_col] = csv_col
-                    break
+            tc_lower = test_col.lower()
+            # Direct match
+            if tc_lower in df_cols_lower:
+                column_mapping[test_col] = df_cols_lower[tc_lower]
+                continue
+            # Fallback mapping
+            if tc_lower in dwc_mapping:
+                for alias in dwc_mapping[tc_lower]:
+                    if alias in df_cols_lower:
+                        column_mapping[test_col] = df_cols_lower[alias]
+                        break
         
         # Extract tuples
         tuples = []
@@ -181,32 +319,35 @@ class BDQCLIService:
             "tuples": tuples
         }
     
-    def _process_cli_response(self, test: BDQTest, cli_result: Dict[str, Any], df) -> BDQTestExecutionResult:
-        """Process CLI response into BDQTestExecutionResult format"""
-        # This is a simplified conversion - you may need to adjust based on your actual data models
-        if not cli_result.get('tupleResults'):
-            return BDQTestExecutionResult(
-                record_id="unknown",
+    def _process_cli_response(self, test: BDQTest, cli_result: Dict[str, Any], df) -> List[BDQTestExecutionResult]:
+        """Process CLI response into a list of BDQTestExecutionResult mapped to each row"""
+        results: List[BDQTestExecutionResult] = []
+        tuple_results = cli_result.get('tupleResults') or []
+        if not tuple_results:
+            return results
+        # Find the record ID column (occurrenceID/taxonID), case-insensitive
+        id_col = None
+        for c in df.columns:
+            cl = c.lower()
+            if cl == 'occurrenceid' or cl == 'taxonid':
+                id_col = c
+                break
+        for tr in tuple_results:
+            idx = tr.get('tupleIndex')
+            try:
+                record_id = str(df.iloc[idx][id_col]) if (id_col is not None) else f"record_{idx}"
+            except Exception:
+                record_id = f"record_{idx}"
+            results.append(BDQTestExecutionResult(
+                record_id=record_id,
                 test_id=test.id,
-                status="UNKNOWN",
-                result=None,
-                comment="No results from CLI",
+                status=tr.get('status', 'UNKNOWN'),
+                result=tr.get('result'),
+                comment=tr.get('comment', ''),
                 amendment=None,
                 test_type=test.type
-            )
-        
-        # For now, return the first result as a single BDQTestExecutionResult
-        # In a real implementation, you might want to return multiple results
-        first_result = cli_result['tupleResults'][0]
-        return BDQTestExecutionResult(
-            record_id=f"record_{first_result.get('tupleIndex', 0)}",
-            test_id=test.id,
-            status=first_result.get('status', 'UNKNOWN'),
-            result=first_result.get('result'),
-            comment=first_result.get('comment', ''),
-            amendment=None,
-            test_type=test.type
-        )
+            ))
+        return results
     
     def generate_summary(self, test_results: List[BDQTestExecutionResult], total_records: int, skipped_tests: List[str]) -> ProcessingSummary:
         """Generate a summary of test execution results"""

@@ -162,12 +162,13 @@ class TestBDQCLIService:
             test_results, skipped_tests = await bdq_service.run_tests_on_dataset(
                 df, applicable_tests, "Occurrence"
             )
-            
-            assert len(test_results) == 2
+            # Two tests x two rows = four results
+            assert len(test_results) == 4
             assert len(skipped_tests) == 0
+            # First two results correspond to the first test's two rows
             assert test_results[0].test_id == "VALIDATION_COUNTRY_FOUND"
             assert test_results[0].status == "RUN_HAS_RESULT"
-            assert test_results[1].test_id == "VALIDATION_DATE_FORMAT"
+            assert test_results[1].test_id == "VALIDATION_COUNTRY_FOUND"
             assert test_results[1].status == "RUN_HAS_RESULT"
 
     @pytest.mark.asyncio
@@ -250,12 +251,12 @@ class TestBDQCLIService:
             ]
         }
         
-        result = bdq_service._process_cli_response(test, cli_result, df)
-        
-        assert result.test_id == test.id
-        assert result.status == "RUN_HAS_RESULT"
-        assert result.result == "PASS"
-        assert result.comment == "Valid"
+        results = bdq_service._process_cli_response(test, cli_result, df)
+        assert len(results) == 2
+        assert results[0].test_id == test.id
+        assert results[0].status == "RUN_HAS_RESULT"
+        assert results[0].result == "PASS"
+        assert results[0].comment == "Valid"
 
     def test_generate_summary(self, bdq_service):
         """Test summary generation"""
