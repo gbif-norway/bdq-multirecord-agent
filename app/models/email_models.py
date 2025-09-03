@@ -36,7 +36,7 @@ class BDQTest(BaseModel):
     methodName: str
     actedUpon: List[str]
     consulted: List[str] = Field(default_factory=list)
-    parameters: List[Any] = Field(default_factory=list)
+    parameters: Dict[str, str] = Field(default_factory=dict)
 
 class BDQTestResult(BaseModel):
     """Model for BDQ test execution result"""

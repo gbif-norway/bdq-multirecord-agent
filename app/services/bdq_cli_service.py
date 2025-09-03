@@ -64,7 +64,7 @@ class BDQCLIService:
                 methodName=mapping.java_method,
                 actedUpon=mapping.acted_upon,
                 consulted=mapping.consulted,
-                parameters=mapping.parameters or []
+                parameters=mapping.default_parameters or {}
             )
             tests.append(test)
         return tests
@@ -218,7 +218,7 @@ class BDQCLIService:
                     "testId": test.id,
                     "actedUpon": test.actedUpon,
                     "consulted": test.consulted,
-                    "parameters": test.parameters or {},
+                    "parameters": test.parameters,
                     "tuples": unique_tuples,
                 }
 
@@ -346,7 +346,7 @@ class BDQCLIService:
             "testId": test.id,
             "actedUpon": test.actedUpon,
             "consulted": test.consulted,
-            "parameters": test.parameters or {},
+            "parameters": test.parameters,
             "tuples": tuples
         }
     
