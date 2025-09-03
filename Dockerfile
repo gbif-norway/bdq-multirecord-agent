@@ -17,22 +17,10 @@ WORKDIR /workspace/java
 # Temporarily remove the problematic bdqtestrunner module from parent POM
 RUN sed -i '/<module>bdqtestrunner<\/module>/d' pom.xml
 
-# Ensure git is available and initialize minimal repos for vendored modules
-# The upstream modules use git-commit-id-plugin which expects a .git directory
-RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/* \
- && set -eux; \
-   for mod in geo_ref_qc event_date_qc sci_name_qc rec_occur_qc; do \
-     echo "Initializing git repo in java/$mod"; \
-     cd "/workspace/java/$mod"; \
-     git init; \
-     git config user.email "build@example.com"; \
-     git config user.name "Build"; \
-     git add -A; \
-     git commit -m "vendored snapshot for build" || true; \
-   done
+
 
 # Now build the main project with locally installed libraries
-RUN mvn -B -ntp clean package -DskipTests
+RUN mvn -B -ntp -Dgit.commit.id.skip=true clean package -DskipTests
 
 # Runtime image
 FROM python:3.11-slim
