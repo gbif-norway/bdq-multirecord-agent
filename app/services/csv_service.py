@@ -3,7 +3,7 @@ import io
 import base64
 import logging
 from typing import Tuple, Optional, List, Dict, Any
-from app.models.email_models import TestExecutionResult
+from app.models.email_models import BDQTestExecutionResult
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +58,7 @@ class CSVService:
         else:
             return None
     
-    def generate_raw_results_csv(self, test_results: List[TestExecutionResult], core_type: str) -> str:
+    def generate_raw_results_csv(self, test_results: List[BDQTestExecutionResult], core_type: str) -> str:
         """Generate CSV with raw BDQ test results"""
         try:
             # Convert results to DataFrame
@@ -85,7 +85,7 @@ class CSVService:
             logger.error(f"Error generating raw results CSV: {e}")
             raise
     
-    def generate_amended_dataset(self, original_df: pd.DataFrame, test_results: List[TestExecutionResult], core_type: str) -> str:
+    def generate_amended_dataset(self, original_df: pd.DataFrame, test_results: List[BDQTestExecutionResult], core_type: str) -> str:
         """Generate amended dataset with proposed changes applied"""
         try:
             # Create a copy of the original dataframe
@@ -146,7 +146,7 @@ class CSVService:
             raise
     
     def map_results_to_rows(self, df: pd.DataFrame, test_results: Dict[Tuple, Any], 
-                           test_id: str, columns: List[str], core_type: str) -> List[TestExecutionResult]:
+                           test_id: str, columns: List[str], core_type: str) -> List[BDQTestExecutionResult]:
         """Map cached test results back to individual rows"""
         try:
             results = []
@@ -161,7 +161,7 @@ class CSVService:
                     result_data = test_results[row_tuple]
                     record_id = row[f'{core_type}ID']
                     
-                    results.append(TestExecutionResult(
+                    results.append(BDQTestExecutionResult(
                         record_id=record_id,
                         test_id=test_id,
                         status=result_data.get('status', ''),

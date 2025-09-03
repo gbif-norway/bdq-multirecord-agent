@@ -1,6 +1,7 @@
 import os
 import logging
 from typing import Dict, Any
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi import BackgroundTasks
@@ -23,19 +24,45 @@ load_dotenv()
 setup_logging()
 logger = logging.getLogger(__name__)
 
-app = FastAPI(
-    title="BDQ Email Report Service",
-    description="Service to process biodiversity data quality tests via email",
-    version="1.0.0"
-)
-
 # Initialize services
 email_service = EmailService()
 bdq_service = BDQCLIService(skip_validation=True)  # Skip validation in test mode
 csv_service = CSVService()
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    logger.info("Service instance starting")
+    try:
+        send_discord_notification("Instance starting")
+    except Exception:
+        logger.warning("Failed to send Discord startup notification")
+    # Test CLI connection at service start
+    try:
+        if bdq_service.test_connection():
+            logger.info("BDQ CLI connection test successful")
+        else:
+            logger.warning("BDQ CLI connection test failed")
+    except Exception as e:
+        logger.error(f"Failed to test BDQ CLI connection: {e}")
+    
+    yield
+    
+    # Shutdown
+    logger.info("Service instance shutting down")
+    try:
+        send_discord_notification("Instance shutting down")
+    except Exception:
+        logger.warning("Failed to send Discord shutdown notification")
 
-@app.on_event("startup")
+app = FastAPI(
+    title="BDQ Email Report Service",
+    description="Service to process biodiversity data quality tests via email",
+    version="1.0.0",
+    lifespan=lifespan
+)
+
+# Backward compatibility functions for tests
 async def on_startup():
     logger.info("Service instance starting")
     try:
@@ -52,16 +79,12 @@ async def on_startup():
         logger.error(f"Failed to test BDQ CLI connection: {e}")
 
 
-@app.on_event("shutdown")
 async def on_shutdown():
     logger.info("Service instance shutting down")
     try:
         send_discord_notification("Instance shutting down")
     except Exception:
         logger.warning("Failed to send Discord shutdown notification")
-    
-    # CLI service doesn't need cleanup
-    pass
 
 def _normalize_apps_script_payload(raw_data: Dict[str, Any]) -> Dict[str, Any]:
     headers = raw_data.get('headers') or {}

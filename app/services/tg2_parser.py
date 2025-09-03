@@ -222,9 +222,9 @@ class TG2Parser:
             part_lower = part.lower()
             
             # Handle known compound words that should be joined
-            if part_lower in ['country', 'code'] and len(result_parts) > 0 and result_parts[-1].lower().endswith('country'):
-                # countrycode -> Countrycode (as one word)
-                result_parts[-1] = result_parts[-1] + part_lower
+            if part_lower == 'code' and len(result_parts) > 0 and result_parts[-1].lower().endswith('country'):
+                # countrycode -> CountryCode (as one word, but capitalize the Code part)
+                result_parts[-1] = result_parts[-1] + part_lower.capitalize()
             elif part_lower in ['event', 'date'] and len(result_parts) > 0 and result_parts[-1].lower().endswith('event'):
                 # eventdate -> Eventdate (as one word) 
                 result_parts[-1] = result_parts[-1] + part_lower
@@ -266,3 +266,11 @@ class TG2Parser:
         """Get list of all libraries referenced in the mappings"""
         libraries = set(mapping.library for mapping in self.test_mappings.values())
         return sorted(libraries)
+    
+    def get_tests_by_library(self, library: str) -> List[TG2TestMapping]:
+        """Get all test mappings for a specific library (alias for get_mappings_by_library)"""
+        return self.get_mappings_by_library(library)
+    
+    def get_libraries(self) -> List[str]:
+        """Get list of all libraries referenced in the mappings (alias for get_all_libraries)"""
+        return self.get_all_libraries()

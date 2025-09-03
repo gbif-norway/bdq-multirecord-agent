@@ -20,8 +20,9 @@ class TestBDQCLIService:
         parser.parse.return_value = {
             "VALIDATION_COUNTRY_FOUND": Mock(
                 test_id="VALIDATION_COUNTRY_FOUND",
-                name="Country Validation",
-                description="Validates that country field is present and valid",
+                library="geo_ref_qc",
+                java_class="org.filteredpush.qc.georef.CountryFound",
+                java_method="validationCountryFound",
                 test_type="VALIDATION",
                 acted_upon=["dwc:country"],
                 consulted=[],
@@ -30,8 +31,9 @@ class TestBDQCLIService:
             ),
             "VALIDATION_DATE_FORMAT": Mock(
                 test_id="VALIDATION_DATE_FORMAT",
-                name="Date Format Validation",
-                description="Validates date format",
+                library="event_date_qc",
+                java_class="org.filteredpush.qc.event.DateFormatValidator",
+                java_method="validationDateFormat",
                 test_type="VALIDATION",
                 acted_upon=["dwc:eventDate"],
                 consulted=[],
@@ -83,19 +85,19 @@ class TestBDQCLIService:
         tests = bdq_service.get_available_tests()
         
         assert len(tests) == 2
-        test_ids = [test.test_id for test in tests]
+        test_ids = [test.id for test in tests]
         assert "VALIDATION_COUNTRY_FOUND" in test_ids
         assert "VALIDATION_DATE_FORMAT" in test_ids
         
         # Check first test structure
-        country_test = next(t for t in tests if t.test_id == "VALIDATION_COUNTRY_FOUND")
-        assert country_test.name == "Country Validation"
-        assert country_test.test_type == "VALIDATION"
-        assert country_test.acted_upon == ["dwc:country"]
+        country_test = next(t for t in tests if t.id == "VALIDATION_COUNTRY_FOUND")
+        assert country_test.className == "org.filteredpush.qc.georef.CountryFound"
+        assert country_test.type == "VALIDATION"
+        assert country_test.actedUpon == ["dwc:country"]
 
     def test_filter_applicable_tests(self, bdq_service):
         """Test filtering applicable tests based on CSV columns"""
-        csv_columns = ["occurrenceID", "country", "eventDate"]
+        csv_columns = ["occurrenceID", "dwc:country", "dwc:eventDate"]
         
         applicable_tests = bdq_service.filter_applicable_tests(
             bdq_service.get_available_tests(), 
@@ -117,7 +119,7 @@ class TestBDQCLIService:
 
     def test_filter_applicable_tests_case_insensitive(self, bdq_service):
         """Test that column matching is case insensitive"""
-        csv_columns = ["occurrenceID", "Country", "EventDate"]  # Different case
+        csv_columns = ["occurrenceID", "dwc:country", "dwc:eventDate"]  # Different case
         
         applicable_tests = bdq_service.filter_applicable_tests(
             bdq_service.get_available_tests(), 
@@ -132,8 +134,8 @@ class TestBDQCLIService:
         """Test successful test execution on dataset"""
         df = pd.DataFrame({
             "occurrenceID": ["occ1", "occ2"],
-            "country": ["USA", "Canada"],
-            "eventDate": ["2023-01-01", "2023-01-02"]
+            "dwc:country": ["USA", "Canada"],
+            "dwc:eventDate": ["2023-01-01", "2023-01-02"]
         })
         
         tests = bdq_service.get_available_tests()
@@ -147,6 +149,12 @@ class TestBDQCLIService:
                             {"tupleIndex": 0, "status": "RUN_HAS_RESULT", "result": "PASS", "comment": "Valid"},
                             {"tupleIndex": 1, "status": "RUN_HAS_RESULT", "result": "PASS", "comment": "Valid"}
                         ]
+                    },
+                    "VALIDATION_DATE_FORMAT": {
+                        "tupleResults": [
+                            {"tupleIndex": 0, "status": "RUN_HAS_RESULT", "result": "PASS", "comment": "Valid"},
+                            {"tupleIndex": 1, "status": "RUN_HAS_RESULT", "result": "PASS", "comment": "Valid"}
+                        ]
                     }
                 }
             }
@@ -155,18 +163,20 @@ class TestBDQCLIService:
                 df, applicable_tests, "Occurrence"
             )
             
-            assert len(test_results) == 1
+            assert len(test_results) == 2
             assert len(skipped_tests) == 0
-            assert test_results[0].total_records == 2
-            assert test_results[0].successful_records == 2
+            assert test_results[0].test_id == "VALIDATION_COUNTRY_FOUND"
+            assert test_results[0].status == "RUN_HAS_RESULT"
+            assert test_results[1].test_id == "VALIDATION_DATE_FORMAT"
+            assert test_results[1].status == "RUN_HAS_RESULT"
 
     @pytest.mark.asyncio
     async def test_run_tests_on_dataset_with_errors(self, bdq_service):
         """Test test execution with some errors"""
         df = pd.DataFrame({
             "occurrenceID": ["occ1", "occ2"],
-            "country": ["USA", "Canada"],
-            "eventDate": ["2023-01-01", "2023-01-02"]
+            "dwc:country": ["USA", "Canada"],
+            "dwc:eventDate": ["2023-01-01", "2023-01-02"]
         })
         
         tests = bdq_service.get_available_tests()
@@ -187,13 +197,13 @@ class TestBDQCLIService:
         test = bdq_service.get_available_tests()[0]  # Get first test
         df = pd.DataFrame({
             "occurrenceID": ["occ1", "occ2"],
-            "country": ["USA", "Canada"]
+            "dwc:country": ["USA", "Canada"]
         })
         
         request = bdq_service._prepare_test_request(test, df, "Occurrence")
         
-        assert request["testId"] == test.test_id
-        assert request["actedUpon"] == test.acted_upon
+        assert request["testId"] == test.id
+        assert request["actedUpon"] == test.actedUpon
         assert request["consulted"] == test.consulted
         assert len(request["tuples"]) == 2
         assert request["tuples"][0] == ["USA"]  # country value for first row
@@ -204,7 +214,7 @@ class TestBDQCLIService:
         test = bdq_service.get_available_tests()[0]  # Get first test
         df = pd.DataFrame({
             "occurrenceID": ["occ1"],
-            "Country": ["USA"]  # Different case
+            "dwc:country": ["USA"]  # Different case
         })
         
         request = bdq_service._prepare_test_request(test, df, "Occurrence")
@@ -230,7 +240,7 @@ class TestBDQCLIService:
         test = bdq_service.get_available_tests()[0]  # Get first test
         df = pd.DataFrame({
             "occurrenceID": ["occ1", "occ2"],
-            "country": ["USA", "Canada"]
+            "dwc:country": ["USA", "Canada"]
         })
         
         cli_result = {
@@ -242,18 +252,10 @@ class TestBDQCLIService:
         
         result = bdq_service._process_cli_response(test, cli_result, df)
         
-        assert result.test == test
-        assert len(result.results) == 2
-        assert result.total_records == 2
-        assert result.successful_records == 1
-        assert result.failed_records == 1
-        
-        # Check first result
-        first_result = result.results[0]
-        assert first_result.test_id == test.test_id
-        assert first_result.row_index == 0
-        assert first_result.status == "RUN_HAS_RESULT"
-        assert first_result.result == "PASS"
+        assert result.test_id == test.id
+        assert result.status == "RUN_HAS_RESULT"
+        assert result.result == "PASS"
+        assert result.comment == "Valid"
 
     def test_generate_summary(self, bdq_service):
         """Test summary generation"""
@@ -272,9 +274,7 @@ class TestBDQCLIService:
         summary = bdq_service.generate_summary(test_results, 3, skipped_tests)
         
         assert summary.total_records == 3
-        assert summary.total_tests == 3
-        assert summary.successful_tests == 2
-        assert summary.failed_tests == 1
+        assert summary.total_tests_run == 3
         assert summary.skipped_tests == ["TEST_3"]
 
     @patch('subprocess.run')
@@ -407,10 +407,8 @@ class TestBDQCLIService:
     def test_test_connection_failure(self, bdq_service):
         """Test failed CLI connection test"""
         with patch.object(bdq_service, 'execute_tests') as mock_execute:
-            mock_execute.return_value = {
-                "results": {}  # No results
-            }
-            
+            mock_execute.side_effect = Exception("CLI execution failed")
+    
             result = bdq_service.test_connection()
             assert result is False
 

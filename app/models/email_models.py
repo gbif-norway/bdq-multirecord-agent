@@ -46,7 +46,7 @@ class BDQTestResult(BaseModel):
     comment: Optional[str] = None
     amendment: Optional[Dict[str, Any]] = None
 
-class TestExecutionResult(BaseModel):
+class BDQTestExecutionResult(BaseModel):
     """Model for complete test execution result for a row"""
     record_id: str
     test_id: str

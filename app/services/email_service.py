@@ -6,7 +6,7 @@ import hmac
 import hashlib
 import json
 from typing import Optional, List
-from app.models.email_models import EmailPayload, EmailAttachment, ProcessingSummary, TestExecutionResult
+from app.models.email_models import EmailPayload, EmailAttachment, ProcessingSummary, BDQTestExecutionResult
 
 logger = logging.getLogger(__name__)
 
@@ -152,7 +152,7 @@ class EmailService:
     
     async def send_results_reply(self, email_data: EmailPayload, summary: ProcessingSummary, 
                                raw_results_csv: str, amended_dataset_csv: str, 
-                               test_results: List[TestExecutionResult], core_type: str):
+                               test_results: List[BDQTestExecutionResult], core_type: str):
         """Send results reply email with attachments"""
         try:
             if not self.gmail_send_endpoint:
@@ -168,7 +168,7 @@ class EmailService:
             
             # Generate intelligent summary using LLM
             llm_service = LLMService()
-            llm_summary = await llm_service.generate_intelligent_summary(
+            llm_summary = llm_service.generate_intelligent_summary(
                 summary, test_results, email_data, core_type
             )
             
@@ -309,3 +309,22 @@ Note: The amended dataset applies proposed changes from Amendment-type tests.
 """
         
         return html
+
+    def generate_email_summary(self, test_results, core_type, total_records, skipped_tests=None):
+        """
+        Generate email summary (wrapper method for backward compatibility)
+        
+        This is a simplified wrapper around _generate_summary_text
+        for testing purposes.
+        """
+        # Create a basic ProcessingSummary
+        summary = ProcessingSummary(
+            total_records=total_records,
+            total_tests_run=len(test_results),
+            validation_failures={},
+            common_issues=[],
+            amendments_applied=0,
+            skipped_tests=skipped_tests or []
+        )
+        
+        return self._generate_summary_text(summary)

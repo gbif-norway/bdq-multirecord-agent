@@ -5,7 +5,7 @@ import os
 from unittest.mock import patch, Mock
 
 from app.services.csv_service import CSVService
-from app.models.email_models import BDQTestResult, TestExecutionResult, BDQTest
+from app.models.email_models import BDQTestResult, BDQTestExecutionResult, BDQTest
 
 
 class TestCSVService:
@@ -44,7 +44,7 @@ class TestCSVService:
     @pytest.fixture
     def sample_test_results(self):
         """Sample test results for testing"""
-        return TestExecutionResult(
+        return BDQTestExecutionResult(
             record_id="occ1",
             test_id="VALIDATION_COUNTRY_FOUND",
             status="RUN_HAS_RESULT",
@@ -231,7 +231,7 @@ occ4,España,Madrid"""
 
     def test_generate_raw_results_csv_multiple_tests(self, csv_service):
         """Test raw results CSV generation with multiple tests"""
-        results1 = TestExecutionResult(
+        results1 = BDQTestExecutionResult(
             record_id="occ1",
             test_id="VALIDATION_COUNTRY_FOUND",
             status="RUN_HAS_RESULT",
@@ -241,7 +241,7 @@ occ4,España,Madrid"""
             test_type="VALIDATION"
         )
         
-        results2 = TestExecutionResult(
+        results2 = BDQTestExecutionResult(
             record_id="occ2",
             test_id="VALIDATION_DATE_FORMAT",
             status="RUN_HAS_RESULT",

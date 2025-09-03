@@ -2,7 +2,7 @@ import os
 import logging
 import google.generativeai as genai
 from typing import List, Dict, Any, Optional
-from app.models.email_models import ProcessingSummary, TestExecutionResult, EmailPayload
+from app.models.email_models import ProcessingSummary, BDQTestExecutionResult, EmailPayload
 
 logger = logging.getLogger(__name__)
 
@@ -14,17 +14,22 @@ class LLMService:
         if not self.api_key:
             logger.warning("GOOGLE_API_KEY not set - LLM summaries will be disabled")
             logger.info("GOOGLE_API_KEY not set - LLM summaries will be disabled")
-            self.enabled = False
+            self._enabled = False
         else:
             genai.configure(api_key=self.api_key)
-            self.enabled = True
+            self._enabled = True
             self.model = genai.GenerativeModel('gemini-1.5-flash')
+    
+    @property
+    def enabled(self) -> bool:
+        """Check if the LLM service is enabled based on current API key"""
+        return bool(self.api_key)
     
     def generate_summary(
         self,
         core_type: str,
         total_records: int,
-        test_results: List[TestExecutionResult],
+        test_results: List[BDQTestExecutionResult],
         from_email: str,
         subject: str,
         body_text: str
@@ -62,7 +67,7 @@ class LLMService:
     def generate_intelligent_summary(
         self, 
         summary: ProcessingSummary, 
-        test_results: List[TestExecutionResult],
+        test_results: List[BDQTestExecutionResult],
         email_data: EmailPayload,
         core_type: str
     ) -> Dict[str, str]:
@@ -105,7 +110,7 @@ class LLMService:
     def _prepare_llm_context(
         self, 
         summary: ProcessingSummary, 
-        test_results: List[TestExecutionResult],
+        test_results: List[BDQTestExecutionResult],
         email_data: EmailPayload,
         core_type: str
     ) -> Dict[str, Any]:

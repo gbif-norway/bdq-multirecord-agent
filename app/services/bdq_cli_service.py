@@ -8,7 +8,7 @@ from typing import Dict, List, Any, Optional, Tuple
 from pathlib import Path
 
 from app.services.tg2_parser import TG2Parser, TG2TestMapping
-from app.models.email_models import BDQTest, BDQTestResult, TestExecutionResult, ProcessingSummary
+from app.models.email_models import BDQTest, BDQTestResult, BDQTestExecutionResult, ProcessingSummary
 
 logger = logging.getLogger(__name__)
 
@@ -50,13 +50,14 @@ class BDQCLIService:
         tests = []
         for test_id, mapping in self.test_mappings.items():
             test = BDQTest(
-                test_id=test_id,
-                name=mapping.name,
-                description=mapping.description,
-                test_type=mapping.test_type,
-                acted_upon=mapping.acted_upon,
+                id=test_id,
+                guid=f"guid-{test_id}",
+                type=mapping.test_type,
+                className=mapping.java_class,
+                methodName=mapping.java_method,
+                actedUpon=mapping.acted_upon,
                 consulted=mapping.consulted,
-                parameters=mapping.parameters
+                parameters=mapping.parameters or []
             )
             tests.append(test)
         return tests
@@ -68,18 +69,18 @@ class BDQCLIService:
         
         for test in tests:
             # Check if test requires columns that are present in CSV
-            test_columns = test.acted_upon + test.consulted
+            test_columns = test.actedUpon + test.consulted
             test_columns_lower = [col.lower() for col in test_columns]
             
             # Simple check: if any required column is missing, skip the test
             if all(col in csv_columns_lower for col in test_columns_lower):
                 applicable_tests.append(test)
             else:
-                logger.debug(f"Skipping test {test.test_id} - missing columns: {test_columns}")
+                logger.debug(f"Skipping test {test.id} - missing columns: {test_columns}")
         
         return applicable_tests
     
-    async def run_tests_on_dataset(self, df, applicable_tests: List[BDQTest], core_type: str) -> Tuple[List[TestExecutionResult], List[str]]:
+    async def run_tests_on_dataset(self, df, applicable_tests: List[BDQTest], core_type: str) -> Tuple[List[BDQTestExecutionResult], List[str]]:
         """Run BDQ tests on the dataset using the CLI"""
         test_results = []
         skipped_tests = []
@@ -93,23 +94,23 @@ class BDQCLIService:
                 response = self.execute_tests([test_request])
                 
                 # Process results
-                if test.test_id in response.get('results', {}):
-                    result = self._process_cli_response(test, response['results'][test.test_id], df)
+                if test.id in response.get('results', {}):
+                    result = self._process_cli_response(test, response['results'][test.id], df)
                     test_results.append(result)
                 else:
-                    logger.warning(f"No results returned for test {test.test_id}")
-                    skipped_tests.append(test.test_id)
+                    logger.warning(f"No results returned for test {test.id}")
+                    skipped_tests.append(test.id)
                     
             except Exception as e:
-                logger.error(f"Error running test {test.test_id}: {e}")
-                skipped_tests.append(test.test_id)
+                logger.error(f"Error running test {test.id}: {e}")
+                skipped_tests.append(test.id)
         
         return test_results, skipped_tests
     
     def _prepare_test_request(self, test: BDQTest, df, core_type: str) -> Dict[str, Any]:
         """Prepare a test request for the CLI"""
         # Extract unique tuples for the test
-        test_columns = test.acted_upon + test.consulted
+        test_columns = test.actedUpon + test.consulted
         
         # Map CSV columns to test columns (case-insensitive)
         column_mapping = {}
@@ -132,37 +133,41 @@ class BDQCLIService:
             tuples.append(tuple_data)
         
         return {
-            "testId": test.test_id,
-            "actedUpon": test.acted_upon,
+            "testId": test.id,
+            "actedUpon": test.actedUpon,
             "consulted": test.consulted,
             "parameters": test.parameters or {},
             "tuples": tuples
         }
     
-    def _process_cli_response(self, test: BDQTest, cli_result: Dict[str, Any], df) -> TestExecutionResult:
-        """Process CLI response into TestExecutionResult format"""
+    def _process_cli_response(self, test: BDQTest, cli_result: Dict[str, Any], df) -> BDQTestExecutionResult:
+        """Process CLI response into BDQTestExecutionResult format"""
         # This is a simplified conversion - you may need to adjust based on your actual data models
-        results = []
-        
-        for tuple_result in cli_result.get('tupleResults', []):
-            result = BDQTestResult(
-                test_id=test.test_id,
-                row_index=tuple_result.get('tupleIndex', 0),
-                status=tuple_result.get('status', 'UNKNOWN'),
-                result=tuple_result.get('result'),
-                comment=tuple_result.get('comment', '')
+        if not cli_result.get('tupleResults'):
+            return BDQTestExecutionResult(
+                record_id="unknown",
+                test_id=test.id,
+                status="UNKNOWN",
+                result=None,
+                comment="No results from CLI",
+                amendment=None,
+                test_type=test.type
             )
-            results.append(result)
         
-        return TestExecutionResult(
-            test=test,
-            results=results,
-            total_records=len(df),
-            successful_records=len([r for r in results if r.status == 'RUN_HAS_RESULT']),
-            failed_records=len([r for r in results if r.status != 'RUN_HAS_RESULT'])
+        # For now, return the first result as a single BDQTestExecutionResult
+        # In a real implementation, you might want to return multiple results
+        first_result = cli_result['tupleResults'][0]
+        return BDQTestExecutionResult(
+            record_id=f"record_{first_result.get('tupleIndex', 0)}",
+            test_id=test.id,
+            status=first_result.get('status', 'UNKNOWN'),
+            result=first_result.get('result'),
+            comment=first_result.get('comment', ''),
+            amendment=None,
+            test_type=test.type
         )
     
-    def generate_summary(self, test_results: List[TestExecutionResult], total_records: int, skipped_tests: List[str]) -> ProcessingSummary:
+    def generate_summary(self, test_results: List[BDQTestExecutionResult], total_records: int, skipped_tests: List[str]) -> ProcessingSummary:
         """Generate a summary of test execution results"""
         total_tests = len(test_results) + len(skipped_tests)
         successful_tests = len([r for r in test_results if r.successful_records > 0])
@@ -170,11 +175,11 @@ class BDQCLIService:
         
         return ProcessingSummary(
             total_records=total_records,
-            total_tests=total_tests,
-            successful_tests=successful_tests,
-            failed_tests=failed_tests,
-            skipped_tests=skipped_tests,
-            execution_time=0  # CLI doesn't provide timing info
+            total_tests_run=total_tests,
+            validation_failures={},  # CLI doesn't provide detailed failure info
+            common_issues=[],
+            amendments_applied=0,
+            skipped_tests=skipped_tests
         )
     
     def execute_tests(self, test_requests: List[Dict[str, Any]]) -> Dict[str, Any]:

@@ -11,7 +11,7 @@ from app.services.bdq_cli_service import BDQCLIService
 from app.services.csv_service import CSVService
 from app.services.email_service import EmailService
 from app.services.tg2_parser import TG2Parser
-from app.models.email_models import EmailPayload, BDQTest, BDQTestResult, TestExecutionResult
+from app.models.email_models import EmailPayload, BDQTest, BDQTestResult, BDQTestExecutionResult
 
 
 @pytest.fixture
@@ -84,7 +84,7 @@ def sample_test_result():
 @pytest.fixture
 def sample_test_execution_result(sample_bdq_test, sample_test_result):
     """Sample test execution result for testing"""
-    return TestExecutionResult(
+    return BDQTestExecutionResult(
         test=sample_bdq_test,
         results=[sample_test_result],
         total_records=1,

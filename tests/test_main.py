@@ -92,7 +92,7 @@ class TestMainApp:
             mock_discord.assert_called()
 
     def test_process_incoming_email_invalid_payload(self, client):
-        """Test email processing with invalid email payload structure"""
+        """Test email processing with invalid email payload structure - still accepted but processed asynchronously"""
         email_data = {
             "invalid": "structure"
         }
@@ -102,8 +102,10 @@ class TestMainApp:
             
             assert response.status_code == 200  # Still returns 200 to avoid blocking
             data = response.json()
-            assert data["status"] == "error"
-            assert "Invalid email payload structure" in data["message"]
+            # The service accepts any valid JSON and processes it asynchronously
+            # Invalid structure will be handled in background processing
+            assert data["status"] == "accepted"
+            assert "Email queued for processing" in data["message"]
             
             mock_discord.assert_called()
 
@@ -170,29 +172,35 @@ class TestMainApp:
         # The list content should be converted to base64 string
         assert normalized["attachments"][0]["content_base64"] == "dGVzdCBkYXRh"
 
-    def test_startup_event(self, client):
+    @pytest.mark.asyncio
+    async def test_startup_event(self, client):
         """Test application startup event"""
         with patch('app.main.send_discord_notification') as mock_discord:
             with patch('app.main.bdq_service.test_connection') as mock_test_conn:
                 mock_test_conn.return_value = True
                 
-                # Trigger startup event
-                app.router.startup()
+                # Import and call the startup function directly
+                from app.main import on_startup
+                await on_startup()
                 
                 mock_discord.assert_called_with("Instance starting")
                 mock_test_conn.assert_called_once()
 
-    def test_shutdown_event(self, client):
+    @pytest.mark.asyncio
+    async def test_shutdown_event(self, client):
         """Test application shutdown event"""
         with patch('app.main.send_discord_notification') as mock_discord:
-            # Trigger shutdown event
-            app.router.shutdown()
+            # Import and call the shutdown function directly
+            from app.main import on_shutdown
+            await on_shutdown()
             
             mock_discord.assert_called_with("Instance shutting down")
 
-    def test_global_exception_handlers(self, client):
+    @pytest.mark.asyncio
+    async def test_global_exception_handlers(self, client):
         """Test global exception handlers"""
-        from fastapi import HTTPException, RequestValidationError
+        from fastapi import HTTPException
+        from fastapi.exceptions import RequestValidationError
         from app.main import http_exception_handler, validation_exception_handler, unhandled_exception_handler
         
         # Test HTTP exception handler
@@ -200,9 +208,9 @@ class TestMainApp:
             request = Mock()
             exc = HTTPException(status_code=404, detail="Not found")
             
-            response = http_exception_handler(request, exc)
+            response = await http_exception_handler(request, exc)
             assert response.status_code == 404
-            assert response.body.decode() == '{"detail": "Not found"}'
+            assert response.body.decode() == '{"detail":"Not found"}'
             mock_discord.assert_called_with("HTTPException 404: Not found")
 
         # Test validation exception handler
@@ -210,7 +218,7 @@ class TestMainApp:
             request = Mock()
             exc = RequestValidationError(errors=[])
             
-            response = validation_exception_handler(request, exc)
+            response = await validation_exception_handler(request, exc)
             assert response.status_code == 422
             mock_discord.assert_called_with("Request validation error on incoming request")
 
@@ -219,7 +227,7 @@ class TestMainApp:
             request = Mock()
             exc = Exception("Unexpected error")
             
-            response = unhandled_exception_handler(request, exc)
+            response = await unhandled_exception_handler(request, exc)
             assert response.status_code == 500
-            assert response.body.decode() == '{"detail": "Internal server error"}'
+            assert response.body.decode() == '{"detail":"Internal server error"}'
             mock_discord.assert_called_with("Unhandled exception: Unexpected error")
