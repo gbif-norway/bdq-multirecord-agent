@@ -42,7 +42,30 @@ class TG2Parser:
         
     def parse(self) -> Dict[str, TG2TestMapping]:
         """Parse the TG2 CSV file and return test mappings"""
-        logger.info(f"Parsing TG2 test mappings from {self.csv_path}")
+        import os
+        abs_path = os.path.abspath(self.csv_path)
+        logger.info(f"Parsing TG2 test mappings from: {self.csv_path}")
+        logger.info(f"Absolute path: {abs_path}")
+        logger.info(f"File exists: {os.path.exists(self.csv_path)}")
+        logger.info(f"Current working directory: {os.getcwd()}")
+        
+        if not os.path.exists(self.csv_path):
+            # Try alternative paths
+            alternative_paths = [
+                "bdq-spec/tg2/core/TG2_tests.csv",
+                "/app/TG2_tests.csv", 
+                "/app/bdq-spec/tg2/core/TG2_tests.csv"
+            ]
+            logger.info(f"File not found, trying alternatives: {alternative_paths}")
+            
+            for alt_path in alternative_paths:
+                if os.path.exists(alt_path):
+                    logger.info(f"Found TG2 CSV at alternative path: {alt_path}")
+                    self.csv_path = alt_path
+                    break
+            else:
+                available_files = [f for f in os.listdir('.') if '.csv' in f.lower() or 'tg2' in f.lower()]
+                raise FileNotFoundError(f"TG2_tests.csv not found at {self.csv_path} or alternatives. Available CSV files: {available_files}")
         
         try:
             with open(self.csv_path, 'r', encoding='utf-8') as file:

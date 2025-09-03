@@ -29,8 +29,12 @@ class BDQCLIService:
         try:
             self._load_test_mappings()
             logger.info(f"Loaded {len(self.test_mappings)} test mappings")
+            if len(self.test_mappings) == 0:
+                logger.error("CRITICAL: Zero test mappings loaded - no tests will be available!")
+                send_discord_notification("❌ CRITICAL: Zero BDQ test mappings loaded!")
         except Exception as e:
-            logger.warning(f"Failed to load test mappings: {e}")
+            logger.error(f"Failed to load test mappings: {e}")
+            send_discord_notification(f"❌ Failed to load BDQ test mappings: {str(e)}")
             if not skip_validation:
                 raise
         
