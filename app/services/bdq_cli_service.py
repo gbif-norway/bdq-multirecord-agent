@@ -74,16 +74,20 @@ class BDQCLIService:
         applicable_tests = []
         csv_columns_lower = [col.lower() for col in csv_columns]
         
-        # Darwin Core term to common CSV column mapping
+        logger.info(f"Filtering {len(tests)} tests against {len(csv_columns)} CSV columns")
+        logger.debug(f"CSV columns: {csv_columns}")
+        logger.debug(f"CSV columns (lowercase): {csv_columns_lower}")
+        
+        # Darwin Core term to common CSV column mapping (including camelCase variants)
         dwc_mapping = {
             'dwc:countrycode': ['countrycode', 'country_code', 'countrycode'],
             'dwc:country': ['country'],
             'dwc:dateidentified': ['dateidentified', 'date_identified', 'dateidentified'],
             'dwc:phylum': ['phylum'],
-            'dwc:minimumdepthinmeters': ['minimumdepthinmeters', 'min_depth', 'mindepth'],
-            'dwc:maximumdepthinmeters': ['maximumdepthinmeters', 'max_depth', 'maxdepth'],
-            'dwc:decimallatitude': ['decimallatitude', 'latitude', 'lat', 'decimallatitude'],
-            'dwc:decimallongitude': ['decimallongitude', 'longitude', 'lon', 'decimallongitude'],
+            'dwc:minimumdepthinmeters': ['minimumdepthinmeters', 'min_depth', 'mindepth', 'minimumelevationinmeters'],
+            'dwc:maximumdepthinmeters': ['maximumdepthinmeters', 'max_depth', 'maxdepth', 'maximumelevationinmeters'],
+            'dwc:decimallatitude': ['decimallatitude', 'latitude', 'lat'],
+            'dwc:decimallongitude': ['decimallongitude', 'longitude', 'lon'],
             'dwc:verbatimcoordinates': ['verbatimcoordinates', 'coordinates', 'coords'],
             'dwc:geodeticdatum': ['geodeticdatum', 'datum'],
             'dwc:scientificname': ['scientificname', 'scientific_name', 'sciname'],
@@ -101,26 +105,42 @@ class BDQCLIService:
             test_columns = test.actedUpon + test.consulted
             test_columns_lower = [col.lower() for col in test_columns]
             
+            logger.debug(f"Evaluating test {test.id}: needs {test_columns}")
+            
             # Check if all required test columns can be mapped to CSV columns
             all_columns_present = True
+            missing_columns = []
+            
             for test_col in test_columns_lower:
+                column_found = False
                 if test_col in dwc_mapping:
                     # Check if any of the mapped CSV columns are present
                     mapped_cols = dwc_mapping[test_col]
-                    if not any(mapped_col in csv_columns_lower for mapped_col in mapped_cols):
-                        all_columns_present = False
-                        break
+                    if any(mapped_col in csv_columns_lower for mapped_col in mapped_cols):
+                        column_found = True
+                        logger.debug(f"  {test_col} -> {mapped_cols} -> FOUND")
+                    else:
+                        logger.debug(f"  {test_col} -> {mapped_cols} -> NOT FOUND")
+                        missing_columns.append(test_col)
                 else:
                     # Direct match if no mapping exists
-                    if test_col not in csv_columns_lower:
-                        all_columns_present = False
-                        break
+                    if test_col in csv_columns_lower:
+                        column_found = True
+                        logger.debug(f"  {test_col} -> Direct match -> FOUND")
+                    else:
+                        logger.debug(f"  {test_col} -> Direct match -> NOT FOUND")
+                        missing_columns.append(test_col)
+                
+                if not column_found:
+                    all_columns_present = False
             
             if all_columns_present:
                 applicable_tests.append(test)
+                logger.debug(f"✓ Test {test.id} is applicable")
             else:
-                logger.debug(f"Skipping test {test.id} - missing columns: {test_columns}")
+                logger.info(f"✗ Skipping test {test.id} - missing columns: {missing_columns}")
         
+        logger.info(f"Found {len(applicable_tests)} applicable tests out of {len(tests)} total")
         return applicable_tests
     
     async def run_tests_on_dataset(self, df, applicable_tests: List[BDQTest], core_type: str) -> Tuple[List[BDQTestExecutionResult], List[str]]:
