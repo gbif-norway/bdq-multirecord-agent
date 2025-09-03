@@ -1,0 +1,9 @@
+org/bdq/cli/model/BDQResponse$TestResults.class
+org/bdq/cli/model/BDQResponse.class
+org/bdq/cli/model/BDQRequest$TestRequest.class
+org/bdq/cli/model/BDQResponse$TestError.class
+org/bdq/cli/model/BDQRequest.class
+org/bdq/cli/executor/BDQTestExecutor$TestMapping.class
+org/bdq/cli/Main.class
+org/bdq/cli/model/BDQResponse$TupleResult.class
+org/bdq/cli/executor/BDQTestExecutor.class

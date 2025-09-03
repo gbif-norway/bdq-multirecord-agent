@@ -11,7 +11,7 @@ import base64
 import asyncio
 
 from services.email_service import EmailService
-from services.bdq_jvm_client import BDQJVMClient
+from services.bdq_cli_service import BDQCLIService
 from services.csv_service import CSVService
 from models.email_models import EmailPayload
 from utils.logger import setup_logging, send_discord_notification
@@ -31,7 +31,7 @@ app = FastAPI(
 
 # Initialize services
 email_service = EmailService()
-bdq_service = BDQJVMClient()
+bdq_service = BDQCLIService()
 csv_service = CSVService()
 
 
@@ -42,11 +42,14 @@ async def on_startup():
         send_discord_notification("Instance starting")
     except Exception:
         logger.warning("Failed to send Discord startup notification")
-    # Ensure JVM server is started and warmed up at service start
+    # Test CLI connection at service start
     try:
-        bdq_service.ensure_jvm_running()
+        if bdq_service.test_connection():
+            logger.info("BDQ CLI connection test successful")
+        else:
+            logger.warning("BDQ CLI connection test failed")
     except Exception as e:
-        logger.error(f"Failed to start/warmup BDQ JVM service: {e}")
+        logger.error(f"Failed to test BDQ CLI connection: {e}")
 
 
 @app.on_event("shutdown")
@@ -57,11 +60,8 @@ async def on_shutdown():
     except Exception:
         logger.warning("Failed to send Discord shutdown notification")
     
-    # Clean up JVM process
-    try:
-        bdq_service.shutdown()
-    except Exception as e:
-        logger.warning(f"Error shutting down BDQ JVM service: {e}")
+    # CLI service doesn't need cleanup
+    pass
 
 def _normalize_apps_script_payload(raw_data: Dict[str, Any]) -> Dict[str, Any]:
     headers = raw_data.get('headers') or {}
@@ -118,17 +118,14 @@ async def health_check():
         "csv_service": "healthy"
     }
     
-    # Probe JVM status if possible
-    jvm_ready = False
-    warmed_up = getattr(bdq_service, 'is_warmed_up', False)
+    # Probe CLI status if possible
+    cli_ready = False
     try:
-        bdq_service.ensure_jvm_running()
-        jvm_ready = True
+        cli_ready = bdq_service.test_connection()
     except Exception:
-        jvm_ready = False
+        cli_ready = False
     services_status.update({
-        "bdq_jvm_ready": jvm_ready,
-        "bdq_jvm_warmed_up": warmed_up
+        "bdq_cli_ready": cli_ready
     })
 
     return {

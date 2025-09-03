@@ -6,14 +6,18 @@ A lightweight email-based service that runs Biodiversity Data Quality (BDQ) test
 
 This service receives dataset submissions via email, processes CSV files, runs BDQ tests, and replies with detailed results including validation failures and proposed amendments. It is currently deployed on google cloud run at https://bdq-multirecord-agent-638241344017.europe-west1.run.app/
 
+## Recent Refactor
+
+**Refactored from Unix socket server to CLI approach**: Replaced complex Unix domain socket server architecture with simple command-line interface approach for better reliability and easier debugging. **Eliminated persistent JVM process management**: Removed socket server, health checks, and restart logic in favor of stateless CLI execution per request. **Simplified Docker build**: Streamlined multi-stage Dockerfile that builds CLI JAR and eliminates build complexity that was causing deployment failures.
+
 ## Architecture
 
 All local development should be done in docker containers.
 
 - **Google Apps Script**: Polls Gmail inbox and forwards emails to this service, as well as providing an "endpoint" for email replies. Code for this is in this repo, in google-apps-scripts/
 - **Google Cloud Run**: This FastAPI service, which processes datasets and runs BDQ tests for the entire dataset
-- **Inline BDQ Libraries**: Local JVM server with resident FilteredPush BDQ libraries, eliminating external API dependencies
-  - Java server runs BDQ tests locally using Unix domain socket communication
+- **Inline BDQ Libraries**: Local JVM CLI with resident FilteredPush BDQ libraries, eliminating external API dependencies
+  - Java CLI executes BDQ tests locally using file-based I/O (JSON input/output)
   - Test mappings driven by TG2_tests.csv for comprehensive BDQ test coverage
   - Significantly faster than HTTP-based external API calls
 
@@ -53,8 +57,8 @@ PORT=8080
 2. **CSV Processing**: Extract and parse CSV attachment
 3. **Core Detection**: Identify occurrence or taxon core type
 4. **Test Discovery**: Load applicable BDQ tests from TG2_tests.csv mapping
-5. **JVM Server Startup**: Launch resident Java server with FilteredPush BDQ libraries
-6. **Test Execution**: Run tests locally via Unix socket with batched processing and unique value deduplication
+5. **CLI Execution**: Execute BDQ tests via Java CLI with JSON input/output files
+6. **Test Execution**: Run tests locally via CLI with proper error handling and result processing
 7. **Result Generation**: Create raw results and amended dataset CSVs
 8. **LLM Summary**: Generate intelligent, contextual email summaries using Google Gemini
 9. **Email Reply**: Send results back to sender with attachments (using HMAC authentication)
@@ -63,20 +67,20 @@ More information about each of these is in the buildspec.md.
 
 ## Inline BDQ Implementation
 
-This service now includes the FilteredPush BDQ libraries directly, running in a local JVM process instead of calling external APIs:
+This service now includes the FilteredPush BDQ libraries directly, running in a local JVM CLI instead of calling external APIs:
 
 ### Architecture
-- **Local JVM Server**: Resident Java process with BDQ libraries loaded
-- **Unix Socket Communication**: JSON-RPC over Unix domain socket for high performance
+- **Local JVM CLI**: Java command-line application with BDQ libraries loaded
+- **File-based Communication**: JSON input/output files for simple, reliable execution
 - **Test Mapping**: TG2_tests.csv drives the mapping from test IDs to Java class/method implementations
-- **Batched Processing**: Multiple tests processed together for efficiency
-- **Caching**: Per-test, per-unique-tuple caching to avoid redundant computations
+- **Stateless Execution**: Each request spawns a new CLI process for isolation
+- **Subprocess Management**: Python manages CLI execution with proper error handling
 
 ### Benefits
-- **Performance**: Eliminates HTTP overhead, significantly faster test execution
-- **Reliability**: No external API dependencies, works offline
+- **Simplicity**: Eliminates socket server complexity, easier to debug and maintain
+- **Reliability**: No persistent process management, each execution is isolated
 - **Consistency**: Uses official FilteredPush implementations directly
-- **Scalability**: Local processing scales with container resources
+- **Deployability**: Much simpler Docker build that actually works in Cloud Run
 
 ### Supported Libraries
 - **geo_ref_qc**: Georeference quality control (from rukayaj/geo_ref_qc fork)

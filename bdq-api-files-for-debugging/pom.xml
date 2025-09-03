@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
+         https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.2.0</version>
+        <relativePath/>
+    </parent>
+    
+    <groupId>com.bdq</groupId>
+    <artifactId>bdq-api</artifactId>
+    <version>1.0.0</version>
+    <name>BDQ API</name>
+    <description>REST API wrapper for FilteredPush BDQ validation libraries</description>
+    
+    <properties>
+        <java.version>17</java.version>
+    </properties>
+    
+    <dependencies>
+        <!-- Spring Boot Starters -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        
+        <!-- API Documentation -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>2.2.0</version>
+        </dependency>
+        
+        <!-- FFDQ API (explicit for compile stability) -->
+        <dependency>
+            <groupId>org.datakurator</groupId>
+            <artifactId>ffdq-api</artifactId>
+            <version>2.0.2</version>
+        </dependency>
+
+        <!-- FilteredPush QC libraries -->
+        <!-- Geo Reference QC (used by GeoRefController) -->
+        <dependency>
+            <groupId>org.filteredpush</groupId>
+            <artifactId>geo_ref_qc</artifactId>
+            <version>2.1.2-SNAPSHOT</version>
+        </dependency>
+        <!-- Scientific Name QC (used by SciNameController) -->
+        <dependency>
+            <groupId>org.filteredpush</groupId>
+            <artifactId>sci_name_qc</artifactId>
+            <version>1.2.1-SNAPSHOT</version>
+        </dependency>
+        <!-- Event Date QC (used by EventDateController) -->
+        <dependency>
+            <groupId>org.filteredpush</groupId>
+            <artifactId>event_date_qc</artifactId>
+            <version>3.1.1-SNAPSHOT</version>
+        </dependency>
+        <!-- Record/Metadata QC (used by RecOccurController) -->
+        <dependency>
+            <groupId>org.filteredpush</groupId>
+            <artifactId>rec_occur_qc</artifactId>
+            <version>1.1.1-SNAPSHOT</version>
+        </dependency>
+    </dependencies>
+    
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+
+    <!-- Repositories required by FilteredPush dependencies (GBIF, GeoTools) -->
+    <repositories>
+        <repository>
+            <id>gbif-all</id>
+            <url>https://repository.gbif.org/content/groups/gbif</url>
+        </repository>
+        <repository>
+            <id>osgeo-geotools</id>
+            <name>Open Source Geospatial Foundation - GeoTools</name>
+            <url>https://repo.osgeo.org/repository/geotools-releases/</url>
+        </repository>
+    </repositories>
+</project>

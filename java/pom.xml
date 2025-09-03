@@ -22,10 +22,32 @@
         <module>sci_name_qc</module>
         <module>rec_occur_qc</module>
         <module>bdqtestrunner</module>
-        <module>bdq-jvm-server</module>
+        <module>bdq-cli</module>
     </modules>
     
     <repositories>
+        <repository>
+            <id>central</id>
+            <name>Maven Central</name>
+            <url>https://repo1.maven.org/maven2/</url>
+            <releases>
+                <enabled>true</enabled>
+            </releases>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+        </repository>
+        <repository>
+            <id>sonatype-snapshots</id>
+            <name>Sonatype Snapshots</name>
+            <url>https://oss.sonatype.org/content/repositories/snapshots/</url>
+            <releases>
+                <enabled>false</enabled>
+            </releases>
+            <snapshots>
+                <enabled>true</enabled>
+            </snapshots>
+        </repository>
         <repository>
             <id>gbif-all</id>
             <url>https://repository.gbif.org/content/groups/gbif</url>

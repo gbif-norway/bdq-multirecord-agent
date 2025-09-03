@@ -42,8 +42,8 @@ Don't deploy or test locally, CI/CD is set up on google cloud run so each commit
       ```
    d) Unique-value dedup per test:
       - For each test, create a set of **unique tuples** = values of its `actedUpon` columns across **all rows**.
-      - For each unique tuple, **execute the BDQ test locally** using our resident JVM server. Cache the result by `(test_id, tuple)`.
-         - Tests are executed via Unix domain socket communication with the local Java BDQ server
+      - For each unique tuple, **execute the BDQ test locally** using our Java CLI. Cache the result by `(test_id, tuple)`.
+         - Tests are executed via CLI with JSON input/output files for simple, reliable execution
          - Results include the same status values as the external API:
          Possible Status values:
          - `RUN_HAS_RESULT` - Completed run with a result
@@ -105,7 +105,7 @@ Don't deploy or test locally, CI/CD is set up on google cloud run so each commit
 ## Stack
 
 - **Apps Script**: Polls Gmail, forwards new mail to Cloud Run. Separate Apps script deployed as a Web app sends email replies.
-- **Google Cloud Run**: (this app) Stateless HTTP service with resident JVM server for inline BDQ test execution.
+- **Google Cloud Run**: (this app) Stateless HTTP service with Java CLI for inline BDQ test execution.
 - **Inline BDQ Libraries**: FilteredPush BDQ libraries (geo_ref_qc, event_date_qc, sci_name_qc, rec_occur_qc) run locally in the same container.
 - **bdqtestrunner**: Official FilteredPush testing framework integrated for standards compliance.
 

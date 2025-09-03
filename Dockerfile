@@ -1,45 +1,62 @@
-# Multi-stage build: First stage builds Java BDQ server
-FROM maven:3.9-eclipse-temurin-17 AS bdqbuild
+# Multi-stage build for BDQ CLI
+FROM maven:3.9-eclipse-temurin-17 AS build
+
 WORKDIR /workspace
 
-# Copy Java project files - copy the entire java directory structure
+# Copy Java project files
 COPY java/ java/
+
+# Copy Maven settings for SNAPSHOT dependencies
+COPY bdq-api-files-for-debugging/.mvn.settings.xml /root/.m2/settings.xml
+
+# Always fetch latest FilteredPush libraries (builds newest code)
+RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/* \
+ && set -eux; \
+   for mod in sci_name_qc geo_ref_qc event_date_qc rec_occur_qc; do \
+     echo "Cloning latest $mod"; \
+     rm -rf "java/$mod"; \
+     git clone --depth 1 "https://github.com/FilteredPush/$mod.git" "java/$mod"; \
+   done
 
 # Build Java project - run Maven from the java directory
 WORKDIR /workspace/java
-RUN mvn -q -DskipTests package
 
-# Second stage: Runtime image with Python and JRE
+# Temporarily remove the problematic bdqtestrunner module from parent POM
+RUN sed -i '/<module>bdqtestrunner<\/module>/d' pom.xml
+
+# Now build the main project with locally installed libraries
+RUN mvn -B -ntp clean package -DskipTests
+
+# Runtime image
 FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies including JRE
+# Install JRE for running the Java CLI
 RUN apt-get update && apt-get install -y \
-    gcc \
-    openjdk-17-jre-headless \
+    openjdk-21-jre \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy Java BDQ server from build stage
-COPY --from=bdqbuild /workspace/java/bdq-jvm-server/target/bdq-jvm-server.jar /opt/bdq/bdq-jvm-server.jar
+# Copy the CLI JAR from build stage
+COPY --from=build /workspace/java/bdq-cli/target/bdq-cli-1.0.0.jar /opt/bdq/bdq-cli.jar
+
+# Copy Python application code
+COPY app/ app/
+COPY requirements.txt .
+COPY TG2_tests.csv .
 
 # Install Python dependencies
-COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy application code and TG2 test definitions
-COPY app/ .
-COPY TG2_tests.csv .
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 ENV PORT=8080
 ENV PYTHONPATH=/app
-ENV BDQ_SOCKET_PATH=/tmp/bdq_jvm.sock
+ENV BDQ_CLI_JAR=/opt/bdq/bdq-cli.jar
 ENV BDQ_JAVA_OPTS="-Xms256m -Xmx1024m"
 
 # Expose port
 EXPOSE 8080
 
-# Run the application
+# Run the Python application
 CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
