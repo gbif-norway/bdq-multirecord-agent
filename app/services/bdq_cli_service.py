@@ -273,7 +273,7 @@ class BDQCLIService:
             response = self.execute_tests([e["request"] for e in prepared_entries])
             execution_time = time.time() - start_time
             logger.info(f"CLI execution completed successfully in {execution_time:.1f} seconds")
-            send_discord_notification(f"✅ CLI execution completed in {execution_time:.1f}s!")
+            send_discord_notification(f"✅ CLI execution completed in {execution_time:.1f}s! Processing results...")
         except Exception as e:
             logger.error(f"Batched CLI execution failed: {e}")
             # If batch fails, mark all tests as skipped

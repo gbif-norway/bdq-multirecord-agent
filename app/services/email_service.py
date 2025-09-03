@@ -165,12 +165,15 @@ class EmailService:
             
             # Import LLM service here to avoid circular imports
             from app.services.llm_service import LLMService
+            from app.utils.logger import send_discord_notification
             
             # Generate intelligent summary using LLM
+            send_discord_notification(f"🤖 Generating intelligent analysis with Gemini...")
             llm_service = LLMService()
             llm_summary = llm_service.generate_intelligent_summary(
                 summary, test_results, email_data, core_type
             )
+            send_discord_notification(f"✅ Gemini analysis complete!")
             
             # Use LLM-generated summary
             body_html = llm_summary['html']

@@ -209,8 +209,18 @@ async def _handle_email_processing(email_data: EmailPayload):
 
         # Run BDQ tests
         test_results, skipped_tests = await get_bdq_service().run_tests_on_dataset(df, applicable_tests, core_type)
+        
+        # Debug test results
+        logger.info(f"BDQ execution complete: {len(test_results)} test results, {len(skipped_tests)} skipped tests")
+        if test_results:
+            sample_result = test_results[0]
+            logger.info(f"Sample result: {sample_result.test_id} -> {sample_result.status} for record {sample_result.record_id}")
+        else:
+            logger.error("CRITICAL: No test results returned from BDQ CLI!")
+            send_discord_notification("❌ CRITICAL: BDQ CLI returned zero test results!")
 
         # Generate result files
+        send_discord_notification(f"📊 Generating result files with {len(test_results)} test results...")
         raw_results_csv = csv_service.generate_raw_results_csv(test_results, core_type)
         amended_dataset_csv = csv_service.generate_amended_dataset(df, test_results, core_type)
 
@@ -218,6 +228,7 @@ async def _handle_email_processing(email_data: EmailPayload):
         summary = get_bdq_service().generate_summary(test_results, len(df), skipped_tests)
 
         # Send reply email
+        send_discord_notification(f"📧 Generating intelligent summary and sending email...")
         await email_service.send_results_reply(
             email_data,
             summary,
@@ -226,6 +237,7 @@ async def _handle_email_processing(email_data: EmailPayload):
             test_results,
             core_type
         )
+        send_discord_notification(f"✅ Email sent successfully to {email_data.from_email}!")
 
         logger.info(f"Successfully processed email from {email_data.from_email}")
     except Exception as e:
