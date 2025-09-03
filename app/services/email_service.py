@@ -6,7 +6,7 @@ import hmac
 import hashlib
 import json
 from typing import Optional, List
-from models.email_models import EmailPayload, EmailAttachment, ProcessingSummary, TestExecutionResult
+from app.models.email_models import EmailPayload, EmailAttachment, ProcessingSummary, TestExecutionResult
 
 logger = logging.getLogger(__name__)
 
@@ -164,7 +164,7 @@ class EmailService:
                 return
             
             # Import LLM service here to avoid circular imports
-            from services.llm_service import LLMService
+            from app.services.llm_service import LLMService
             
             # Generate intelligent summary using LLM
             llm_service = LLMService()

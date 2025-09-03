@@ -2,7 +2,7 @@ import os
 import logging
 import google.generativeai as genai
 from typing import List, Dict, Any, Optional
-from models.email_models import ProcessingSummary, TestExecutionResult, EmailPayload
+from app.models.email_models import ProcessingSummary, TestExecutionResult, EmailPayload
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +20,46 @@ class LLMService:
             self.enabled = True
             self.model = genai.GenerativeModel('gemini-1.5-flash')
     
-    async def generate_intelligent_summary(
+    def generate_summary(
+        self,
+        core_type: str,
+        total_records: int,
+        test_results: List[TestExecutionResult],
+        from_email: str,
+        subject: str,
+        body_text: str
+    ) -> str:
+        """
+        Generate summary (wrapper method for backward compatibility)
+        
+        This is a simplified wrapper around generate_intelligent_summary
+        for testing purposes.
+        """
+        # Create a basic ProcessingSummary
+        summary = ProcessingSummary(
+            total_records=total_records,
+            total_tests_run=len(test_results),
+            validation_failures={},
+            common_issues=[],
+            amendments_applied=0,
+            skipped_tests=[]
+        )
+        
+        # Create EmailPayload
+        email_data = EmailPayload(
+            message_id="test",
+            thread_id="test",
+            from_email=from_email,
+            to_email="bdq@example.com",
+            subject=subject,
+            body_text=body_text
+        )
+        
+        # Call the actual method
+        result = self.generate_intelligent_summary(summary, test_results, email_data, core_type)
+        return result['text']
+
+    def generate_intelligent_summary(
         self, 
         summary: ProcessingSummary, 
         test_results: List[TestExecutionResult],

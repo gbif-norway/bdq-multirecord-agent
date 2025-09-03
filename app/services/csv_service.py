@@ -3,7 +3,7 @@ import io
 import base64
 import logging
 from typing import Tuple, Optional, List, Dict, Any
-from models.email_models import TestExecutionResult
+from app.models.email_models import TestExecutionResult
 
 logger = logging.getLogger(__name__)
 

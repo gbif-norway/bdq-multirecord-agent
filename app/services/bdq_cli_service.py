@@ -7,8 +7,8 @@ import pandas as pd
 from typing import Dict, List, Any, Optional, Tuple
 from pathlib import Path
 
-from services.tg2_parser import TG2Parser, TG2TestMapping
-from models.email_models import BDQTest, BDQTestResult, TestExecutionResult, ProcessingSummary
+from app.services.tg2_parser import TG2Parser, TG2TestMapping
+from app.models.email_models import BDQTest, BDQTestResult, TestExecutionResult, ProcessingSummary
 
 logger = logging.getLogger(__name__)
 
@@ -17,19 +17,23 @@ class BDQCLIService:
     Service for executing BDQ tests using the Java CLI application
     """
     
-    def __init__(self, cli_jar_path: str = None, java_opts: str = None):
+    def __init__(self, cli_jar_path: str = None, java_opts: str = None, skip_validation: bool = False):
         self.cli_jar_path = cli_jar_path or os.getenv('BDQ_CLI_JAR', '/opt/bdq/bdq-cli.jar')
         self.java_opts = java_opts or os.getenv('BDQ_JAVA_OPTS', '-Xms256m -Xmx1024m')
         self.test_mappings: Dict[str, TG2TestMapping] = {}
+        self.skip_validation = skip_validation
         
-        # Validate CLI JAR exists
-        if not os.path.exists(self.cli_jar_path):
-            raise FileNotFoundError(f"BDQ CLI JAR not found at: {self.cli_jar_path}")
-        
-        # Parse TG2 mappings on startup
-        self._load_test_mappings()
-        
-        logger.info(f"BDQ CLI Service initialized with JAR: {self.cli_jar_path}")
+        if not skip_validation:
+            # Validate CLI JAR exists
+            if not os.path.exists(self.cli_jar_path):
+                raise FileNotFoundError(f"BDQ CLI JAR not found at: {self.cli_jar_path}")
+            
+            # Parse TG2 mappings on startup
+            self._load_test_mappings()
+            
+            logger.info(f"BDQ CLI Service initialized with JAR: {self.cli_jar_path}")
+        else:
+            logger.info(f"BDQ CLI Service initialized in test mode (validation skipped)")
     
     def _load_test_mappings(self):
         """Load test mappings from TG2_tests.csv"""

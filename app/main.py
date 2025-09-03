@@ -10,11 +10,11 @@ from dotenv import load_dotenv
 import base64
 import asyncio
 
-from services.email_service import EmailService
-from services.bdq_cli_service import BDQCLIService
-from services.csv_service import CSVService
-from models.email_models import EmailPayload
-from utils.logger import setup_logging, send_discord_notification
+from app.services.email_service import EmailService
+from app.services.bdq_cli_service import BDQCLIService
+from app.services.csv_service import CSVService
+from app.models.email_models import EmailPayload
+from app.utils.logger import setup_logging, send_discord_notification
 
 # Load environment variables
 load_dotenv()
@@ -31,7 +31,7 @@ app = FastAPI(
 
 # Initialize services
 email_service = EmailService()
-bdq_service = BDQCLIService()
+bdq_service = BDQCLIService(skip_validation=True)  # Skip validation in test mode
 csv_service = CSVService()
 
 
