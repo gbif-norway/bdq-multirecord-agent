@@ -91,39 +91,68 @@ public class BDQTestExecutor {
         Object[] args = new Object[method.getParameterCount()];
         Class<?>[] paramTypes = method.getParameterTypes();
         
+        logger.debug("Mapping arguments for {}: {} params, tuple size {}, acted upon {}, consulted {}", 
+            testId, paramTypes.length, tuple.size(), actedUpon.size(), consulted.size());
+        
         int argIndex = 0;
         
-        // First, add actedUpon values
+        // Map actedUpon values to method parameters
         for (int i = 0; i < actedUpon.size() && i < tuple.size() && argIndex < args.length; i++) {
             if (paramTypes[argIndex] == String.class) {
                 args[argIndex] = tuple.get(i);
+                logger.debug("Mapping actedUpon[{}] '{}' to parameter[{}]", i, tuple.get(i), argIndex);
                 argIndex++;
+            } else {
+                logger.warn("Parameter[{}] is not String type for actedUpon value: {}", argIndex, paramTypes[argIndex]);
+                break;
             }
         }
         
-        // Add consulted values if needed
+        // Map consulted values if needed (these come after actedUpon in the tuple)
+        int consultedStartIndex = actedUpon.size();
         for (int i = 0; i < consulted.size() && argIndex < args.length; i++) {
-            if (paramTypes[argIndex] == String.class) {
-                args[argIndex] = consulted.get(i);
+            int tupleIndex2 = consultedStartIndex + i;
+            if (tupleIndex2 < tuple.size() && paramTypes[argIndex] == String.class) {
+                args[argIndex] = tuple.get(tupleIndex2);
+                logger.debug("Mapping consulted[{}] '{}' to parameter[{}]", i, tuple.get(tupleIndex2), argIndex);
+                argIndex++;
+            } else if (paramTypes[argIndex] == String.class) {
+                // If no consulted value available, use empty string or null
+                args[argIndex] = "";
+                logger.debug("No consulted value available, using empty string for parameter[{}]", argIndex);
                 argIndex++;
             }
         }
         
-        // Add parameters if needed
-        if (parameters != null && argIndex < args.length) {
-            if (paramTypes[argIndex] == Map.class) {
-                args[argIndex] = parameters;
-                argIndex++;
-            }
-        }
-        
-        // Fill remaining parameters with null if needed
+        // Handle additional parameters (like bdq:sourceAuthority)
         while (argIndex < args.length) {
-            args[argIndex] = null;
-            argIndex++;
+            if (paramTypes[argIndex] == String.class) {
+                // Check if we have parameter values to use
+                String paramValue = null;
+                if (parameters != null && !parameters.isEmpty()) {
+                    // Try common parameter names
+                    paramValue = parameters.get("bdq:sourceAuthority");
+                    if (paramValue == null) {
+                        paramValue = parameters.values().iterator().next(); // Use first available parameter
+                    }
+                }
+                args[argIndex] = paramValue != null ? paramValue : "";
+                logger.debug("Mapping parameter '{}' to parameter[{}]", paramValue, argIndex);
+                argIndex++;
+            } else if (paramTypes[argIndex] == Map.class) {
+                args[argIndex] = parameters != null ? parameters : new HashMap<>();
+                logger.debug("Mapping parameters Map to parameter[{}]", argIndex);
+                argIndex++;
+            } else {
+                // For other types, use null
+                args[argIndex] = null;
+                logger.debug("Using null for unknown parameter type {} at index {}", paramTypes[argIndex], argIndex);
+                argIndex++;
+            }
         }
         
         // Execute the method
+        logger.debug("Invoking {} with args: {}", method.getName(), Arrays.toString(args));
         Object result = method.invoke(instance, args);
         
         // Extract values from DQResponse object
@@ -173,7 +202,23 @@ public class BDQTestExecutor {
         Method method = methodCache.get(cacheKey);
         if (method == null) {
             Class<?> clazz = Class.forName(javaClass);
-            method = clazz.getMethod(javaMethod, String.class);
+            
+            // Try to find the method by name - don't hardcode parameter types
+            Method[] methods = clazz.getMethods();
+            for (Method m : methods) {
+                if (m.getName().equals(javaMethod)) {
+                    method = m;
+                    logger.debug("Found method {} with {} parameters: {}", 
+                        javaMethod, m.getParameterCount(), 
+                        Arrays.toString(m.getParameterTypes()));
+                    break;
+                }
+            }
+            
+            if (method == null) {
+                throw new NoSuchMethodException("Method " + javaMethod + " not found in class " + javaClass);
+            }
+            
             methodCache.put(cacheKey, method);
         }
         

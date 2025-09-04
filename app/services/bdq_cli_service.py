@@ -21,8 +21,9 @@ class BDQCLIService:
     
     def __init__(self, cli_jar_path: str = None, java_opts: str = None, skip_validation: bool = False):
         self.cli_jar_path = cli_jar_path or os.getenv('BDQ_CLI_JAR', '/opt/bdq/bdq-cli.jar')
-        # Optimized Java settings for better performance
-        default_java_opts = '-Xms512m -Xmx2048m -XX:+UseG1GC -XX:+UseStringDeduplication -XX:+OptimizeStringConcat'
+        # Optimized Java settings for Cloud Run environment
+        cloud_run_java_opts = '-Xms256m -Xmx1024m -XX:+UseG1GC -XX:+UseStringDeduplication -XX:MaxGCPauseMillis=200 -XX:+DisableExplicitGC'
+        default_java_opts = cloud_run_java_opts
         self.java_opts = java_opts or os.getenv('BDQ_JAVA_OPTS', default_java_opts)
         self.test_mappings: Dict[str, TG2TestMapping] = {}
         self.skip_validation = skip_validation
@@ -81,8 +82,15 @@ class BDQCLIService:
         test_results: List[BDQTestExecutionResult] = []
         skipped_tests: List[str] = []
         
-        logger.info(f"🧪 Starting individual BDQ test execution on {len(df)} records with {len(applicable_tests)} applicable tests")
-        send_discord_notification(f"🧪 Running {len(applicable_tests)} tests individually on {len(df):,} records with timing")
+        # Cloud Run optimization: limit number of tests to prevent timeout
+        max_tests_cloud_run = int(os.getenv('MAX_TESTS_CLOUD_RUN', '10'))
+        if len(applicable_tests) > max_tests_cloud_run:
+            logger.warning(f"⚡ Cloud Run mode: Limiting to {max_tests_cloud_run} tests out of {len(applicable_tests)} to prevent timeout")
+            send_discord_notification(f"⚡ Cloud Run optimization: Running {max_tests_cloud_run}/{len(applicable_tests)} tests to prevent timeout")
+            applicable_tests = applicable_tests[:max_tests_cloud_run]
+        
+        logger.info(f"🧪 Starting BDQ test execution on {len(df)} records with {len(applicable_tests)} applicable tests")
+        send_discord_notification(f"🧪 Running {len(applicable_tests)} tests on {len(df):,} records")
         
         for i, test in enumerate(applicable_tests):
             test_start_time = time.time()
@@ -241,7 +249,7 @@ class BDQCLIService:
                 java_cmd,
                 capture_output=True,
                 text=True,
-                timeout=60  # Shorter timeout for individual tests
+                timeout=120  # Increased timeout for Cloud Run environment
             )
             
             if result.returncode != 0:
