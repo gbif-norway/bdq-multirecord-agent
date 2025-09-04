@@ -11,64 +11,13 @@ class LLMService:
     
     def __init__(self):
         self.api_key = os.getenv("GOOGLE_API_KEY")
-        if not self.api_key:
-            logger.warning("GOOGLE_API_KEY not set - LLM summaries will be disabled")
-            logger.info("GOOGLE_API_KEY not set - LLM summaries will be disabled")
-            self._enabled = False
-        else:
-            genai.configure(api_key=self.api_key)
-            self._enabled = True
-            self.model = genai.GenerativeModel('gemini-1.5-flash')
+        genai.configure(api_key=self.api_key)
+        self.model = genai.GenerativeModel('gemini-1.5-flash')
     
-    @property
-    def enabled(self) -> bool:
-        """Check if the LLM service is enabled based on current API key"""
-        return bool(self.api_key)
-    
-    def generate_summary(
-        self,
-        core_type: str,
-        total_records: int,
-        test_results: List[BDQTestExecutionResult],
-        from_email: str,
-        subject: str,
-        body_text: str
-    ) -> str:
-        """
-        Generate summary (wrapper method for backward compatibility)
-        
-        This is a simplified wrapper around generate_intelligent_summary
-        for testing purposes.
-        """
-        # Create a basic ProcessingSummary
-        summary = ProcessingSummary(
-            total_records=total_records,
-            total_tests_run=len(test_results),
-            validation_failures={},
-            common_issues=[],
-            amendments_applied=0,
-            skipped_tests=[]
-        )
-        
-        # Create EmailPayload
-        email_data = EmailPayload(
-            message_id="test",
-            thread_id="test",
-            from_email=from_email,
-            to_email="bdq@example.com",
-            subject=subject,
-            body_text=body_text
-        )
-        
-        # Call the actual method
-        result = self.generate_intelligent_summary(summary, test_results, email_data, core_type)
-        return result['text']
-
     def generate_intelligent_summary(
         self, 
-        summary: ProcessingSummary, 
         test_results: List[BDQTestExecutionResult],
-        email_data: EmailPayload,
+        original_email_data: EmailPayload,
         core_type: str
     ) -> Dict[str, str]:
         """
@@ -77,16 +26,9 @@ class LLMService:
         Returns:
             Dict with 'text' and 'html' keys containing the generated summaries
         """
-        if not self.enabled:
-            logger.warning("LLM service disabled - falling back to basic summary")
-            return self._generate_fallback_summary(summary)
-        
         try:
-            # Prepare context for the LLM
-            context = self._prepare_llm_context(summary, test_results, email_data, core_type)
-            
             # Generate the prompt
-            prompt = self._create_summary_prompt(context)
+            prompt = self._create_summary_prompt(test_results, original_email_data, core_type)
             
             # Call Gemini API
             response = self.model.generate_content(prompt)
@@ -98,67 +40,10 @@ class LLMService:
                     'text': llm_summary,
                     'html': self._convert_to_html(llm_summary)
                 }
-            else:
-                logger.warning("LLM returned empty response - falling back to basic summary")
-                return self._generate_fallback_summary(summary)
                 
         except Exception as e:
             logger.error(f"Error generating LLM summary: {e}")
-            logger.info("Falling back to basic summary generation")
-            return self._generate_fallback_summary(summary)
     
-    def _prepare_llm_context(
-        self, 
-        summary: ProcessingSummary, 
-        test_results: List[BDQTestExecutionResult],
-        email_data: EmailPayload,
-        core_type: str
-    ) -> Dict[str, Any]:
-        """Prepare context data for the LLM"""
-        
-        # Analyze test results for insights
-        validation_failures_by_field = {}
-        amendment_insights = []
-        data_quality_score = 0
-        
-        for result in test_results:
-            if result.result == "NOT_COMPLIANT":
-                # Extract field name from test ID for better categorization
-                field_name = self._extract_field_name(result.test_id)
-                if field_name not in validation_failures_by_field:
-                    validation_failures_by_field[field_name] = []
-                validation_failures_by_field[field_name].append({
-                    'test_id': result.test_id,
-                    'comment': result.comment,
-                    'record_id': result.record_id
-                })
-            elif result.status == "AMENDED":
-                amendment_insights.append({
-                    'test_id': result.test_id,
-                    'amendment': result.amendment,
-                    'comment': result.comment
-                })
-        
-        # Calculate data quality score
-        total_failures = sum(len(failures) for failures in validation_failures_by_field.values())
-        if summary.total_tests_run > 0:
-            data_quality_score = max(0, 100 - (total_failures / summary.total_tests_run * 100))
-        
-        return {
-            'summary': summary,
-            'validation_failures_by_field': validation_failures_by_field,
-            'amendment_insights': amendment_insights,
-            'data_quality_score': round(data_quality_score, 1),
-            'email_context': {
-                'subject': email_data.subject,
-                'body_text': email_data.body_text,
-                'body_html': email_data.body_html,
-                'from_email': email_data.from_email
-            },
-            'core_type': core_type,
-            'total_records': summary.total_records,
-            'skipped_tests': list(summary.skipped_tests or [])
-        }
     
     def _create_summary_prompt(self, context: Dict[str, Any]) -> str:
         """Create the prompt for the LLM"""
@@ -216,64 +101,3 @@ Focus on being helpful and actionable rather than just reporting numbers."""
 
         return prompt
     
-    def _extract_field_name(self, test_id: str) -> str:
-        """Extract a human-readable field name from test ID"""
-        # Remove common prefixes and convert to readable format
-        field_mapping = {
-            'COORDINATES': 'Geographic coordinates',
-            'COUNTRYCODE': 'Country codes',
-            'BASISOFRECORD': 'Basis of record',
-            'SCIENTIFICNAME': 'Scientific names',
-            'DATE': 'Date fields',
-            'IDENTIFIER': 'Identifiers',
-            'GEOREFERENCE': 'Georeference data'
-        }
-        
-        for key, value in field_mapping.items():
-            if key in test_id.upper():
-                return value
-        
-        # Fallback: convert test ID to readable format
-        return test_id.replace('_', ' ').replace('VALIDATION', '').replace('AMENDMENT', '').strip()
-    
-    def _convert_to_html(self, text_summary: str) -> str:
-        """Convert plain text summary to HTML format"""
-        # Simple conversion - preserve line breaks and add basic formatting
-        html = text_summary.replace('\n\n', '</p><p>')
-        html = html.replace('\n', '<br>')
-        return f"<p>{html}</p>"
-    
-    def _generate_fallback_summary(self, summary: ProcessingSummary) -> Dict[str, str]:
-        """Generate basic summary when LLM is not available"""
-        text = f"""Thank you for submitting your biodiversity dataset for quality assessment!
-
-We've processed {summary.total_records:,} records and run {summary.total_tests_run:,} quality tests.
-
-"""
-        
-        if summary.validation_failures:
-            text += "We found some data quality issues that you may want to address:\n"
-            for test_id, count in summary.validation_failures.items():
-                text += f"- {test_id}: {count} issues\n"
-        else:
-            text += "Great news! No validation failures were found in your dataset.\n"
-        
-        if summary.amendments_applied > 0:
-            text += f"\nWe've automatically applied {summary.amendments_applied} improvements to standardize your data.\n"
-        
-        if getattr(summary, 'skipped_tests', None):
-            text += "\nA few tests could not be run due to a temporary technical issue and were skipped this time. We'll retry them in a future run without needing anything from you.\n"
-            for t in summary.skipped_tests[:10]:
-                text += f"- {t}\n"
-        
-        text += """
-Please review the attached files:
-- bdq_raw_results.csv: Detailed test results for each record
-- amended_dataset.csv: Your dataset with proposed improvements applied
-
-Feel free to reach out if you have any questions about the results!"""
-        
-        return {
-            'text': text,
-            'html': self._convert_to_html(text)
-        }
