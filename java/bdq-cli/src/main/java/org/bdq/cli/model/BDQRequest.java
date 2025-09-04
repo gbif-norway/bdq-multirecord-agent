@@ -38,6 +38,12 @@ public class BDQRequest {
         @JsonProperty("testId")
         private String testId;
         
+        @JsonProperty("javaClass")
+        private String javaClass;
+        
+        @JsonProperty("javaMethod")
+        private String javaMethod;
+        
         @JsonProperty("actedUpon")
         private List<String> actedUpon;
         
@@ -52,9 +58,12 @@ public class BDQRequest {
         
         public TestRequest() {}
         
-        public TestRequest(String testId, List<String> actedUpon, List<String> consulted, 
+        public TestRequest(String testId, String javaClass, String javaMethod,
+                         List<String> actedUpon, List<String> consulted, 
                          Map<String, String> parameters, List<List<String>> tuples) {
             this.testId = testId;
+            this.javaClass = javaClass;
+            this.javaMethod = javaMethod;
             this.actedUpon = actedUpon;
             this.consulted = consulted;
             this.parameters = parameters;
@@ -67,6 +76,22 @@ public class BDQRequest {
         
         public void setTestId(String testId) {
             this.testId = testId;
+        }
+        
+        public String getJavaClass() {
+            return javaClass;
+        }
+        
+        public void setJavaClass(String javaClass) {
+            this.javaClass = javaClass;
+        }
+        
+        public String getJavaMethod() {
+            return javaMethod;
+        }
+        
+        public void setJavaMethod(String javaMethod) {
+            this.javaMethod = javaMethod;
         }
         
         public List<String> getActedUpon() {

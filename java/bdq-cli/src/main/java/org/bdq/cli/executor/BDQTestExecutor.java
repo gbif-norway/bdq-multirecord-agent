@@ -19,245 +19,9 @@ public class BDQTestExecutor {
     private final Map<String, Method> methodCache = new ConcurrentHashMap<>();
     private final Map<String, Object> instanceCache = new ConcurrentHashMap<>();
     
-    // Test mappings - would be loaded from TG2_tests.csv
-    private final Map<String, TestMapping> testMappings = new HashMap<>();
-    
     public BDQTestExecutor() {
-        // Initialize with some basic test mappings
-        // In a real implementation, this would be loaded from TG2_tests.csv
-        initializeTestMappings();
-    }
-    
-    private void initializeTestMappings() {
-        // Load test mappings from TG2_tests.csv
-        loadTestMappingsFromCSV();
-    }
-    
-    private void loadTestMappingsFromCSV() {
-        String[] possiblePaths = {
-            "TG2_tests.csv",
-            "/opt/bdq/TG2_tests.csv",
-            "/app/TG2_tests.csv",
-            "bdq-spec/tg2/core/TG2_tests.csv"
-        };
-        
-        for (String csvPath : possiblePaths) {
-            try (java.io.InputStream is = getClass().getClassLoader().getResourceAsStream("TG2_tests.csv")) {
-                if (is != null) {
-                    csvPath = "classpath:TG2_tests.csv";
-                    parseCSVFromInputStream(is);
-                    logger.info("Loaded {} test mappings from classpath TG2_tests.csv", testMappings.size());
-                    return;
-                }
-            } catch (Exception e) {
-                logger.debug("Could not load TG2_tests.csv from classpath: {}", e.getMessage());
-            }
-            
-            try {
-                java.nio.file.Path path = java.nio.file.Paths.get(csvPath);
-                if (java.nio.file.Files.exists(path)) {
-                    parseCSVFromFile(csvPath);
-                    logger.info("Loaded {} test mappings from {}", testMappings.size(), csvPath);
-                    return;
-                }
-            } catch (Exception e) {
-                logger.debug("Could not load TG2_tests.csv from {}: {}", csvPath, e.getMessage());
-            }
-        }
-        
-        // Fallback to hardcoded critical mappings if CSV not found
-        logger.warn("TG2_tests.csv not found, using fallback hardcoded mappings");
-        loadFallbackMappings();
-    }
-    
-    private void parseCSVFromInputStream(java.io.InputStream is) throws Exception {
-        org.apache.commons.csv.CSVParser parser = org.apache.commons.csv.CSVFormat.DEFAULT
-            .withFirstRecordAsHeader()
-            .parse(new java.io.InputStreamReader(is));
-            
-        for (org.apache.commons.csv.CSVRecord record : parser) {
-            TestMapping mapping = parseCSVRecord(record);
-            if (mapping != null) {
-                testMappings.put(mapping.testId, mapping);
-            }
-        }
-    }
-    
-    private void parseCSVFromFile(String csvPath) throws Exception {
-        org.apache.commons.csv.CSVParser parser = org.apache.commons.csv.CSVFormat.DEFAULT
-            .withFirstRecordAsHeader()
-            .parse(java.nio.file.Files.newBufferedReader(java.nio.file.Paths.get(csvPath)));
-            
-        for (org.apache.commons.csv.CSVRecord record : parser) {
-            TestMapping mapping = parseCSVRecord(record);
-            if (mapping != null) {
-                testMappings.put(mapping.testId, mapping);
-            }
-        }
-    }
-    
-    private TestMapping parseCSVRecord(org.apache.commons.csv.CSVRecord record) {
-        try {
-            String testId = record.get("Label").trim();
-            if (testId.isEmpty()) {
-                return null;
-            }
-            
-            String actedUponStr = record.get("InformationElement:ActedUpon");
-            String consultedStr = record.get("InformationElement:Consulted");
-            String sourceLink = record.get("Link to Specification Source Code");
-            
-            // Parse library and class from source code URL
-            String[] libraryAndClass = parseSourceLink(sourceLink);
-            if (libraryAndClass == null) {
-                logger.debug("Could not determine library/class for test {}", testId);
-                return null;
-            }
-            
-            String library = libraryAndClass[0];
-            String javaClass = libraryAndClass[1];
-            String javaMethod = deriveMethodName(testId);
-            String testType = determineTestType(testId);
-            
-            List<String> actedUpon = parseFieldList(actedUponStr);
-            List<String> consulted = parseFieldList(consultedStr);
-            
-            return new TestMapping(testId, library, javaClass, javaMethod, actedUpon, consulted, Collections.emptyMap(), testType);
-            
-        } catch (Exception e) {
-            logger.debug("Error parsing CSV record: {}", e.getMessage());
-            return null;
-        }
-    }
-    
-    private String[] parseSourceLink(String sourceLink) {
-        if (sourceLink == null || sourceLink.trim().isEmpty()) {
-            return null;
-        }
-        
-        // Identify library from URL path
-        String library = null;
-        if (sourceLink.contains("geo_ref_qc")) {
-            library = "geo_ref_qc";
-        } else if (sourceLink.contains("event_date_qc")) {
-            library = "event_date_qc";  
-        } else if (sourceLink.contains("sci_name_qc")) {
-            library = "sci_name_qc";
-        } else if (sourceLink.contains("rec_occur_qc")) {
-            library = "rec_occur_qc";
-        } else {
-            return null;
-        }
-        
-        // Extract class name from URL (e.g., DwCGeoRefDQ.java -> DwCGeoRefDQ)
-        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("/([A-Z][a-zA-Z0-9_]+)\\.java");
-        java.util.regex.Matcher matcher = pattern.matcher(sourceLink);
-        if (!matcher.find()) {
-            return null;
-        }
-        
-        String className = matcher.group(1);
-        String fullClassName = getFullClassName(library, className);
-        
-        return new String[]{library, fullClassName};
-    }
-    
-    private String getFullClassName(String library, String className) {
-        // Standard package patterns for each library
-        String packageName;
-        switch (library) {
-            case "geo_ref_qc":
-                packageName = "org.filteredpush.qc.georeference";
-                break;
-            case "event_date_qc":
-                packageName = "org.filteredpush.qc.date";
-                break;
-            case "sci_name_qc":
-                packageName = "org.filteredpush.qc.sciname";
-                break;
-            case "rec_occur_qc":
-                packageName = "org.filteredpush.qc.metadata";
-                break;
-            default:
-                packageName = "org.filteredpush.qc.unknown";
-        }
-        
-        return packageName + "." + className;
-    }
-    
-    private String deriveMethodName(String testId) {
-        // Convert VALIDATION_COUNTRY_FOUND -> validationCountryFound
-        String[] parts = testId.split("_");
-        if (parts.length < 2) {
-            return testId.toLowerCase();
-        }
-        
-        StringBuilder methodName = new StringBuilder(parts[0].toLowerCase());
-        for (int i = 1; i < parts.length; i++) {
-            String part = parts[i].toLowerCase();
-            methodName.append(Character.toUpperCase(part.charAt(0)));
-            if (part.length() > 1) {
-                methodName.append(part.substring(1));
-            }
-        }
-        
-        return methodName.toString();
-    }
-    
-    private String determineTestType(String testId) {
-        if (testId.startsWith("VALIDATION_")) {
-            return "VALIDATION";
-        } else if (testId.startsWith("AMENDMENT_")) {
-            return "AMENDMENT";
-        } else if (testId.startsWith("MEASURE_")) {
-            return "MEASURE";
-        } else if (testId.startsWith("ISSUE_")) {
-            return "ISSUE";
-        } else {
-            return "UNKNOWN";
-        }
-    }
-    
-    private List<String> parseFieldList(String fieldValue) {
-        if (fieldValue == null || fieldValue.trim().isEmpty()) {
-            return Collections.emptyList();
-        }
-        
-        return Arrays.asList(fieldValue.split(","))
-            .stream()
-            .map(String::trim)
-            .filter(s -> !s.isEmpty())
-            .collect(java.util.stream.Collectors.toList());
-    }
-    
-    private void loadFallbackMappings() {
-        // Critical fallback mappings if CSV parsing fails
-        testMappings.put("VALIDATION_COUNTRY_FOUND", 
-            new TestMapping("VALIDATION_COUNTRY_FOUND", "geo_ref_qc", 
-                "org.filteredpush.qc.georeference.DwCGeoRefDQ", 
-                "validationCountryFound", 
-                Arrays.asList("dwc:country"), 
-                Collections.emptyList(), 
-                Collections.emptyMap(), 
-                "VALIDATION"));
-                
-        testMappings.put("VALIDATION_OCCURRENCEID_NOTEMPTY", 
-            new TestMapping("VALIDATION_OCCURRENCEID_NOTEMPTY", "rec_occur_qc", 
-                "org.filteredpush.qc.metadata.DwCMetadataDQ", 
-                "validationOccurrenceidNotempty", 
-                Arrays.asList("dwc:occurrenceID"), 
-                Collections.emptyList(), 
-                Collections.emptyMap(), 
-                "VALIDATION"));
-                
-        testMappings.put("VALIDATION_BASISOFRECORD_NOTEMPTY", 
-            new TestMapping("VALIDATION_BASISOFRECORD_NOTEMPTY", "rec_occur_qc", 
-                "org.filteredpush.qc.metadata.DwCMetadataDQ", 
-                "validationBasisofrecordNotempty", 
-                Arrays.asList("dwc:basisOfRecord"), 
-                Collections.emptyList(), 
-                Collections.emptyMap(), 
-                "VALIDATION"));
+        // No initialization needed - method info comes from Python
+        logger.info("BDQ Test Executor initialized - using method info from request");
     }
     
     public BDQResponse executeTests(BDQRequest request) {
@@ -268,6 +32,8 @@ public class BDQTestExecutor {
             try {
                 List<BDQResponse.TupleResult> tupleResults = executeTest(
                     testRequest.getTestId(),
+                    testRequest.getJavaClass(),
+                    testRequest.getJavaMethod(),
                     testRequest.getActedUpon(),
                     testRequest.getConsulted(),
                     testRequest.getParameters(),
@@ -283,18 +49,15 @@ public class BDQTestExecutor {
         return new BDQResponse(request.getRequestId(), results, errors);
     }
     
-    private List<BDQResponse.TupleResult> executeTest(String testId, List<String> actedUpon, 
-                                                    List<String> consulted, Map<String, String> parameters,
-                                                    List<List<String>> tuples) {
-        TestMapping mapping = testMappings.get(testId);
-        if (mapping == null) {
-            logger.warn("No mapping found for test {}", testId);
-            return Collections.emptyList();
-        }
+    private List<BDQResponse.TupleResult> executeTest(String testId, String javaClass, String javaMethod,
+                                                    List<String> actedUpon, List<String> consulted, 
+                                                    Map<String, String> parameters, List<List<String>> tuples) {
+        // Method info provided directly from Python - no lookup needed
+        logger.debug("Executing test {} using {}#{}", testId, javaClass, javaMethod);
         
         try {
-            Method method = getOrResolveMethod(mapping);
-            Object instance = getOrCreateInstance(mapping.getJavaClass());
+            Method method = getOrResolveMethod(javaClass, javaMethod);
+            Object instance = getOrCreateInstance(javaClass);
             
             List<BDQResponse.TupleResult> results = new ArrayList<>();
             
@@ -404,13 +167,13 @@ public class BDQTestExecutor {
         }
     }
     
-    private Method getOrResolveMethod(TestMapping mapping) throws Exception {
-        String cacheKey = mapping.getJavaClass() + "#" + mapping.getJavaMethod();
+    private Method getOrResolveMethod(String javaClass, String javaMethod) throws Exception {
+        String cacheKey = javaClass + "#" + javaMethod;
         
         Method method = methodCache.get(cacheKey);
         if (method == null) {
-            Class<?> clazz = Class.forName(mapping.getJavaClass());
-            method = clazz.getMethod(mapping.getJavaMethod(), String.class);
+            Class<?> clazz = Class.forName(javaClass);
+            method = clazz.getMethod(javaMethod, String.class);
             methodCache.put(cacheKey, method);
         }
         
@@ -426,38 +189,5 @@ public class BDQTestExecutor {
         }
         
         return instance;
-    }
-    
-    private static class TestMapping {
-        private final String testId;
-        private final String library;
-        private final String javaClass;
-        private final String javaMethod;
-        private final List<String> actedUpon;
-        private final List<String> consulted;
-        private final Map<String, String> parameters;
-        private final String testType;
-        
-        public TestMapping(String testId, String library, String javaClass, String javaMethod,
-                         List<String> actedUpon, List<String> consulted, 
-                         Map<String, String> parameters, String testType) {
-            this.testId = testId;
-            this.library = library;
-            this.javaClass = javaClass;
-            this.javaMethod = javaMethod;
-            this.actedUpon = actedUpon;
-            this.consulted = consulted;
-            this.parameters = parameters;
-            this.testType = testType;
-        }
-        
-        public String getTestId() { return testId; }
-        public String getLibrary() { return library; }
-        public String getJavaClass() { return javaClass; }
-        public String getJavaMethod() { return javaMethod; }
-        public List<String> getActedUpon() { return actedUpon; }
-        public List<String> getConsulted() { return consulted; }
-        public Map<String, String> getParameters() { return parameters; }
-        public String getTestType() { return testType; }
     }
 }

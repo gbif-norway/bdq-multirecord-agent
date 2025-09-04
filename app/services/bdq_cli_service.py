@@ -1,5 +1,5 @@
 import json
-import subprocess
+import subprocess  
 import tempfile
 import os
 import logging
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 class BDQCLIService:
     """
-    Service for executing BDQ tests using the Java CLI application
+    Clean architecture BDQ CLI Service - Python parses CSV, CLI is simple executor
     """
     
     def __init__(self, cli_jar_path: str = None, java_opts: str = None, skip_validation: bool = False):
@@ -49,7 +49,7 @@ class BDQCLIService:
             logger.info(f"BDQ CLI Service initialized in test mode (validation skipped)")
     
     def _load_test_mappings(self):
-        """Load test mappings from TG2_tests.csv"""
+        """Load test mappings from TG2_tests.csv - SINGLE SOURCE OF TRUTH"""
         try:
             parser = TG2Parser()
             self.test_mappings = parser.parse()
@@ -70,573 +70,301 @@ class BDQCLIService:
                 methodName=mapping.java_method,
                 actedUpon=mapping.acted_upon,
                 consulted=mapping.consulted,
-                parameters=mapping.default_parameters or {}
+                parameters=mapping.default_parameters
             )
             tests.append(test)
         return tests
-    
-    def filter_applicable_tests(self, tests: List[BDQTest], csv_columns: List[str]) -> List[BDQTest]:
-        """Filter tests to only those applicable to the given CSV columns"""
-        applicable_tests = []
-        csv_columns_lower = [col.lower() for col in csv_columns]
         
-        logger.info(f"Filtering {len(tests)} tests against {len(csv_columns)} CSV columns")
-        logger.debug(f"CSV columns: {csv_columns}")
-        logger.debug(f"CSV columns (lowercase): {csv_columns_lower}")
-        
-        # Darwin Core term to common CSV column mapping (including camelCase variants)
-        dwc_mapping = {
-            'dwc:countrycode': ['countrycode', 'country_code', 'countrycode'],
-            'dwc:country': ['country'],
-            'dwc:dateidentified': ['dateidentified', 'date_identified', 'dateidentified'],
-            'dwc:phylum': ['phylum'],
-            'dwc:minimumdepthinmeters': ['minimumdepthinmeters', 'min_depth', 'mindepth', 'minimumelevationinmeters'],
-            'dwc:maximumdepthinmeters': ['maximumdepthinmeters', 'max_depth', 'maxdepth', 'maximumelevationinmeters'],
-            'dwc:decimallatitude': ['decimallatitude', 'latitude', 'lat'],
-            'dwc:decimallongitude': ['decimallongitude', 'longitude', 'lon'],
-            'dwc:verbatimcoordinates': ['verbatimcoordinates', 'coordinates', 'coords'],
-            'dwc:geodeticdatum': ['geodeticdatum', 'datum'],
-            'dwc:scientificname': ['scientificname', 'scientific_name', 'sciname'],
-            'dwc:year': ['year'],
-            'dwc:month': ['month'],
-            'dwc:day': ['day'],
-            'dwc:eventdate': ['eventdate', 'event_date', 'date'],
-            'dwc:basisofrecord': ['basisofrecord', 'basis_of_record', 'basis'],
-            'dwc:occurrenceid': ['occurrenceid', 'occurrence_id', 'id'],
-            'dwc:taxonid': ['taxonid', 'taxon_id', 'id']
-        }
-        
-        for test in tests:
-            # Check if test requires columns that are present in CSV
-            test_columns = test.actedUpon + test.consulted
-            test_columns_lower = [col.lower() for col in test_columns]
-            
-            logger.debug(f"Evaluating test {test.id}: needs {test_columns}")
-            
-            # Check if all required test columns can be mapped to CSV columns
-            all_columns_present = True
-            missing_columns = []
-            
-            for test_col in test_columns_lower:
-                column_found = False
-                if test_col in dwc_mapping:
-                    # Check if any of the mapped CSV columns are present
-                    mapped_cols = dwc_mapping[test_col]
-                    if any(mapped_col in csv_columns_lower for mapped_col in mapped_cols):
-                        column_found = True
-                        logger.debug(f"  {test_col} -> {mapped_cols} -> FOUND")
-                    else:
-                        logger.debug(f"  {test_col} -> {mapped_cols} -> NOT FOUND")
-                        missing_columns.append(test_col)
-                else:
-                    # Direct match if no mapping exists
-                    if test_col in csv_columns_lower:
-                        column_found = True
-                        logger.debug(f"  {test_col} -> Direct match -> FOUND")
-                    else:
-                        logger.debug(f"  {test_col} -> Direct match -> NOT FOUND")
-                        missing_columns.append(test_col)
-                
-                if not column_found:
-                    all_columns_present = False
-            
-            if all_columns_present:
-                applicable_tests.append(test)
-                logger.debug(f"✓ Test {test.id} is applicable")
-            else:
-                logger.info(f"✗ Skipping test {test.id} - missing columns: {missing_columns}")
-        
-        logger.info(f"Found {len(applicable_tests)} applicable tests out of {len(tests)} total")
-        return applicable_tests
-    
     async def run_tests_on_dataset(self, df, applicable_tests: List[BDQTest], core_type: str) -> Tuple[List[BDQTestExecutionResult], List[str]]:
-        """Run BDQ tests on the dataset using the CLI (batched, with tuple dedup)."""
+        """Run BDQ tests individually with timing - Python controls everything, CLI is simple executor"""
         overall_start_time = time.time()
         test_results: List[BDQTestExecutionResult] = []
         skipped_tests: List[str] = []
         
-        logger.info(f"Starting BDQ test execution on {len(df)} records with {len(applicable_tests)} applicable tests")
-        send_discord_notification(f"🧪 Starting BDQ tests: {len(applicable_tests)} tests on {len(df):,} records")
-
-        # Identify record id column once
-        id_col = None
-        for c in df.columns:
-            cl = c.lower()
-            if cl == 'occurrenceid' or cl == 'taxonid':
-                id_col = c
-                break
+        logger.info(f"🧪 Starting individual BDQ test execution on {len(df)} records with {len(applicable_tests)} applicable tests")
+        send_discord_notification(f"🧪 Running {len(applicable_tests)} tests individually on {len(df):,} records with timing")
         
-        logger.info(f"Using record ID column: {id_col}")
-
-        prepared_entries = []
-
-        # Build requests for all tests with unique tuples and back-mapping to rows
-        preparation_start_time = time.time()
-        logger.info("Preparing test requests and deduplicating tuples...")
         for i, test in enumerate(applicable_tests):
-            logger.info(f"Preparing test {i+1}/{len(applicable_tests)}: {test.id} [{test.type}]")
-            try:
-                test_columns = test.actedUpon + test.consulted
-
-                # Column mapping with dwc: fallbacks (case-insensitive)
-                df_cols_lower = {c.lower(): c for c in df.columns}
-                dwc_mapping = {
-                    'dwc:countrycode': ['countrycode', 'country_code', 'countrycode'],
-                    'dwc:country': ['country'],
-                    'dwc:dateidentified': ['dateidentified', 'date_identified', 'dateidentified'],
-                    'dwc:phylum': ['phylum'],
-                    'dwc:minimumdepthinmeters': ['minimumdepthinmeters', 'min_depth', 'mindepth'],
-                    'dwc:maximumdepthinmeters': ['maximumdepthinmeters', 'max_depth', 'maxdepth'],
-                    'dwc:decimallatitude': ['decimallatitude', 'latitude', 'lat', 'decimallatitude'],
-                    'dwc:decimallongitude': ['decimallongitude', 'longitude', 'lon', 'decimallongitude'],
-                    'dwc:verbatimcoordinates': ['verbatimcoordinates', 'coordinates', 'coords'],
-                    'dwc:geodeticdatum': ['geodeticdatum', 'datum'],
-                    'dwc:scientificname': ['scientificname', 'scientific_name', 'sciname'],
-                    'dwc:year': ['year'],
-                    'dwc:month': ['month'],
-                    'dwc:day': ['day'],
-                    'dwc:eventdate': ['eventdate', 'event_date', 'date'],
-                    'dwc:basisofrecord': ['basisofrecord', 'basis_of_record', 'basis'],
-                    'dwc:occurrenceid': ['occurrenceid', 'occurrence_id', 'id'],
-                    'dwc:taxonid': ['taxonid', 'taxon_id', 'id']
-                }
-                column_mapping: Dict[str, str] = {}
-                for tc in test_columns:
-                    tcl = tc.lower()
-                    if tcl in df_cols_lower:
-                        column_mapping[tc] = df_cols_lower[tcl]
-                        continue
-                    if tcl in dwc_mapping:
-                        for alias in dwc_mapping[tcl]:
-                            if alias in df_cols_lower:
-                                column_mapping[tc] = df_cols_lower[alias]
-                                break
-
-                # Build unique tuples and mapping to row indices
-                unique_tuples: List[List[str]] = []
-                unique_keys_order: List[Tuple[str, ...]] = []
-                tuple_to_rows: Dict[Tuple[str, ...], List[int]] = {}
-
-                for idx, row in df.iterrows():
-                    values: List[str] = []
-                    for tc in test_columns:
-                        if tc in column_mapping:
-                            val = row[column_mapping[tc]]
-                            values.append(str(val) if pd.notna(val) else "")
-                        else:
-                            values.append("")
-                    key = tuple(values)
-                    if key not in tuple_to_rows:
-                        tuple_to_rows[key] = []
-                        unique_tuples.append(list(values))
-                        unique_keys_order.append(key)
-                    tuple_to_rows[key].append(idx)
-                
-                dedup_ratio = len(unique_tuples)/len(df) if len(df) > 0 else 0
-                logger.info(f"Test {test.id}: {len(df)} records -> {len(unique_tuples)} unique tuples (dedup ratio: {dedup_ratio:.2f})")
-                
-                # Warn about potentially slow tests
-                if len(unique_tuples) > 1000:
-                    logger.warning(f"Test {test.id} has {len(unique_tuples)} unique tuples - may take longer to execute")
-                    
-                # Log test details for debugging 
-                logger.debug(f"Test {test.id} details: actedUpon={test.actedUpon}, consulted={test.consulted}")
-
-                test_request = {
-                    "testId": test.id,
-                    "actedUpon": test.actedUpon,
-                    "consulted": test.consulted,
-                    "parameters": test.parameters,
-                    "tuples": unique_tuples,
-                }
-
-                prepared_entries.append({
-                    "test": test,
-                    "request": test_request,
-                    "keys": unique_keys_order,
-                    "tuple_to_rows": tuple_to_rows,
-                })
-            except Exception as e:
-                logger.error(f"Error preparing test {test.id}: {e}")
-                skipped_tests.append(test.id)
-
-        if not prepared_entries:
-            logger.warning("No tests prepared for execution")
-            return test_results, skipped_tests
-
-        total_unique_tuples = sum(len(e["request"]["tuples"]) for e in prepared_entries)
-        preparation_time = time.time() - preparation_start_time
-        logger.info(f"Test preparation completed in {preparation_time:.1f} seconds")
-        logger.info(f"Total unique tuples across all tests: {total_unique_tuples}")
-        send_discord_notification(f"📊 Deduplication complete: {total_unique_tuples:,} unique tuples across {len(prepared_entries)} tests")
-        
-        # Execute all tests in a single CLI call
-        logger.info("Executing BDQ CLI with batched test requests...")
-        send_discord_notification(f"⚙️ Starting CLI execution (timeout: 30min)...")
-        
-        start_time = time.time()
-        try:
-            response = self.execute_tests([e["request"] for e in prepared_entries])
-            execution_time = time.time() - start_time
-            logger.info(f"CLI execution completed successfully in {execution_time:.1f} seconds")
-            send_discord_notification(f"✅ CLI execution completed in {execution_time:.1f}s! Processing results...")
-        except Exception as e:
-            logger.error(f"Batched CLI execution failed: {e}")
-            # If batch fails, mark all tests as skipped
-            skipped_tests.extend([e["test"].id for e in prepared_entries])
-            return test_results, skipped_tests
-
-        # Process response per test, expanding tuple results to all matching rows
-        processing_start_time = time.time()
-        logger.info("Processing CLI response and expanding tuple results to all matching rows...")
-        res_map = response.get('results', {}) if isinstance(response, dict) else {}
-        for entry in prepared_entries:
-            test = entry["test"]
-            cli_result = res_map.get(test.id)
-            if not cli_result:
-                logger.warning(f"No results returned for test {test.id}")
+            test_start_time = time.time()
+            
+            # Get the test mapping
+            mapping = self.test_mappings.get(test.id)
+            if not mapping:
+                logger.warning(f"❌ No mapping found for test {test.id} - skipping")
                 skipped_tests.append(test.id)
                 continue
-
-            tuple_results = cli_result.get('tupleResults') or []
-            for i, tr in enumerate(tuple_results):
-                if i >= len(entry["keys"]):
-                    continue
-                key = entry["keys"][i]
-                row_indices = entry["tuple_to_rows"].get(key, [])
-                for idx in row_indices:
-                    try:
-                        record_id = str(df.iloc[idx][id_col]) if (id_col is not None) else f"record_{idx}"
-                    except Exception:
-                        record_id = f"record_{idx}"
-                    test_results.append(BDQTestExecutionResult(
-                        record_id=record_id,
-                        test_id=test.id,
-                        status=tr.get('status', 'UNKNOWN'),
-                        result=tr.get('result'),
-                        comment=tr.get('comment', ''),
-                        amendment=None,
-                        test_type=test.type
-                    ))
-
-        processing_time = time.time() - processing_start_time
+            
+            logger.info(f"🔄 [{i+1}/{len(applicable_tests)}] Executing {test.id}...")
+            
+            # Prepare test data for this specific test
+            tuples = self._prepare_test_tuples(df, mapping.acted_upon, mapping.consulted)
+            if not tuples:
+                logger.warning(f"⏭️  No valid tuples for test {test.id} - skipping")
+                skipped_tests.append(test.id)
+                continue
+                
+            # Execute single test via CLI with complete method info
+            try:
+                cli_result = self._execute_single_test_via_cli(
+                    test_id=test.id,
+                    java_class=mapping.java_class,
+                    java_method=mapping.java_method,
+                    acted_upon=mapping.acted_upon,
+                    consulted=mapping.consulted,
+                    parameters=mapping.default_parameters,
+                    tuples=tuples
+                )
+                
+                test_execution_time = time.time() - test_start_time
+                
+                # Process results
+                if cli_result and 'results' in cli_result and test.id in cli_result['results']:
+                    tuple_results = cli_result['results'][test.id].get('tupleResults', [])
+                    
+                    # Expand tuple results back to all matching rows
+                    expanded_results = self._expand_tuple_results_to_rows(
+                        df, mapping.acted_upon, mapping.consulted, tuple_results
+                    )
+                    
+                    test_result = BDQTestExecutionResult(
+                        test=test,
+                        results=expanded_results,
+                        execution_time_seconds=test_execution_time,
+                        tuple_count=len(tuples)
+                    )
+                    test_results.append(test_result)
+                    
+                    logger.info(f"✅ [{i+1}/{len(applicable_tests)}] {test.id}: {len(expanded_results)} results in {test_execution_time:.2f}s ({test_execution_time/len(tuples):.3f}s/tuple)")
+                    
+                else:
+                    logger.warning(f"❌ [{i+1}/{len(applicable_tests)}] {test.id}: No results returned in {test_execution_time:.2f}s")
+                    skipped_tests.append(test.id)
+                    
+            except Exception as e:
+                test_execution_time = time.time() - test_start_time  
+                logger.error(f"❌ [{i+1}/{len(applicable_tests)}] {test.id}: Error in {test_execution_time:.2f}s - {str(e)}")
+                skipped_tests.append(test.id)
+        
         overall_time = time.time() - overall_start_time
-        logger.info(f"Result processing completed in {processing_time:.1f} seconds")
-        logger.info(f"Overall BDQ test execution completed in {overall_time:.1f} seconds")
-        logger.info(f"Performance breakdown - Preparation: {preparation_time:.1f}s, CLI: {execution_time:.1f}s, Processing: {processing_time:.1f}s")
-        send_discord_notification(f"📈 Performance: Prep {preparation_time:.1f}s + CLI {execution_time:.1f}s + Processing {processing_time:.1f}s = {overall_time:.1f}s total")
+        logger.info(f"🏁 Individual test execution completed in {overall_time:.1f} seconds")
+        logger.info(f"📊 Results: {len(test_results)} successful, {len(skipped_tests)} skipped")
+        send_discord_notification(f"🏁 Individual execution complete: {len(test_results)} tests in {overall_time:.1f}s (avg {overall_time/len(applicable_tests):.2f}s/test)")
 
         return test_results, skipped_tests
     
-    def _prepare_test_request(self, test: BDQTest, df, core_type: str) -> Dict[str, Any]:
-        """Prepare a test request for the CLI"""
-        # Extract unique tuples for the test
-        test_columns = test.actedUpon + test.consulted
+    def _prepare_test_tuples(self, df, acted_upon: List[str], consulted: List[str]) -> List[List[str]]:
+        """Prepare tuples for a specific test using the exact same logic as before"""
+        all_columns = acted_upon + consulted
         
-        # Map CSV columns to test columns (case-insensitive) with dwc: mapping fallbacks
-        column_mapping: Dict[str, str] = {}
-        df_cols_lower = {c.lower(): c for c in df.columns}
-        dwc_mapping = {
-            'dwc:countrycode': ['countrycode', 'country_code', 'countrycode'],
-            'dwc:country': ['country'],
-            'dwc:dateidentified': ['dateidentified', 'date_identified', 'dateidentified'],
-            'dwc:phylum': ['phylum'],
-            'dwc:minimumdepthinmeters': ['minimumdepthinmeters', 'min_depth', 'mindepth'],
-            'dwc:maximumdepthinmeters': ['maximumdepthinmeters', 'max_depth', 'maxdepth'],
-            'dwc:decimallatitude': ['decimallatitude', 'latitude', 'lat', 'decimallatitude'],
-            'dwc:decimallongitude': ['decimallongitude', 'longitude', 'lon', 'decimallongitude'],
-            'dwc:verbatimcoordinates': ['verbatimcoordinates', 'coordinates', 'coords'],
-            'dwc:geodeticdatum': ['geodeticdatum', 'datum'],
-            'dwc:scientificname': ['scientificname', 'scientific_name', 'sciname'],
-            'dwc:year': ['year'],
-            'dwc:month': ['month'],
-            'dwc:day': ['day'],
-            'dwc:eventdate': ['eventdate', 'event_date', 'date'],
-            'dwc:basisofrecord': ['basisofrecord', 'basis_of_record', 'basis'],
-            'dwc:occurrenceid': ['occurrenceid', 'occurrence_id', 'id'],
-            'dwc:taxonid': ['taxonid', 'taxon_id', 'id']
-        }
-        for test_col in test_columns:
-            tc_lower = test_col.lower()
-            # Direct match
-            if tc_lower in df_cols_lower:
-                column_mapping[test_col] = df_cols_lower[tc_lower]
-                continue
-            # Fallback mapping
-            if tc_lower in dwc_mapping:
-                for alias in dwc_mapping[tc_lower]:
-                    if alias in df_cols_lower:
-                        column_mapping[test_col] = df_cols_lower[alias]
-                        break
+        # Check if all required columns exist
+        missing_columns = [col for col in all_columns if col not in df.columns]
+        if missing_columns:
+            logger.debug(f"Missing columns {missing_columns} - cannot prepare tuples")
+            return []
         
-        # Extract tuples
-        tuples = []
+        # Extract unique tuples (same deduplication as before)
+        tuples_set = set()
         for _, row in df.iterrows():
-            tuple_data = []
-            for test_col in test_columns:
-                if test_col in column_mapping:
-                    value = str(row[column_mapping[test_col]]) if pd.notna(row[column_mapping[test_col]]) else ""
-                    tuple_data.append(value)
-                else:
-                    tuple_data.append("")
-            tuples.append(tuple_data)
+            tuple_values = [str(row.get(col, '')) for col in all_columns]
+            tuples_set.add(tuple(tuple_values))
         
-        return {
-            "testId": test.id,
-            "actedUpon": test.actedUpon,
-            "consulted": test.consulted,
-            "parameters": test.parameters,
-            "tuples": tuples
+        # Convert back to list of lists
+        unique_tuples = [list(t) for t in tuples_set]
+        logger.debug(f"Prepared {len(unique_tuples)} unique tuples from {len(df)} rows")
+        
+        return unique_tuples
+    
+    def _execute_single_test_via_cli(self, test_id: str, java_class: str, java_method: str,
+                                   acted_upon: List[str], consulted: List[str], 
+                                   parameters: Dict[str, str], tuples: List[List[str]]) -> Dict:
+        """Execute a single test via the simplified CLI with complete method information"""
+        
+        # Build CLI request with complete method information
+        cli_input = {
+            "requestId": f"single-test-{test_id}-{int(time.time())}",
+            "tests": [{
+                "testId": test_id,
+                "javaClass": java_class,  # NEW: Pass complete class name
+                "javaMethod": java_method,  # NEW: Pass method name  
+                "actedUpon": acted_upon,
+                "consulted": consulted,
+                "parameters": parameters,
+                "tuples": tuples
+            }]
         }
-    
-    def _process_cli_response(self, test: BDQTest, cli_result: Dict[str, Any], df) -> List[BDQTestExecutionResult]:
-        """Process CLI response into a list of BDQTestExecutionResult mapped to each row"""
-        results: List[BDQTestExecutionResult] = []
-        tuple_results = cli_result.get('tupleResults') or []
-        if not tuple_results:
-            return results
-        # Find the record ID column (occurrenceID/taxonID), case-insensitive
-        id_col = None
-        for c in df.columns:
-            cl = c.lower()
-            if cl == 'occurrenceid' or cl == 'taxonid':
-                id_col = c
-                break
-        for tr in tuple_results:
-            idx = tr.get('tupleIndex')
-            try:
-                record_id = str(df.iloc[idx][id_col]) if (id_col is not None) else f"record_{idx}"
-            except Exception:
-                record_id = f"record_{idx}"
-            results.append(BDQTestExecutionResult(
-                record_id=record_id,
-                test_id=test.id,
-                status=tr.get('status', 'UNKNOWN'),
-                result=tr.get('result'),
-                comment=tr.get('comment', ''),
-                amendment=None,
-                test_type=test.type
-            ))
-        return results
-    
-    def generate_summary(self, test_results: List[BDQTestExecutionResult], total_records: int, skipped_tests: List[str]) -> ProcessingSummary:
-        """Generate a summary of test execution results"""
-        total_tests = len(test_results) + len(skipped_tests)
         
-        # Count tests by status
-        successful_tests = len([r for r in test_results if r.status in ['COMPLIANT', 'AMENDED', 'FILLED_IN']])
-        failed_tests = len([r for r in test_results if r.status in ['NOT_COMPLIANT', 'NOT_AMENDED']])
-        amendments_applied = len([r for r in test_results if r.status in ['AMENDED', 'FILLED_IN']])
+        # Write to temp files
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            json.dump(cli_input, f, indent=2)
+            input_file = f.name
         
-        return ProcessingSummary(
-            total_records=total_records,
-            total_tests_run=total_tests,
-            validation_failures={},  # CLI doesn't provide detailed failure info
-            common_issues=[],
-            amendments_applied=amendments_applied,
-            skipped_tests=skipped_tests
-        )
-    
-    def execute_tests(self, test_requests: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """
-        Execute BDQ tests using the Java CLI
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+            output_file = f.name
         
-        Args:
-            test_requests: List of test requests with testId, actedUpon, consulted, parameters, tuples
-            
-        Returns:
-            Dictionary containing test results
-        """
-        try:
-            # Create temporary input file
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as input_file:
-                request_data = {
-                    "requestId": f"cli-{os.getpid()}-{int(os.times()[4])}",
-                    "tests": test_requests
-                }
-                json.dump(request_data, input_file)
-                input_file_path = input_file.name
-                logger.info(f"Created CLI input file: {input_file_path} (size: {os.path.getsize(input_file_path)} bytes)")
-            
-            # Create temporary output file
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as output_file:
-                output_file_path = output_file.name
-            
-            try:
-                # Execute the CLI
-                logger.info(f"Starting CLI execution with input: {input_file_path}, output: {output_file_path}")
-                result = self._run_cli(input_file_path, output_file_path)
-                logger.info(f"CLI execution finished with return code: {result.returncode}")
-                
-                if result.returncode != 0:
-                    logger.error(f"CLI execution failed with return code {result.returncode}")
-                    logger.error(f"STDOUT: {result.stdout}")
-                    logger.error(f"STDERR: {result.stderr}")
-                    raise RuntimeError(f"CLI execution failed: {result.stderr}")
-                
-                # Check if output file was created and has content
-                if not os.path.exists(output_file_path):
-                    logger.error("CLI output file was not created")
-                    raise RuntimeError("CLI output file was not created")
-                
-                output_size = os.path.getsize(output_file_path)
-                logger.info(f"CLI output file created: {output_file_path} (size: {output_size} bytes)")
-                
-                if output_size == 0:
-                    logger.error("CLI output file is empty")
-                    raise RuntimeError("CLI output file is empty")
-                
-                # Read and parse the output
-                with open(output_file_path, 'r') as f:
-                    output_content = f.read()
-                    logger.info(f"CLI output content preview: {output_content[:500]}...")
-                    response_data = json.loads(output_content)
-                
-                # Debug the response structure
-                logger.info(f"CLI response keys: {list(response_data.keys()) if isinstance(response_data, dict) else 'Not a dict'}")
-                if isinstance(response_data, dict) and 'results' in response_data:
-                    results = response_data['results']
-                    logger.info(f"Results contains {len(results)} test results")
-                    if results:
-                        first_test = list(results.keys())[0]
-                        first_result = results[first_test]
-                        logger.info(f"Sample result for {first_test}: {first_result}")
-                else:
-                    logger.error(f"Unexpected CLI response format: {response_data}")
-                
-                logger.info(f"Successfully executed {len(test_requests)} tests via CLI")
-                return response_data
-                
-            finally:
-                # Clean up temporary files
-                try:
-                    os.unlink(input_file_path)
-                    os.unlink(output_file_path)
-                except OSError:
-                    pass  # Ignore cleanup errors
-                    
-        except Exception as e:
-            logger.error(f"Error executing BDQ tests via CLI: {e}")
-            raise
-    
-    def _run_cli(self, input_file: str, output_file: str) -> subprocess.CompletedProcess:
-        """
-        Run the BDQ CLI with input and output files
-        
-        Args:
-            input_file: Path to input JSON file
-            output_file: Path to output JSON file
-            
-        Returns:
-            CompletedProcess with execution results
-        """
-        # Build Java command
-        java_cmd = ['java']
-        
-        # Add Java options if specified
-        if self.java_opts:
-            java_cmd.extend(self.java_opts.split())
-        
-        # Add JAR and arguments
-        java_cmd.extend([
+        # Execute CLI
+        java_cmd_parts = self.java_opts.split() + [
             '-jar', self.cli_jar_path,
             f'--input={input_file}',
             f'--output={output_file}'
-        ])
+        ]
+        java_cmd = ['java'] + java_cmd_parts
         
-        logger.info(f"Executing CLI command: {' '.join(java_cmd)}")
-        
-        # Execute the command with increased timeout for large datasets
-        timeout_seconds = 1800  # 30 minutes for large datasets
-        logger.info(f"CLI timeout set to {timeout_seconds} seconds")
-        logger.warning("CLI execution may take several minutes for large datasets - this is normal")
-        
-        # Add performance monitoring
-        cli_start_time = time.time()
-        result = subprocess.run(
-            java_cmd,
-            capture_output=True,
-            text=True,
-            timeout=timeout_seconds
-        )
-        cli_end_time = time.time()
-        
-        # Log performance details
-        execution_time = cli_end_time - cli_start_time
-        logger.info(f"CLI raw execution time: {execution_time:.1f} seconds")
-        if result.stdout:
-            logger.info(f"CLI stdout preview: {result.stdout[:200]}...")
-        if result.stderr:
-            logger.info(f"CLI stderr preview: {result.stderr[:200]}...")
-        
-        return result
-    
-    def test_connection(self) -> bool:
-        """
-        Test if the CLI is working by running a simple test
-        
-        Returns:
-            True if CLI is working, False otherwise
-        """
         try:
-            # Create a simple test request
-            test_request = [{
-                "testId": "VALIDATION_COUNTRY_FOUND",
-                "actedUpon": ["dwc:country"],
-                "consulted": [],
-                "parameters": {},
-                "tuples": [["Test Country"]]
-            }]
+            result = subprocess.run(
+                java_cmd,
+                capture_output=True,
+                text=True,
+                timeout=60  # Shorter timeout for individual tests
+            )
             
-            # Execute the test
-            result = self.execute_tests(test_request)
+            if result.returncode != 0:
+                logger.error(f"CLI failed with return code {result.returncode}: {result.stderr}")
+                return {}
             
-            # Check if we got a valid response
-            if result and 'results' in result:
-                logger.info("CLI connection test successful")
-                return True
+            # Read result
+            if os.path.exists(output_file) and os.path.getsize(output_file) > 0:
+                with open(output_file, 'r') as f:
+                    return json.load(f)
             else:
-                logger.warning("CLI connection test failed - invalid response format")
-                return False
+                logger.warning("CLI produced no output file")
+                return {}
                 
+        except subprocess.TimeoutExpired:
+            logger.error(f"CLI timed out for test {test_id}")
+            return {}
+        except Exception as e:
+            logger.error(f"CLI execution error for test {test_id}: {e}")
+            return {}
+        finally:
+            # Cleanup
+            try:
+                os.unlink(input_file)
+                os.unlink(output_file) 
+            except:
+                pass
+    
+    def _expand_tuple_results_to_rows(self, df, acted_upon: List[str], consulted: List[str], 
+                                    tuple_results: List[Dict]) -> List[BDQTestResult]:
+        """Expand tuple results back to individual row results using the exact same logic as before"""
+        all_columns = acted_upon + consulted
+        results = []
+        
+        # Create mapping from tuples back to row indices
+        tuple_to_rows = {}
+        for row_idx, row in df.iterrows():
+            tuple_key = tuple(str(row.get(col, '')) for col in all_columns)
+            if tuple_key not in tuple_to_rows:
+                tuple_to_rows[tuple_key] = []
+            tuple_to_rows[tuple_key].append(row_idx)
+        
+        # Map tuple results back to rows
+        for tuple_result in tuple_results:
+            tuple_idx = tuple_result.get('tupleIndex', 0)
+            if tuple_idx < len(list(tuple_to_rows.keys())):
+                tuple_key = list(tuple_to_rows.keys())[tuple_idx]
+                matching_row_indices = tuple_to_rows[tuple_key]
+                
+                for row_idx in matching_row_indices:
+                    row = df.iloc[row_idx]
+                    record_id = row.get('occurrenceID', row.get('id', f'row-{row_idx}'))
+                    
+                    result = BDQTestResult(
+                        record_id=record_id,
+                        status=tuple_result.get('status', 'UNKNOWN'),
+                        result=tuple_result.get('result', 'UNKNOWN'), 
+                        comment=tuple_result.get('comment', '')
+                    )
+                    results.append(result)
+        
+        return results
+
+    def filter_applicable_tests(self, tests: List[BDQTest], csv_columns: List[str]) -> List[BDQTest]:
+        """Filter tests to only those applicable to the given CSV columns"""
+        applicable_tests = []
+        
+        for test in tests:
+            # Check if all required columns (acted upon + consulted) are present
+            all_required_columns = test.actedUpon + test.consulted
+            
+            # Remove any empty strings from the required columns
+            all_required_columns = [col for col in all_required_columns if col.strip()]
+            
+            if all_required_columns:
+                missing_columns = [col for col in all_required_columns if col not in csv_columns]
+                if not missing_columns:
+                    applicable_tests.append(test)
+                else:
+                    logger.debug(f"Test {test.id} requires columns {missing_columns} which are not in CSV")
+            else:
+                logger.debug(f"Test {test.id} has no required columns - skipping")
+        
+        logger.info(f"Filtered to {len(applicable_tests)} applicable tests from {len(tests)} total tests")
+        return applicable_tests
+
+    def generate_summary(self, test_results: List[BDQTestExecutionResult], total_records: int, skipped_tests: List[str]) -> ProcessingSummary:
+        """Generate processing summary from test results"""
+        # Count status types across all results
+        status_counts = {'COMPLIANT': 0, 'NOT_COMPLIANT': 0, 'UNABLE_CURATE': 0}
+        total_test_results = 0
+        
+        for test_exec in test_results:
+            for result in test_exec.results:
+                total_test_results += 1
+                status = result.status
+                if status in status_counts:
+                    status_counts[status] += 1
+                else:
+                    # Handle other status values
+                    logger.warning(f"Unexpected status: {status}")
+        
+        # Calculate percentages
+        compliant_percentage = (status_counts['COMPLIANT'] / max(total_test_results, 1)) * 100
+        non_compliant_percentage = (status_counts['NOT_COMPLIANT'] / max(total_test_results, 1)) * 100
+        unable_curate_percentage = (status_counts['UNABLE_CURATE'] / max(total_test_results, 1)) * 100
+        
+        # Create summary
+        summary = ProcessingSummary(
+            total_records=total_records,
+            tests_executed=len(test_results),
+            tests_skipped=len(skipped_tests),
+            compliant_percentage=compliant_percentage,
+            non_compliant_percentage=non_compliant_percentage,
+            unable_curate_percentage=unable_curate_percentage,
+            total_test_results=total_test_results
+        )
+        
+        return summary
+
+    def test_connection(self) -> bool:
+        """Test connection to BDQ CLI"""
+        try:
+            # Simple test - run CLI with minimal input to see if it responds
+            test_input = {
+                "requestId": "connection-test",
+                "tests": []
+            }
+            
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+                json.dump(test_input, f)
+                input_file = f.name
+            
+            try:
+                java_cmd = self.java_opts.split() if self.java_opts else []
+                cmd = ['java'] + java_cmd + ['-jar', self.cli_jar_path, input_file]
+                
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
+                
+                return result.returncode == 0
+                
+            finally:
+                if os.path.exists(input_file):
+                    os.unlink(input_file)
+                    
         except Exception as e:
             logger.error(f"CLI connection test failed: {e}")
             return False
-    
-    def get_version_info(self) -> Dict[str, str]:
-        """
-        Get version information about the CLI
-        
-        Returns:
-            Dictionary with version information
-        """
-        try:
-            # Run CLI with help to get version info
-            result = subprocess.run(
-                ['java', '-jar', self.cli_jar_path, '--help'],
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-            
-            if result.returncode == 0:
-                return {
-                    "cli_version": "1.0.0",  # This would come from the JAR manifest
-                    "java_version": os.getenv('JAVA_VERSION', 'Unknown'),
-                    "status": "available"
-                }
-            else:
-                return {
-                    "cli_version": "Unknown",
-                    "java_version": "Unknown",
-                    "status": "error",
-                    "error": result.stderr
-                }
-                
-        except Exception as e:
-            return {
-                "cli_version": "Unknown",
-                "java_version": "Unknown",
-                "status": "error",
-                "error": str(e)
-            }

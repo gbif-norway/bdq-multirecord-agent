@@ -34,7 +34,7 @@ def get_bdq_service():
     global bdq_service
     if bdq_service is None:
         try:
-            bdq_service = BDQCLIService(skip_validation=True)
+            bdq_service = BDQCLIService()
             logger.info("BDQ CLI Service initialized successfully")
         except Exception as e:
             logger.error(f"Failed to initialize BDQ CLI Service: {e}")
