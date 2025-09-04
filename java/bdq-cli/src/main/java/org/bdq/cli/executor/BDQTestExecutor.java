@@ -30,17 +30,100 @@ public class BDQTestExecutor {
     
     private void initializeTestMappings() {
         // This is a placeholder - in reality, you'd parse TG2_tests.csv
-        // For now, we'll add some basic mappings
+        // For now, we'll add mappings for the most commonly used tests
+        
+        // ===== GEO_REF_QC TESTS (Geographic/Location tests) =====
+        testMappings.put("VALIDATION_COUNTRYCODE_STANDARD", 
+            new TestMapping("VALIDATION_COUNTRYCODE_STANDARD", "geo_ref_qc", 
+                "org.filteredpush.qc.georeference.DwCGeoRefDQ", 
+                "validationCountrycodeStandard", 
+                Arrays.asList("dwc:countryCode"), 
+                Collections.emptyList(), 
+                Collections.emptyMap(), 
+                "VALIDATION"));
+                
         testMappings.put("VALIDATION_COUNTRY_FOUND", 
-            new TestMapping("VALIDATION_COUNTRY_FOUND", "rec_occur_qc", 
-                "org.filteredpush.qc.metadata.DwCMetadataDQ", 
+            new TestMapping("VALIDATION_COUNTRY_FOUND", "geo_ref_qc", 
+                "org.filteredpush.qc.georeference.DwCGeoRefDQ", 
                 "validationCountryFound", 
                 Arrays.asList("dwc:country"), 
                 Collections.emptyList(), 
                 Collections.emptyMap(), 
                 "VALIDATION"));
+                
+        testMappings.put("VALIDATION_DECIMALLONGITUDE_INRANGE", 
+            new TestMapping("VALIDATION_DECIMALLONGITUDE_INRANGE", "geo_ref_qc", 
+                "org.filteredpush.qc.georeference.DwCGeoRefDQ", 
+                "validationDecimallongitudeInrange", 
+                Arrays.asList("dwc:decimalLongitude"), 
+                Collections.emptyList(), 
+                Collections.emptyMap(), 
+                "VALIDATION"));
+                
+        testMappings.put("VALIDATION_DECIMALLATITUDE_INRANGE", 
+            new TestMapping("VALIDATION_DECIMALLATITUDE_INRANGE", "geo_ref_qc", 
+                "org.filteredpush.qc.georeference.DwCGeoRefDQ", 
+                "validationDecimallatitudeInrange", 
+                Arrays.asList("dwc:decimalLatitude"), 
+                Collections.emptyList(), 
+                Collections.emptyMap(), 
+                "VALIDATION"));
+                
+        testMappings.put("VALIDATION_LOCATION_NOTEMPTY", 
+            new TestMapping("VALIDATION_LOCATION_NOTEMPTY", "geo_ref_qc", 
+                "org.filteredpush.qc.georeference.DwCGeoRefDQ", 
+                "validationLocationNotempty", 
+                Arrays.asList("dwc:higherGeographyID", "dwc:higherGeography", "dwc:continent", "dwc:country", "dwc:countryCode", "dwc:stateProvince", "dwc:county", "dwc:municipality", "dwc:waterBody", "dwc:island", "dwc:islandGroup", "dwc:locality", "dwc:locationID", "dwc:verbatimLocality", "dwc:decimalLatitude", "dwc:decimalLongitude", "dwc:verbatimCoordinates", "dwc:verbatimLatitude", "dwc:verbatimLongitude", "dwc:footprintWKT"), 
+                Collections.emptyList(), 
+                Collections.emptyMap(), 
+                "VALIDATION"));
+                
+        testMappings.put("VALIDATION_COUNTRY_NOTEMPTY", 
+            new TestMapping("VALIDATION_COUNTRY_NOTEMPTY", "geo_ref_qc", 
+                "org.filteredpush.qc.georeference.DwCGeoRefDQ", 
+                "validationCountryNotempty", 
+                Arrays.asList("dwc:country"), 
+                Arrays.asList("dwc:countryCode"), 
+                Collections.emptyMap(), 
+                "VALIDATION"));
+                
+        testMappings.put("VALIDATION_COORDINATESTERRESTRIALMARINE_CONSISTENT", 
+            new TestMapping("VALIDATION_COORDINATESTERRESTRIALMARINE_CONSISTENT", "geo_ref_qc", 
+                "org.filteredpush.qc.georeference.DwCGeoRefDQ", 
+                "validationCoordinatesterrestrialmarineConsistent", 
+                Arrays.asList("dwc:decimalLatitude", "dwc:decimalLongitude"), 
+                Collections.emptyList(), 
+                Collections.emptyMap(), 
+                "VALIDATION"));
+                
+        testMappings.put("VALIDATION_MAXDEPTH_INRANGE", 
+            new TestMapping("VALIDATION_MAXDEPTH_INRANGE", "geo_ref_qc", 
+                "org.filteredpush.qc.georeference.DwCGeoRefDQ", 
+                "validationMaxdepthInrange", 
+                Arrays.asList("dwc:maximumDepthInMeters"), 
+                Collections.emptyList(), 
+                Collections.emptyMap(), 
+                "VALIDATION"));
+                
+        testMappings.put("VALIDATION_DECIMALLONGITUDE_NOTEMPTY", 
+            new TestMapping("VALIDATION_DECIMALLONGITUDE_NOTEMPTY", "geo_ref_qc", 
+                "org.filteredpush.qc.georeference.DwCGeoRefDQ", 
+                "validationDecimallongitudeNotempty", 
+                Arrays.asList("dwc:decimalLongitude"), 
+                Collections.emptyList(), 
+                Collections.emptyMap(), 
+                "VALIDATION"));
+                
+        testMappings.put("VALIDATION_DECIMALLATITUDE_NOTEMPTY", 
+            new TestMapping("VALIDATION_DECIMALLATITUDE_NOTEMPTY", "geo_ref_qc", 
+                "org.filteredpush.qc.georeference.DwCGeoRefDQ", 
+                "validationDecimallatitudeNotempty", 
+                Arrays.asList("dwc:decimalLatitude"), 
+                Collections.emptyList(), 
+                Collections.emptyMap(), 
+                "VALIDATION"));
         
-        // Add occurrence tests
+        // ===== REC_OCCUR_QC TESTS (Occurrence/Record tests) =====
         testMappings.put("VALIDATION_OCCURRENCEID_NOTEMPTY", 
             new TestMapping("VALIDATION_OCCURRENCEID_NOTEMPTY", "rec_occur_qc", 
                 "org.filteredpush.qc.metadata.DwCMetadataDQ", 
