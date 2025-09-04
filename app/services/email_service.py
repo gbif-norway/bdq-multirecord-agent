@@ -312,22 +312,3 @@ Note: The amended dataset applies proposed changes from Amendment-type tests.
 """
         
         return html
-
-    def generate_email_summary(self, test_results, core_type, total_records, skipped_tests=None):
-        """
-        Generate email summary (wrapper method for backward compatibility)
-        
-        This is a simplified wrapper around _generate_summary_text
-        for testing purposes.
-        """
-        # Create a basic ProcessingSummary
-        summary = ProcessingSummary(
-            total_records=total_records,
-            total_tests_run=len(test_results),
-            validation_failures={},
-            common_issues=[],
-            amendments_applied=0,
-            skipped_tests=skipped_tests or []
-        )
-        
-        return self._generate_summary_text(summary)

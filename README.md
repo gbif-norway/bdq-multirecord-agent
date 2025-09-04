@@ -2,11 +2,7 @@
 
 A lightweight email-based service that runs Biodiversity Data Quality (BDQ) tests on incoming datasets and replies with results.
 
-## Overview
-
-This service receives dataset submissions via email, processes CSV files, runs BDQ tests, and replies with detailed results including validation failures and proposed amendments. It is currently deployed on Google Cloud Run at https://bdq-multirecord-agent-638241344017.europe-west1.run.app/
-
-A recent refactor replaced the CLI subprocess approach with fast Py4J integration for direct Java-Python communication. This is a major refactor and has left bugs and problems in the code. We did this because using the CLI was slow, although possibly this was due to poor design in the CLI. 
+This service receives dataset submissions via email, processes CSV files, runs BDQ tests, and replies with detailed results including validation failures and proposed amendments. To be deployed on Google Cloud Run.
 
 ### Service Flow
 
@@ -42,9 +38,19 @@ A recent refactor replaced the CLI subprocess approach with fast Py4J integratio
    - CSV of Raw results: per row × per applicable test → `occurrenceID or taxonID`, `status`, `result`, `comment`, `amendment` (if any)
    - CSV of Amended dataset: applies proposed changes from Amendment results
 
-6. **Email Reply**
+6. **LLM Summary Generation**
+   - Analyzes test results, user email, and dataset information
+   - Generates intelligent, contextual email summaries using Google Gemini API
+   - The LLM receives comprehensive context including:
+     - Dataset type (Occurrence/Taxon core)
+     - Test results with validation failures and amendments
+     - User's original email content
+     - Calculated data quality score
+     - Field-specific issue categorization
+
+7. **Email Reply**
    - Replies by email to the sender with:
-     - Summary (email body): Totals (records, tests run), per-field validation failure counts across all rows, examples/samples of common issues, note that the amended dataset applies proposed changes
+     - LLM-generated intelligent summary (email body): Totals (records, tests run), per-field validation failure counts across all rows, examples/samples of common issues, note that the amended dataset applies proposed changes
      - Attaches Raw results csv and Amended dataset csv
 
 ### Email Reply Mechanism
@@ -77,37 +83,12 @@ A recent refactor replaced the CLI subprocess approach with fast Py4J integratio
 
 All local development should be done in Docker containers.
 
-- **Google Apps Script**: Polls Gmail inbox and forwards emails to this service, as well as providing an "endpoint" for email replies. Code for this is in this repo, in google-apps-scripts/
-- **Google Cloud Run**: This FastAPI service, which processes datasets and runs BDQ tests for the entire dataset
-- **Py4J Gateway**: Local JVM process with resident FilteredPush BDQ libraries, providing direct Java-Python integration
-  - Py4J gateway executes BDQ tests locally using direct method calls
-  - Test mappings from official TDWG BDQ specification (via git submodule) for comprehensive BDQ test coverage
-  - Significantly faster than HTTP-based external API calls or subprocess approaches
+### Architecture & Technology Stack
 
-### Technology Stack
-
-- **Apps Script**: Polls Gmail, forwards new mail to Cloud Run. Separate Apps script deployed as a Web app sends email replies.
-- **Google Cloud Run**: (this app) Stateless HTTP service with Py4J gateway for inline BDQ test execution.
-- **Inline BDQ Libraries**: FilteredPush BDQ libraries (geo_ref_qc, event_date_qc, sci_name_qc, rec_occur_qc) run locally in the same container.
-- **bdqtestrunner**: Official FilteredPush testing framework integrated for standards compliance.
-
-### Apps Script Notes
-
-- The Apps Script must complete within 6 minutes. It only forwards messages, so it typically finishes in seconds.
-- Heavy processing (BDQ tests, file handling, reply composition) happens in Cloud Run, not Apps Script.
-- No HMAC or authentication is used in this sandbox test. 
-- Expected email volume is very low (~3 per week), so quotas are not a concern.
-
-### Debugging
-
-- Send debugging messages to {DISCORD_WEBHOOK}
-  - Service sends Discord notifications for lifecycle events (startup/shutdown), unexpected GET probes to `/email/incoming`, uncaught exceptions, and persistent BDQ API failures after retries.
-
-### Reliability
-
-- All unhandled exceptions are captured by FastAPI exception handlers, logged with stack traces, and notified to Discord.
-
-## Setup
+- **Google Apps Script**: Polls Gmail inbox and forwards emails to this service, and provides an endpoint for sending email replies. Code is in `google-apps-scripts/`. One script handles forwarding to /email/incoming (no auth or HMAC for this), another (deployed as a Web app) is used to send replies. Expected email volume is very low (~3 per week), so quotas are not a concern.
+- **Google Cloud Run**: This app. Runs FastAPI service as a stateless HTTP app. Handles dataset processing and BDQ test execution for the entire dataset.
+- **Py4J Gateway**: Local JVM process bdq-py4j-gateway (in the same Docker container) with resident FilteredPush BDQ libraries git submodules (geo_ref_qc, event_date_qc, sci_name_qc, rec_occur_qc), providing direct Java-Python integration. Py4J executes BDQ tests via direct Java method calls.
+- **bdqtestrunner**: Official FilteredPush testing framework
 
 ## API Endpoints
 
@@ -115,49 +96,3 @@ All local development should be done in Docker containers.
 - `GET /health` - Detailed health check
 - `POST /email/incoming` - Process incoming email with CSV attachment
 
-## Email Processing Flow
-
-1. **Email Ingestion**: Apps Script forwards emails to `/email/incoming`
-2. **CSV Processing**: Extract and parse CSV attachment
-3. **Core Detection**: Identify occurrence or taxon core type
-4. **Test Discovery**: Load applicable BDQ tests from TDWG BDQ specification (bdq-spec submodule)
-5. **CLI Execution**: Execute BDQ tests via Java CLI with JSON input/output files
-6. **Test Execution**: Run tests locally via CLI with proper error handling and result processing
-7. **Result Generation**: Create raw results and amended dataset CSVs
-8. **LLM Summary**: Generate intelligent, contextual email summaries using Google Gemini
-9. **Email Reply**: Send results back to sender with attachments (using HMAC authentication)
-
-
-## Inline BDQ Implementation
-
-This service now includes the FilteredPush BDQ libraries directly, running in a local JVM CLI instead of calling external APIs.
-
-### Architecture
-- **Local JVM CLI**: Java command-line application with BDQ libraries loaded
-- **File-based Communication**: JSON input/output files for simple, reliable execution
-- **Test Mapping**: Official TDWG BDQ specification drives the mapping from test IDs to Java class/method implementations
-- **Stateless Execution**: Each request spawns a new CLI process for isolation
-- **Subprocess Management**: Python manages CLI execution with proper error handling
-
-
-### How LLM Summaries Work
-
-1. **Email received** → CSV processed → BDQ tests run
-2. **LLM Context Preparation** → Analyzes test results, user email, dataset info
-3. **Gemini API Call** → Generates intelligent summary
-4. **Email Reply** → Sends LLM-generated summary + attachments
-
-The LLM receives comprehensive context including:
-- Dataset type (Occurrence/Taxon core)
-- Test results with validation failures and amendments
-- User's original email content
-- Calculated data quality score
-- Field-specific issue categorization
-
-### Fallback Behavior
-
-If the LLM service is unavailable:
-- Automatically falls back to basic summary generation
-- No interruption to email processing
-- Logs warnings for monitoring
-- Service continues to work normally

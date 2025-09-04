@@ -24,78 +24,17 @@ load_dotenv()
 setup_logging()
 logger = logging.getLogger(__name__)
 
-# Initialize services (BDQ service lazy-loaded to handle missing TG2_tests.csv gracefully)
 email_service = EmailService()
-bdq_service = None  # Lazy-loaded when first needed
+bdq_service = BDQPy4JService()
 csv_service = CSVService()
+test_mapper = TG2TestMapper(bdq_service)
 
-def get_bdq_service():
-    """Get BDQ service instance, initializing if needed"""
-    global bdq_service
-    if bdq_service is None:
-        try:
-            bdq_service = BDQPy4JService()
-            logger.info("BDQ Py4J Service initialized successfully")
-        except Exception as e:
-            logger.error(f"Failed to initialize BDQ Py4J Service: {e}")
-            raise
-    return bdq_service
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Startup
-    logger.info("Service instance starting")
-    try:
-        send_discord_notification("Instance starting")
-    except Exception:
-        logger.warning("Failed to send Discord startup notification")
-    # Test Py4J connection at service start
-    try:
-        get_bdq_service()  # This will initialize and test the connection
-        logger.info("BDQ Py4J connection test successful")
-    except Exception as e:
-        logger.error(f"Failed to test BDQ Py4J connection: {e}")
-    
-    yield
-    
-    # Shutdown
-    logger.info("Service instance shutting down")
-    try:
-        # Shutdown BDQ service
-        if bdq_service:
-            bdq_service.shutdown()
-        send_discord_notification("Instance shutting down")
-    except Exception:
-        logger.warning("Failed to send Discord shutdown notification")
 
 app = FastAPI(
     title="BDQ Email Report Service",
     description="Service to process biodiversity data quality tests via email",
-    version="1.0.0",
-    lifespan=lifespan
+    version="1.0.0"
 )
-
-# Backward compatibility functions for tests
-async def on_startup():
-    logger.info("Service instance starting")
-    try:
-        send_discord_notification("Instance starting")
-    except Exception:
-        logger.warning("Failed to send Discord startup notification")
-    # Test Py4J connection at service start
-    try:
-        get_bdq_service()  # This will initialize and test the connection
-        logger.info("BDQ Py4J connection test successful")
-    except Exception as e:
-        logger.error(f"Failed to test BDQ Py4J connection: {e}")
-
-
-async def on_shutdown():
-    logger.info("Service instance shutting down")
-    try:
-        send_discord_notification("Instance shutting down")
-    except Exception:
-        logger.warning("Failed to send Discord shutdown notification")
 
 def _normalize_apps_script_payload(raw_data: Dict[str, Any]) -> Dict[str, Any]:
     headers = raw_data.get('headers') or {}
@@ -144,30 +83,10 @@ async def health_check():
     """Detailed health check"""
     logger.info("Health check endpoint called")
     send_discord_notification("Testing - health check")
-    
-    # Check service health status
-    services_status = {
-        "email_service": "healthy",
-        "bdq_service": "healthy", 
-        "csv_service": "healthy"
-    }
-    
-    # Probe Py4J service status if possible
-    py4j_ready = False
-    try:
-        get_bdq_service()  # This will test if the service is ready
-        py4j_ready = True
-    except Exception:
-        py4j_ready = False
-    services_status.update({
-        "bdq_py4j_ready": py4j_ready
-    })
 
     return {
         "status": "healthy",
         "service": "BDQ Email Report Service",
-        "version": "1.0.0",
-        "services": services_status,
         "environment": {
             "gmail_send_configured": bool(os.getenv("GMAIL_SEND")),
             "hmac_secret_configured": bool(os.getenv("HMAC_SECRET")),
@@ -197,39 +116,31 @@ async def _handle_email_processing(email_data: EmailPayload):
             return
 
         # Get applicable BDQ tests
-        applicable_tests = get_bdq_service().get_applicable_tests(df.columns.tolist())
+        applicable_tests = test_mapper.get_applicable_tests_for_dataset(df.columns.tolist())
 
         if not applicable_tests:
+            send_discord_notification(f"❗ No applicable BDQ tests found for provided CSV columns: {df.columns.tolist()}")
             await email_service.send_error_reply(
                 email_data,
                 "No applicable BDQ tests found for the provided CSV columns."
             )
             return
 
-        # Run BDQ tests
-        execution_result = get_bdq_service().execute_tests(df, applicable_tests)
-        test_results = execution_result.test_results
-        skipped_tests = execution_result.skipped_tests
+        # TODO For test in applicable_tests:
+        # Get all unique value combinations in acted_upon + consulted (use helper.py _get_unique_tuples)
+        # Make a list of test results
+        # For each unique value combinations:
+        #   Run test using bdq_service.executeSingleTuple (but change name to executeSingleTest)
+        #   Run helper _expand_single_test_results_to_all_rows, and add the returned row results to the list of test results
+        # After this, use pandas to get some summaries of the status, result, comment, label, acted_upon and consulteds - 
+        # what we want is actually the unique value combinations and just add counts of how common they were
+        # Send this + the original email address, subject and body on to llm_service.py to generate an email summary reply (just email body).
         
-        # Debug test results
-        logger.info(f"BDQ execution complete: {len(test_results)} test results, {len(skipped_tests)} skipped tests")
-        if test_results:
-            sample_result = test_results[0]
-            logger.info(f"Sample result: {sample_result.test_id} -> {sample_result.status} for record {sample_result.record_id}")
-        else:
-            logger.error("CRITICAL: No test results returned from BDQ CLI!")
-            send_discord_notification("❌ CRITICAL: BDQ CLI returned zero test results!")
-
-        # Generate result files
         send_discord_notification(f"📊 Generating result files with {len(test_results)} test results...")
         raw_results_csv = csv_service.generate_raw_results_csv(test_results, core_type)
         amended_dataset_csv = csv_service.generate_amended_dataset(df, test_results, core_type)
 
-        # Generate summary (include skipped tests)
-        summary = get_bdq_service().generate_summary(test_results, len(df), [])
-
-        # Send reply email
-        send_discord_notification(f"📧 Generating intelligent summary and sending email...")
+        send_discord_notification(f"Sending reply email...")
         await email_service.send_results_reply(
             email_data,
             summary,
@@ -298,38 +209,6 @@ async def process_incoming_email(request: Request, background_tasks: BackgroundT
     send_discord_notification(f"Email from {email_data.from_email} queued for processing")
     
     return JSONResponse(status_code=200, content={"status": "accepted", "message": "Email queued for processing"})
-
-
-@app.get("/email/incoming")
-async def reject_incoming_email_get(request: Request):
-    """Explicitly reject GET requests to /email/incoming with 405 and alert."""
-    client_ip = getattr(request.client, "host", "unknown")
-    logger.warning(f"GET /email/incoming from {client_ip} - returning 405")
-    try:
-        send_discord_notification(f"Suspicious GET /email/incoming from {client_ip}")
-    except Exception:
-        logger.warning("Failed to send Discord notification for GET /email/incoming")
-    return JSONResponse(status_code=405, content={"detail": "Method Not Allowed"})
-
-
-@app.exception_handler(HTTPException)
-async def http_exception_handler(request: Request, exc: HTTPException):
-    logger.error(f"HTTPException {exc.status_code}: {exc.detail}", exc_info=True)
-    try:
-        send_discord_notification(f"HTTPException {exc.status_code}: {exc.detail}")
-    except Exception:
-        logger.warning("Failed to send Discord notification for HTTPException")
-    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
-
-
-@app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    logger.error("Request validation error", exc_info=True)
-    try:
-        send_discord_notification("Request validation error on incoming request")
-    except Exception:
-        logger.warning("Failed to send Discord notification for validation error")
-    return JSONResponse(status_code=422, content={"detail": exc.errors()})
 
 
 @app.exception_handler(Exception)

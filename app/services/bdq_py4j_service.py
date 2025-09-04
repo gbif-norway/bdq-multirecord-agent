@@ -13,7 +13,7 @@ from pathlib import Path
 from py4j.java_gateway import JavaGateway, GatewayParameters, launch_gateway
 from py4j.protocol import Py4JNetworkError
 
-from app.services.tg2_parser import TG2Parser, TG2TestMapping
+from app.services.tg2test_service import TG2TestMapper, TG2TestMapping
 from app.models.email_models import BDQTest, BDQTestResult, BDQTestExecutionResult, ProcessingSummary
 from app.utils.logger import send_discord_notification
 
@@ -26,67 +26,24 @@ class BDQPy4JService:
     
     def __init__(self):
         self.gateway: Optional[JavaGateway] = None
-        self.test_mappings: Dict[str, TG2TestMapping] = {}
-        
-        # Load test mappings
-        self._load_test_mappings()
-        logger.info(f"Loaded {len(self.test_mappings)} test mappings")
-        if len(self.test_mappings) == 0:
-            logger.error("CRITICAL: Zero test mappings loaded - no tests will be available!")
-            send_discord_notification("❌ CRITICAL: Zero BDQ test mappings loaded!")
-        
+        self.test_mapper = TG2TestMapper()
         self._start_gateway()
-    
-    def _load_test_mappings(self):
-        """Load BDQ test mappings from TG2 specification"""
-        tg2_parser = TG2Parser()
-        self.test_mappings = tg2_parser.parse()
-        logger.info(f"Loaded {len(self.test_mappings)} BDQ test mappings")
     
     def _start_gateway(self):
         """Start Py4J gateway as subprocess"""
         java_opts = os.getenv('BDQ_JAVA_OPTS', '-Xms256m -Xmx1024m -XX:+UseSerialGC')
         gateway_jar = os.getenv('BDQ_PY4J_GATEWAY_JAR', '/opt/bdq/bdq-py4j-gateway.jar')
         
-        # Use Py4J's launch_gateway for cleaner port detection
         java_cmd = ['java'] + java_opts.split() + ['-jar', gateway_jar]
-        
         logger.info(f"Starting Py4J gateway: {' '.join(java_cmd)}")
-        port = launch_gateway(java_cmd=java_cmd)
-        logger.info(f"Py4J gateway started on port: {port}")
-        
-        # Connect to the gateway
+        port = launch_gateway(java_cmd)
         self.gateway = JavaGateway(gateway_parameters=GatewayParameters(port=port))
-        
-        # Test basic Java functionality
-        java_system = self.gateway.jvm.System
-        java_version = java_system.getProperty("java.version")
-        logger.info(f"Java version: {java_version}")
-        
-        # Test BDQ gateway
-        bdq_gateway = self.gateway.entry_point
-        health = bdq_gateway.healthCheck()
-        logger.info(f"BDQ Gateway health: {health}")
-        
-        logger.info("✅ Py4J gateway started successfully")
-    
-    
-    def get_applicable_tests(self, csv_columns: List[str]) -> List[TG2TestMapping]:
-        """Get tests that can be applied to the given CSV columns"""
-        applicable_tests = []
-        
-        for test_id, test_mapping in self.test_mappings.items():
-            # Check if all actedUpon columns exist in CSV
-            if all(col in csv_columns for col in test_mapping.acted_upon) or all(f'dwc:{col}' in csv_columns for col in test_mapping.acted_upon):
-                applicable_tests.append(test_mapping)
-        
-        logger.info(f"Found {len(applicable_tests)} applicable tests from {len(self.test_mappings)} total")
-        return applicable_tests
+        logger.info(f"Java version: {self.gateway.jvm.System.getProperty('java.version')}")
+        logger.info(f"BDQ Gateway health: {self.gateway.entry_point.healthCheck()}")
     
     
     def execute_tests(self, df, applicable_tests: List[TG2TestMapping]) -> BDQTestExecutionResult:
         """Execute BDQ tests using Py4J"""
-        
         start_time = time.time()
         test_results = []
         skipped_tests = []
@@ -115,7 +72,7 @@ class BDQPy4JService:
                     test_mapping.java_method,
                     test_mapping.acted_upon,
                     test_mapping.consulted,
-                    test_mapping.parameters or {},
+                    {}, # parameters, we're always going to use the defaults
                     tuples
                 )
                 
@@ -189,19 +146,6 @@ class BDQPy4JService:
                 row_results.append(bdq_result)
         
         return row_results
-    
-    def generate_summary(self, test_results: List[BDQTestResult], total_records: int, skipped_tests: List[str]) -> ProcessingSummary:
-        """Generate processing summary"""
-        total_tests_run = len(test_results)
-        successful_tests = len([r for r in test_results if r.status == 'RUN_HAS_RESULT'])
-        
-        return ProcessingSummary(
-            total_records=total_records,
-            total_tests_run=total_tests_run,
-            successful_tests=successful_tests,
-            skipped_tests=skipped_tests,
-            total_test_results=len(test_results)
-        )
     
     def shutdown(self):
         """Shutdown Py4J gateway"""
