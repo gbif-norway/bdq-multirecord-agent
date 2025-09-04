@@ -22,7 +22,7 @@
         <module>sci_name_qc</module>
         <module>rec_occur_qc</module>
         <module>bdqtestrunner</module>
-        <module>bdq-cli</module>
+        <module>bdq-py4j-gateway</module>
     </modules>
     
     <repositories>

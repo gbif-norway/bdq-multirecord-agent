@@ -12,7 +12,7 @@ import base64
 import asyncio
 
 from app.services.email_service import EmailService
-from app.services.bdq_cli_service import BDQCLIService
+from app.services.bdq_py4j_service import BDQPy4JService
 from app.services.csv_service import CSVService
 from app.models.email_models import EmailPayload
 from app.utils.logger import setup_logging, send_discord_notification
@@ -34,10 +34,10 @@ def get_bdq_service():
     global bdq_service
     if bdq_service is None:
         try:
-            bdq_service = BDQCLIService()
-            logger.info("BDQ CLI Service initialized successfully")
+            bdq_service = BDQPy4JService()
+            logger.info("BDQ Py4J Service initialized successfully")
         except Exception as e:
-            logger.error(f"Failed to initialize BDQ CLI Service: {e}")
+            logger.error(f"Failed to initialize BDQ Py4J Service: {e}")
             raise
     return bdq_service
 
@@ -49,20 +49,23 @@ async def lifespan(app: FastAPI):
         send_discord_notification("Instance starting")
     except Exception:
         logger.warning("Failed to send Discord startup notification")
-    # Test CLI connection at service start
+    # Test Py4J connection at service start
     try:
-        if get_bdq_service().test_connection():
-            logger.info("BDQ CLI connection test successful")
+        if get_bdq_service()._jvm_started:
+            logger.info("BDQ Py4J connection test successful")
         else:
-            logger.warning("BDQ CLI connection test failed")
+            logger.warning("BDQ Py4J connection test failed")
     except Exception as e:
-        logger.error(f"Failed to test BDQ CLI connection: {e}")
+        logger.error(f"Failed to test BDQ Py4J connection: {e}")
     
     yield
     
     # Shutdown
     logger.info("Service instance shutting down")
     try:
+        # Shutdown BDQ service
+        if bdq_service:
+            bdq_service.shutdown()
         send_discord_notification("Instance shutting down")
     except Exception:
         logger.warning("Failed to send Discord shutdown notification")
@@ -153,14 +156,14 @@ async def health_check():
         "csv_service": "healthy"
     }
     
-    # Probe CLI status if possible
-    cli_ready = False
+    # Probe Py4J service status if possible
+    py4j_ready = False
     try:
-        cli_ready = get_bdq_service().test_connection()
+        py4j_ready = get_bdq_service()._jvm_started
     except Exception:
-        cli_ready = False
+        py4j_ready = False
     services_status.update({
-        "bdq_cli_ready": cli_ready
+        "bdq_py4j_ready": py4j_ready
     })
 
     return {

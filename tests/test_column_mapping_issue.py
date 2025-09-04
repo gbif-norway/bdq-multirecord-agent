@@ -1,7 +1,7 @@
 import pytest
 from pathlib import Path
 
-from app.services.bdq_cli_service import BDQCLIService
+from app.services.bdq_py4j_service import BDQPy4JService
 from app.services.csv_service import CSVService
 
 
@@ -17,7 +17,7 @@ class TestColumnMappingIssue:
     
     @pytest.fixture 
     def bdq_service(self):
-        return BDQCLIService(skip_validation=True)
+        return BDQPy4JService(skip_validation=True)
     
     @pytest.fixture
     def csv_service(self):

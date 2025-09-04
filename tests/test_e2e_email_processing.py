@@ -11,7 +11,7 @@ from app.main import app
 from app.models.email_models import EmailPayload
 from app.services.email_service import EmailService
 from app.services.csv_service import CSVService
-from app.services.bdq_cli_service import BDQCLIService
+from app.services.bdq_py4j_service import BDQPy4JService
 
 
 class TestEndToEndEmailProcessing:
@@ -60,7 +60,7 @@ class TestEndToEndEmailProcessing:
     @patch('app.main.send_discord_notification')
     @patch('app.services.email_service.EmailService.send_results_reply')
     @patch('app.services.email_service.EmailService.send_error_reply')
-    @patch('app.services.bdq_cli_service.BDQCLIService.run_tests_on_dataset')
+    @patch('app.services.bdq_py4j_service.BDQPy4JService.execute_tests')
     def test_simple_occurrence_processing_success(self, mock_run_tests, mock_send_error, 
                                                 mock_send_results, mock_discord, 
                                                 client, test_data_dir):
@@ -230,7 +230,7 @@ class TestEndToEndEmailProcessing:
         
     def test_bdq_test_filtering(self, test_data_dir):
         """Test BDQ test filtering with different column name formats"""
-        bdq_service = BDQCLIService(skip_validation=True)
+        bdq_service = BDQPy4JService(skip_validation=True)
         
         # Get available tests
         tests = bdq_service.get_available_tests()
@@ -331,13 +331,13 @@ class TestBDQServiceIntegration:
     
     def test_service_initialization(self):
         """Test BDQ service can be initialized without errors"""
-        service = BDQCLIService(skip_validation=True)
+        service = BDQPy4JService(skip_validation=True)
         assert service is not None
         assert len(service.test_mappings) > 0
         
     def test_test_availability(self):
         """Test that BDQ tests are available"""
-        service = BDQCLIService(skip_validation=True)
+        service = BDQPy4JService(skip_validation=True)
         tests = service.get_available_tests()
         
         assert len(tests) > 0
@@ -354,7 +354,7 @@ class TestBDQServiceIntegration:
         
     def test_column_mapping_issue_reproduction(self):
         """Test that reproduces the column mapping issue"""
-        service = BDQCLIService(skip_validation=True)
+        service = BDQPy4JService(skip_validation=True)
         tests = service.get_available_tests()
         
         # Simulate columns from the occurrence.txt file (without dwc: prefixes)

@@ -4,29 +4,121 @@ A lightweight email-based service that runs Biodiversity Data Quality (BDQ) test
 
 ## Overview
 
-This service receives dataset submissions via email, processes CSV files, runs BDQ tests, and replies with detailed results including validation failures and proposed amendments. It is currently deployed on google cloud run at https://bdq-multirecord-agent-638241344017.europe-west1.run.app/
+This service receives dataset submissions via email, processes CSV files, runs BDQ tests, and replies with detailed results including validation failures and proposed amendments. It is currently deployed on Google Cloud Run at https://bdq-multirecord-agent-638241344017.europe-west1.run.app/
 
-## Recent Major Refactor (2024)
+### Service Flow
 
-**Refactored from Unix socket server to CLI approach**: Replaced complex Unix domain socket server architecture with simple command-line interface approach for better reliability and easier debugging. **Eliminated persistent JVM process management**: Removed socket server, health checks, and restart logic in favor of stateless CLI execution per request. **Simplified Docker build**: Streamlined multi-stage Dockerfile that builds CLI JAR and eliminates build complexity that was causing deployment failures.
+1. **Email Ingestion**
+   - A Gmail account is set up solely for this service.
+   - An Apps Script polls the inbox once per minute using the Gmail Advanced Service.
+   - For each new message, it builds a JSON payload with headers, text/HTML body, and attachments, then posts it to this app's Cloud Run endpoint via `UrlFetchApp.fetch()`.
+   - Messages that have been successfully forwarded are labeled `bdq/processed` to avoid duplicates.
 
-### Post-Refactor Code Quality Improvements (2025)
-- **Modernized FastAPI Architecture**: Upgraded from deprecated `@app.on_event()` to modern `lifespan` context manager
-- **Comprehensive Test Suite**: 121/122 tests passing (99.2% success rate) with full integration test coverage
-- **Async Architecture**: Proper async/await patterns throughout the codebase
-- **Enhanced Error Handling**: Robust error recovery and graceful degradation
-- **Integration Testing**: Complete end-to-end CLI workflow testing including edge cases
+2. **Dataset Processing**
+   - This Cloud Run service receives the JSON payload and extracts the dataset file (CSV), saving it locally via `/email/incoming` endpoint
+   - Immediately returns 200 so the Apps Script stops processing, Apps Script will label the message with `bdq/replied` in Gmail
+   - If the file is not a CSV or there is no attachment, replies to the sender with a warning message and stops processing
+   - Note: `GET /email/incoming` explicitly returns 405 and sends a Discord alert to surface unsolicited probes
+   - Loads the core file into memory (detects delimiter, header). Determines core type by header presence:
+     - Occurrence core if header contains `occurrenceID`
+     - Taxon core if header contains `taxonID`
+     - If there is no occurrenceID or taxonID header, replies to the sender notifying them that a CSV with a known ID header is required and stops processing
+
+3. **Test Discovery**
+   - Discovers tests from local TG2_tests.csv parsing, makes a list of tests to be applied
+   - For each test, if all `actedUpon` columns exist in the CSV header, includes it
+   - Splits into Validations and Amendments by the `type` field
+   - Tests are loaded from the local TG2_tests.csv file and parsed into structured objects
+
+4. **Test Execution**
+   - Unique-value dedup per test: For each test, creates a set of **unique tuples** = values of its `actedUpon` columns across **all rows**
+   - For each unique tuple, **executes the BDQ test locally** using Py4J integration. Caches the result by `(test_id, tuple)`
+   - Results include status values: `RUN_HAS_RESULT`, `AMENDED`, `NOT_AMENDED`, `FILLED_IN`, `EXTERNAL_PREREQUISITES_NOT_MET`, `INTERNAL_PREREQUISITES_NOT_MET`, `AMBIGUOUS`
+   - Result values: `COMPLIANT`, `NOT_COMPLIANT`, `POTENTIAL_ISSUE` / `NOT_ISSUE`
+   - Maps cached results back to every row that has that same tuple. If there are no results, emails the user notifying them that they do not have any fields which can have BDQ tests run
+
+5. **Result Generation**
+   - CSV of Raw results: per row × per applicable test → `occurrenceID or taxonID`, `status`, `result`, `comment`, `amendment` (if any)
+   - CSV of Amended dataset: applies proposed changes from Amendment results
+
+6. **Email Reply**
+   - Replies by email to the sender with:
+     - Summary (email body): Totals (records, tests run), per-field validation failure counts across all rows, examples/samples of common issues, note that the amended dataset applies proposed changes
+     - Attaches Raw results csv and Amended dataset csv
+
+### Email Reply Mechanism
+
+- Another Apps Script deployed as a Web app acts as a "send mail" webhook, this avoids oauth and periodic reauth. Need to add GMAIL_SEND env var to Google Cloud Run with endpoint.
+- Call example: 
+   ```
+   curl -X POST "{GMAIL_SEND}" \
+   -H "Content-Type: application/json" \
+   -d '{
+      "threadId": "1873e0a1f1c8fabc",        // use this to reply in-thread
+      "bodyText": "Here are your BDQ results.\nSee attachments.",
+      "bodyHtml": "<p>Here are your BDQ results.</p>",
+      "attachments": [
+         {
+         "filename": "bdq_raw_results.csv",
+         "mimeType": "text/csv",
+         "contentBase64": "<base64>"
+         },
+         {
+         "filename": "amended_dataset.csv",
+         "mimeType": "text/csv",
+         "contentBase64": "<base64>"
+         }
+      ]
+   }'
+   ```
+
+## Recent Major Refactor (2024-2025)
+
+**Py4J Architecture Migration**: Replaced the slow CLI subprocess approach with fast Py4J integration for direct Java-Python communication. This eliminates the 30-40 second startup times and timeout issues that were plaguing the Cloud Run deployment.
+
+### Key Improvements
+- **Fast Startup**: Py4J gateway starts in ~2 seconds vs 30-40 seconds for CLI
+- **No Timeouts**: Direct Java-Python communication eliminates subprocess overhead
+- **Cloud Run Optimized**: Single process architecture perfect for serverless environments
+- **Reliable Execution**: No file I/O bottlenecks or process management issues
+- **Better Error Handling**: Direct exception propagation from Java to Python
+- **Modernized FastAPI**: Upgraded to modern `lifespan` context manager
+- **Comprehensive Testing**: Full integration test coverage with Py4J architecture
 
 ## Architecture
 
-All local development should be done in docker containers.
+All local development should be done in Docker containers.
 
 - **Google Apps Script**: Polls Gmail inbox and forwards emails to this service, as well as providing an "endpoint" for email replies. Code for this is in this repo, in google-apps-scripts/
 - **Google Cloud Run**: This FastAPI service, which processes datasets and runs BDQ tests for the entire dataset
-- **Inline BDQ Libraries**: Local JVM CLI with resident FilteredPush BDQ libraries, eliminating external API dependencies
-  - Java CLI executes BDQ tests locally using file-based I/O (JSON input/output)
+- **Py4J Gateway**: Local JVM process with resident FilteredPush BDQ libraries, providing direct Java-Python integration
+  - Py4J gateway executes BDQ tests locally using direct method calls
   - Test mappings from official TDWG BDQ specification (via git submodule) for comprehensive BDQ test coverage
-  - Significantly faster than HTTP-based external API calls
+  - Significantly faster than HTTP-based external API calls or subprocess approaches
+
+### Technology Stack
+
+- **Apps Script**: Polls Gmail, forwards new mail to Cloud Run. Separate Apps script deployed as a Web app sends email replies.
+- **Google Cloud Run**: (this app) Stateless HTTP service with Py4J gateway for inline BDQ test execution.
+- **Inline BDQ Libraries**: FilteredPush BDQ libraries (geo_ref_qc, event_date_qc, sci_name_qc, rec_occur_qc) run locally in the same container.
+- **bdqtestrunner**: Official FilteredPush testing framework integrated for standards compliance.
+
+### Apps Script Notes
+
+- The Apps Script must complete within 6 minutes. It only forwards messages, so it typically finishes in seconds.
+- Heavy processing (BDQ tests, file handling, reply composition) happens in Cloud Run, not Apps Script.
+- No HMAC or authentication is used in this sandbox test. 
+- Expected email volume is very low (~3 per week), so quotas are not a concern.
+
+### Debugging
+
+- Send debugging messages to {DISCORD_WEBHOOK}
+  - Service sends Discord notifications for lifecycle events (startup/shutdown), unexpected GET probes to `/email/incoming`, uncaught exceptions, and persistent BDQ API failures after retries.
+
+### Reliability
+
+- All unhandled exceptions are captured by FastAPI exception handlers, logged with stack traces, and notified to Discord.
+- BDQ API calls use exponential backoff (1s → 2s → 4s → 8s) up to 4 attempts per parameter set; persistent failures raise a single Discord alert per test.
 
 ## Setup
 
@@ -215,6 +307,77 @@ The `/health` endpoint shows service status and environment variable configurati
    - Monitor API usage
    - Implement backoff for failed requests
    - Graceful degradation to basic summaries
+
+## Build Process
+
+### Py4J Gateway Build Strategy
+
+This project uses a **Docker-based build strategy** for the Py4J Gateway JAR. The JAR is built during the Docker image build process, not committed to the repository.
+
+#### Why Docker Build?
+
+✅ **Reproducible builds** - Same Maven/Java version every time  
+✅ **Platform independent** - Works on any development machine  
+✅ **Security** - No pre-built binaries in repository  
+✅ **Clean repository** - No large binary files tracked by git  
+✅ **CI/CD ready** - Build process is fully containerized  
+
+#### JAR Size (~100MB)
+
+The Py4J Gateway JAR is large because it's a "fat JAR" containing all dependencies:
+- FilteredPush BDQ libraries (geo_ref_qc, sci_name_qc, event_date_qc, rec_occur_qc)
+- Py4J library for Python-Java integration
+- Transitive dependencies (Jackson, SLF4J, etc.)
+- This is **expected and normal** for a self-contained gateway
+
+#### Build Process
+
+**Docker Build (Production)**
+```bash
+# Build Docker image - JAR is built automatically
+docker build -t bdq-service .
+
+# JAR location in container: /opt/bdq/bdq-py4j-gateway.jar
+```
+
+**Local Development Build (Optional)**
+```bash
+# Build JAR locally for testing
+cd java
+mvn clean package -DskipTests
+
+# JAR output: bdq-py4j-gateway/target/bdq-py4j-gateway-1.0.0.jar
+```
+
+#### Important Rules
+
+❌ **NEVER commit JAR files** - They are ignored by .gitignore  
+❌ **NEVER commit target/ directories** - Maven build artifacts are ignored  
+✅ **Always build through Docker for production**  
+✅ **Local builds are for development/testing only**  
+
+#### Docker Multi-Stage Build
+
+The Dockerfile uses a multi-stage build:
+
+1. **Build Stage** (`maven:3.9-eclipse-temurin-17`)
+   - Copies Java source code
+   - Builds BDQ libraries first
+   - Builds Py4J Gateway JAR with all dependencies
+
+2. **Runtime Stage** (`python:3.11-slim`)  
+   - Installs OpenJDK 21 JRE
+   - Copies only the Py4J Gateway JAR from build stage
+   - Copies Python application code
+   - Sets up runtime environment
+
+#### Development Workflow
+
+1. **Make changes** to Java or Python code
+2. **Test locally** with `mvn clean package` if needed
+3. **Build Docker image** to test full integration
+4. **Commit source changes** only (JAR files are automatically ignored)
+5. **Deploy via Docker** - JAR is built fresh each time
 
 ## Development
 

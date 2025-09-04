@@ -7,7 +7,7 @@ from unittest.mock import Mock, patch
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.services.bdq_cli_service import BDQCLIService
+from app.services.bdq_py4j_service import BDQPy4JService
 from app.services.csv_service import CSVService
 from app.services.email_service import EmailService
 from app.services.tg2_parser import TG2Parser
