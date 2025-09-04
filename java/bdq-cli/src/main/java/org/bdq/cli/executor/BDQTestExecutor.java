@@ -39,6 +39,25 @@ public class BDQTestExecutor {
                 Collections.emptyList(), 
                 Collections.emptyMap(), 
                 "VALIDATION"));
+        
+        // Add occurrence tests
+        testMappings.put("VALIDATION_OCCURRENCEID_NOTEMPTY", 
+            new TestMapping("VALIDATION_OCCURRENCEID_NOTEMPTY", "rec_occur_qc", 
+                "org.filteredpush.qc.metadata.DwCMetadataDQ", 
+                "validationOccurrenceidNotempty", 
+                Arrays.asList("dwc:occurrenceID"), 
+                Collections.emptyList(), 
+                Collections.emptyMap(), 
+                "VALIDATION"));
+                
+        testMappings.put("VALIDATION_BASISOFRECORD_NOTEMPTY", 
+            new TestMapping("VALIDATION_BASISOFRECORD_NOTEMPTY", "rec_occur_qc", 
+                "org.filteredpush.qc.metadata.DwCMetadataDQ", 
+                "validationBasisofrecordNotempty", 
+                Arrays.asList("dwc:basisOfRecord"), 
+                Collections.emptyList(), 
+                Collections.emptyMap(), 
+                "VALIDATION"));
     }
     
     public BDQResponse executeTests(BDQRequest request) {
@@ -144,17 +163,44 @@ public class BDQTestExecutor {
         // Execute the method
         Object result = method.invoke(instance, args);
         
-        // Convert result to appropriate format
-        String status = "RUN_HAS_RESULT";
-        String comment = "Test executed successfully";
-        
-        if (result instanceof Boolean) {
-            return new BDQResponse.TupleResult(tupleIndex, status, 
-                ((Boolean) result) ? "COMPLIANT" : "NOT_COMPLIANT", comment);
-        } else if (result instanceof String) {
-            return new BDQResponse.TupleResult(tupleIndex, status, result, comment);
-        } else {
-            return new BDQResponse.TupleResult(tupleIndex, status, result.toString(), comment);
+        // Extract values from DQResponse object
+        try {
+            // Use reflection to extract values from DQResponse
+            Class<?> resultClass = result.getClass();
+            
+            // Get the ResultState
+            Object resultState = resultClass.getMethod("getResultState").invoke(result);
+            String status = (String) resultState.getClass().getMethod("getLabel").invoke(resultState);
+            
+            // Get the comment
+            String comment = (String) resultClass.getMethod("getComment").invoke(result);
+            if (comment == null) {
+                comment = "Test executed";
+            }
+            
+            // Get the actual result value
+            Object value = resultClass.getMethod("getValue").invoke(result);
+            String resultValue;
+            
+            if (value != null) {
+                // Extract the label from the value (ComplianceValue, AmendmentValue, etc.)
+                try {
+                    resultValue = (String) value.getClass().getMethod("getLabel").invoke(value);
+                } catch (Exception e) {
+                    // If getLabel fails, try toString or use the object directly
+                    resultValue = value.toString();
+                }
+            } else {
+                resultValue = null;
+            }
+            
+            return new BDQResponse.TupleResult(tupleIndex, status, resultValue, comment);
+            
+        } catch (Exception e) {
+            logger.error("Error extracting DQResponse values: {}", e.getMessage());
+            // Fallback to simple toString
+            return new BDQResponse.TupleResult(tupleIndex, "INTERNAL_PREREQUISITES_NOT_MET", 
+                result.toString(), "Error extracting result: " + e.getMessage());
         }
     }
     
