@@ -19,7 +19,6 @@ class TestMainApp:
         """Test the detailed health check endpoint"""
         with patch('app.main.get_bdq_service') as mock_get_bdq:
             mock_service = Mock()
-            mock_service._jvm_started = True
             mock_get_bdq.return_value = mock_service
             
             response = client.get("/health")
@@ -36,9 +35,7 @@ class TestMainApp:
     def test_health_endpoint_py4j_failure(self, client):
         """Test health endpoint when Py4J connection fails"""
         with patch('app.main.get_bdq_service') as mock_get_bdq:
-            mock_service = Mock()
-            mock_service._jvm_started = False
-            mock_get_bdq.return_value = mock_service
+            mock_get_bdq.side_effect = Exception("Py4J connection failed")
             
             response = client.get("/health")
             assert response.status_code == 200
@@ -182,7 +179,6 @@ class TestMainApp:
         with patch('app.main.send_discord_notification') as mock_discord:
             with patch('app.main.get_bdq_service') as mock_get_bdq:
                 mock_service = Mock()
-                mock_service._jvm_started = True
                 mock_get_bdq.return_value = mock_service
                 
                 # Import and call the startup function directly

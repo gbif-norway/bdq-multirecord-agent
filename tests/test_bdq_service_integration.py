@@ -21,7 +21,7 @@ class TestBDQServiceCore:
     @pytest.fixture
     def bdq_service(self):
         """BDQ service instance for testing"""
-        return BDQPy4JService(skip_validation=True)
+        return BDQPy4JService()
     
     @pytest.fixture
     def csv_service(self):
@@ -37,7 +37,6 @@ class TestBDQServiceCore:
         """Test BDQ service can be initialized without errors"""
         assert bdq_service is not None
         assert len(bdq_service.test_mappings) > 0
-        assert bdq_service.skip_validation is True
     
     def test_test_mappings_loaded(self, bdq_service):
         """Test that test mappings are properly loaded"""
@@ -51,9 +50,11 @@ class TestBDQServiceCore:
         # Should have at least validation tests
         assert "Validation" in test_types
     
-    def test_get_available_tests(self, bdq_service):
-        """Test getting all available tests"""
-        tests = bdq_service.get_available_tests()
+    def test_get_applicable_tests(self, bdq_service):
+        """Test getting applicable tests"""
+        # Test with some common CSV columns
+        csv_columns = ['occurrenceID', 'scientificName', 'decimalLatitude', 'decimalLongitude']
+        tests = bdq_service.get_applicable_tests(csv_columns)
         assert len(tests) > 0
         
         # Check for some expected test types
@@ -120,7 +121,7 @@ class TestBDQServiceCore:
         print(f"Columns: {list(df.columns)}")
         
         # Get available BDQ tests
-        tests = bdq_service.get_available_tests()
+        tests = list(bdq_service.test_mappings.values())
         print(f"Total available BDQ tests: {len(tests)}")
         
         # Test current filtering behavior
@@ -182,7 +183,7 @@ class TestBDQServiceCore:
         normalized_available = normalize_column_list(available_columns)
         
         # Get BDQ tests
-        tests = bdq_service.get_available_tests()
+        tests = list(bdq_service.test_mappings.values())
         
         # Test original filtering (should give 0)
         original_applicable = bdq_service.get_applicable_tests(available_columns)
@@ -233,7 +234,7 @@ class TestBDQServiceCore:
                 content = f.read()
             
             df, core_type = csv_service.parse_csv_and_detect_core(content)
-            tests = bdq_service.get_available_tests()
+            tests = list(bdq_service.test_mappings.values())
             applicable = bdq_service.get_applicable_tests(df.columns.tolist())
             
             results[filename] = {
@@ -301,7 +302,7 @@ class TestBDQServiceCore:
         original_columns = df.columns.tolist()
         mapped_columns = map_columns_to_dwc(original_columns)
         
-        tests = bdq_service.get_available_tests()
+        tests = list(bdq_service.test_mappings.values())
         
         original_applicable = bdq_service.get_applicable_tests(original_columns)
         mapped_applicable = bdq_service.get_applicable_tests(mapped_columns)
@@ -325,12 +326,55 @@ class TestBDQServiceCore:
             all_required = test.acted_upon + test.consulted
             print(f"Test {test.test_id} requires: {[col for col in all_required if col.strip()]}")
         
-        assert len(mapped_applicable) > len(original_applicable)
+        # With automatic column normalization, both should find the same number of tests
+        # This demonstrates that the automatic normalization works as well as manual mapping
+        assert len(mapped_applicable) == len(original_applicable)
         
         return {
             'original_applicable': len(original_applicable),
             'mapped_applicable': len(mapped_applicable),
             'mappings_applied': len(mappings_applied)
+        }
+
+    def test_real_world_occurrence_data_columns(self, bdq_service):
+        """Test with the actual columns from the real occurrence.txt file"""
+        # These are the actual columns from the occurrence.txt file that was causing issues
+        real_columns = [
+            "id", "modified", "license", "institutionID", "institutionCode", "datasetName",
+            "basisOfRecord", "dynamicProperties", "occurrenceID", "recordedBy", "associatedReferences",
+            "organismID", "eventID", "parentEventID", "year", "month", "samplingProtocol",
+            "eventRemarks", "country", "countryCode", "stateProvince", "locality",
+            "minimumElevationInMeters", "maximumElevationInMeters", "verbatimElevation",
+            "decimalLatitude", "decimalLongitude", "geodeticDatum", "coordinateUncertaintyInMeters",
+            "verbatimCoordinates", "verbatimLatitude", "verbatimLongitude", "verbatimCoordinateSystem",
+            "verbatimSRS", "georeferencedBy", "scientificName", "kingdom", "phylum", "class",
+            "order", "family", "genus", "specificEpithet", "infraspecificEpithet", "taxonRank",
+            "verbatimTaxonRank", "scientificNameAuthorship", "vernacularName"
+        ]
+        
+        # Test with real columns (should now find tests due to column normalization)
+        applicable_tests = bdq_service.get_applicable_tests(real_columns)
+        
+        # With column normalization, we should now find applicable tests
+        assert len(applicable_tests) > 0, f"Expected to find applicable tests after column normalization, but found {len(applicable_tests)}. Column normalization may not be working correctly."
+        
+        # Show what columns would need to be normalized
+        relevant_columns = ["country", "decimalLatitude", "decimalLongitude", "scientificName", "occurrenceID"]
+        normalized_relevant = [f"dwc:{col}" for col in relevant_columns]
+        
+        # Test with normalized columns
+        normalized_applicable = bdq_service.get_applicable_tests(normalized_relevant)
+        
+        # This shows the fix would work
+        assert len(normalized_applicable) > 0, "Normalized columns should find applicable tests"
+        
+        return {
+            "real_columns_count": len(real_columns),
+            "applicable_tests_with_real_columns": len(applicable_tests),
+            "relevant_columns": relevant_columns,
+            "normalized_relevant_columns": normalized_relevant,
+            "applicable_tests_with_normalized_columns": len(normalized_applicable),
+            "fix_implemented": "Column normalization now automatically adds dwc: prefix to Darwin Core terms"
         }
 
 
@@ -378,7 +422,7 @@ VALIDATION_BASIS_OF_RECORD,"dwc:basisOfRecord","","","https://github.com/Filtere
             }
             mock_parser_class.return_value = mock_parser
             
-            service = BDQPy4JService(skip_validation=True)
+            service = BDQPy4JService()
             
             # Test that the service loaded the mocked test mappings
             assert len(service.test_mappings) == 1
@@ -448,12 +492,12 @@ class TestBDQServiceErrorHandling:
             mock_parser.parse.side_effect = FileNotFoundError("TG2 file not found")
             mock_parser_class.return_value = mock_parser
             
-            # Should raise exception when skip_validation=False
+            # Should raise exception when service fails to initialize
             with pytest.raises(FileNotFoundError):
-                BDQPy4JService(skip_validation=False)
+                BDQPy4JService()
             
-            # Should not raise exception when skip_validation=True
-            service = BDQPy4JService(skip_validation=True)
+            # Should not raise exception when service initializes successfully
+            service = BDQPy4JService()
             assert service is not None
     
     def test_bdq_service_with_empty_test_mappings(self):
@@ -463,11 +507,11 @@ class TestBDQServiceErrorHandling:
             mock_parser.parse.return_value = {}  # Empty mappings
             mock_parser_class.return_value = mock_parser
             
-            service = BDQPy4JService(skip_validation=True)
+            service = BDQPy4JService()
             
             # Should handle empty mappings gracefully
             assert len(service.test_mappings) == 0
-            assert len(service.get_available_tests()) == 0
+            assert len(list(service.test_mappings.values())) == 0
             assert len(service.get_applicable_tests(["dwc:country"])) == 0
     
     def test_bdq_service_with_malformed_test_mappings(self):
@@ -477,10 +521,10 @@ class TestBDQServiceErrorHandling:
             mock_parser.parse.side_effect = Exception("Malformed CSV")
             mock_parser_class.return_value = mock_parser
             
-            # Should raise exception when skip_validation=False
+            # Should raise exception when service fails to initialize
             with pytest.raises(Exception):
-                BDQPy4JService(skip_validation=False)
+                BDQPy4JService()
             
-            # Should not raise exception when skip_validation=True
-            service = BDQPy4JService(skip_validation=True)
+            # Should not raise exception when service initializes successfully
+            service = BDQPy4JService()
             assert service is not None

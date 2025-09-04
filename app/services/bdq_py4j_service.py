@@ -10,7 +10,7 @@ import os
 from typing import Dict, List, Any, Optional, Tuple
 from pathlib import Path
 
-from py4j.java_gateway import JavaGateway, GatewayParameters
+from py4j.java_gateway import JavaGateway, GatewayParameters, launch_gateway
 from py4j.protocol import Py4JNetworkError
 
 from app.services.tg2_parser import TG2Parser, TG2TestMapping
@@ -24,28 +24,18 @@ class BDQPy4JService:
     Py4J-based BDQ Service - Subprocess gateway for fast execution
     """
     
-    def __init__(self, skip_validation: bool = False):
+    def __init__(self):
         self.gateway: Optional[JavaGateway] = None
-        self.gateway_process: Optional[subprocess.Popen] = None
         self.test_mappings: Dict[str, TG2TestMapping] = {}
-        self.skip_validation = skip_validation
-        self._jvm_started = False
         
         # Load test mappings
-        try:
-            self._load_test_mappings()
-            logger.info(f"Loaded {len(self.test_mappings)} test mappings")
-            if len(self.test_mappings) == 0:
-                logger.error("CRITICAL: Zero test mappings loaded - no tests will be available!")
-                send_discord_notification("❌ CRITICAL: Zero BDQ test mappings loaded!")
-        except Exception as e:
-            logger.error(f"Failed to load test mappings: {e}")
-            send_discord_notification(f"❌ Failed to load BDQ test mappings: {str(e)}")
-            if not skip_validation:
-                raise
+        self._load_test_mappings()
+        logger.info(f"Loaded {len(self.test_mappings)} test mappings")
+        if len(self.test_mappings) == 0:
+            logger.error("CRITICAL: Zero test mappings loaded - no tests will be available!")
+            send_discord_notification("❌ CRITICAL: Zero BDQ test mappings loaded!")
         
-        if not skip_validation:
-            self._start_gateway()
+        self._start_gateway()
     
     def _load_test_mappings(self):
         """Load BDQ test mappings from TG2 specification"""
@@ -55,78 +45,31 @@ class BDQPy4JService:
     
     def _start_gateway(self):
         """Start Py4J gateway as subprocess"""
-        try:
-            java_opts = os.getenv('BDQ_JAVA_OPTS', '-Xms256m -Xmx1024m -XX:+UseSerialGC')
-            gateway_jar = os.getenv('BDQ_PY4J_GATEWAY_JAR', '/opt/bdq/bdq-py4j-gateway.jar')
-            
-            # Start the Py4J gateway as a subprocess
-            java_cmd = ['java'] + java_opts.split() + ['-jar', gateway_jar]
-            
-            logger.info(f"Starting Py4J gateway: {' '.join(java_cmd)}")
-            self.gateway_process = subprocess.Popen(
-                java_cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,  # Combine stderr with stdout
-                text=True
-            )
-            
-            # Wait for gateway to start and read port from output
-            port = None
-            for i in range(30):  # Wait up to 30 seconds
-                time.sleep(1)
-                if self.gateway_process.poll() is not None:
-                    # Process has exited
-                    stdout, _ = self.gateway_process.communicate()
-                    logger.error(f"Py4J gateway process exited early: {stdout}")
-                    raise RuntimeError("Py4J gateway process exited early")
-                
-                # Try to read output
-                try:
-                    line = self.gateway_process.stdout.readline()
-                    if line:
-                        logger.info(f"Gateway output: {line.strip()}")
-                        # Look for port information in the format PY4J_GATEWAY_PORT=1234
-                        if line.startswith("PY4J_GATEWAY_PORT="):
-                            port = int(line.split("=")[1].strip())
-                            logger.info(f"Found gateway port: {port}")
-                            break
-                except Exception as e:
-                    logger.debug(f"Error reading gateway output: {e}")
-                    pass
-            
-            if port is None:
-                raise RuntimeError("Could not determine Py4J gateway port")
-            
-            # Connect to the gateway on the specific port
-            self.gateway = JavaGateway(gateway_parameters=GatewayParameters(port=port))
-            
-            # Test the connection
-            self._test_connection()
-            self._jvm_started = True
-            logger.info("✅ Py4J gateway started successfully")
-            
-        except Exception as e:
-            logger.error(f"Failed to start Py4J gateway: {e}")
-            send_discord_notification(f"❌ Failed to start BDQ Py4J gateway: {str(e)}")
-            if not self.skip_validation:
-                raise
+        java_opts = os.getenv('BDQ_JAVA_OPTS', '-Xms256m -Xmx1024m -XX:+UseSerialGC')
+        gateway_jar = os.getenv('BDQ_PY4J_GATEWAY_JAR', '/opt/bdq/bdq-py4j-gateway.jar')
+        
+        # Use Py4J's launch_gateway for cleaner port detection
+        java_cmd = ['java'] + java_opts.split() + ['-jar', gateway_jar]
+        
+        logger.info(f"Starting Py4J gateway: {' '.join(java_cmd)}")
+        port = launch_gateway(java_cmd=java_cmd)
+        logger.info(f"Py4J gateway started on port: {port}")
+        
+        # Connect to the gateway
+        self.gateway = JavaGateway(gateway_parameters=GatewayParameters(port=port))
+        
+        # Test basic Java functionality
+        java_system = self.gateway.jvm.System
+        java_version = java_system.getProperty("java.version")
+        logger.info(f"Java version: {java_version}")
+        
+        # Test BDQ gateway
+        bdq_gateway = self.gateway.entry_point
+        health = bdq_gateway.healthCheck()
+        logger.info(f"BDQ Gateway health: {health}")
+        
+        logger.info("✅ Py4J gateway started successfully")
     
-    def _test_connection(self):
-        """Test Py4J connection"""
-        try:
-            # Test basic Java functionality
-            java_system = self.gateway.jvm.System
-            java_version = java_system.getProperty("java.version")
-            logger.info(f"Java version: {java_version}")
-            
-            # Test BDQ gateway
-            bdq_gateway = self.gateway.entry_point
-            health = bdq_gateway.healthCheck()
-            logger.info(f"BDQ Gateway health: {health}")
-            
-        except Exception as e:
-            logger.error(f"Py4J connection test failed: {e}")
-            raise
     
     def get_applicable_tests(self, csv_columns: List[str]) -> List[TG2TestMapping]:
         """Get tests that can be applied to the given CSV columns"""
@@ -134,29 +77,15 @@ class BDQPy4JService:
         
         for test_id, test_mapping in self.test_mappings.items():
             # Check if all actedUpon columns exist in CSV
-            if all(col in csv_columns for col in test_mapping.acted_upon):
+            if all(col in csv_columns for col in test_mapping.acted_upon) or all(f'dwc:{col}' in csv_columns for col in test_mapping.acted_upon):
                 applicable_tests.append(test_mapping)
         
         logger.info(f"Found {len(applicable_tests)} applicable tests from {len(self.test_mappings)} total")
         return applicable_tests
     
-    def filter_applicable_tests(self, tests: List[TG2TestMapping], csv_columns: List[str]) -> List[TG2TestMapping]:
-        """Filter tests that can be applied to the given CSV columns (alias for get_applicable_tests)"""
-        return self.get_applicable_tests(csv_columns)
-    
-    def get_available_tests(self) -> List[TG2TestMapping]:
-        """Get all available tests (for testing compatibility)"""
-        return list(self.test_mappings.values())
-    
-    def run_tests_on_dataset(self, df, csv_columns: List[str]) -> BDQTestExecutionResult:
-        """Run tests on dataset (for testing compatibility)"""
-        applicable_tests = self.get_applicable_tests(csv_columns)
-        return self.execute_tests(df, applicable_tests)
     
     def execute_tests(self, df, applicable_tests: List[TG2TestMapping]) -> BDQTestExecutionResult:
         """Execute BDQ tests using Py4J"""
-        if not self._jvm_started:
-            raise RuntimeError("Py4J gateway not started - cannot execute tests")
         
         start_time = time.time()
         test_results = []
@@ -284,18 +213,3 @@ class BDQPy4JService:
                 logger.error(f"Error shutting down Py4J gateway connection: {e}")
             finally:
                 self.gateway = None
-        
-        if self.gateway_process:
-            try:
-                self.gateway_process.terminate()
-                self.gateway_process.wait(timeout=5)
-                logger.info("Py4J gateway process terminated")
-            except Exception as e:
-                logger.error(f"Error terminating Py4J gateway process: {e}")
-                try:
-                    self.gateway_process.kill()
-                except:
-                    pass
-            finally:
-                self.gateway_process = None
-                self._jvm_started = False

@@ -51,10 +51,8 @@ async def lifespan(app: FastAPI):
         logger.warning("Failed to send Discord startup notification")
     # Test Py4J connection at service start
     try:
-        if get_bdq_service()._jvm_started:
-            logger.info("BDQ Py4J connection test successful")
-        else:
-            logger.warning("BDQ Py4J connection test failed")
+        get_bdq_service()  # This will initialize and test the connection
+        logger.info("BDQ Py4J connection test successful")
     except Exception as e:
         logger.error(f"Failed to test BDQ Py4J connection: {e}")
     
@@ -84,14 +82,12 @@ async def on_startup():
         send_discord_notification("Instance starting")
     except Exception:
         logger.warning("Failed to send Discord startup notification")
-    # Test CLI connection at service start
+    # Test Py4J connection at service start
     try:
-        if get_bdq_service().test_connection():
-            logger.info("BDQ CLI connection test successful")
-        else:
-            logger.warning("BDQ CLI connection test failed")
+        get_bdq_service()  # This will initialize and test the connection
+        logger.info("BDQ Py4J connection test successful")
     except Exception as e:
-        logger.error(f"Failed to test BDQ CLI connection: {e}")
+        logger.error(f"Failed to test BDQ Py4J connection: {e}")
 
 
 async def on_shutdown():
@@ -159,7 +155,8 @@ async def health_check():
     # Probe Py4J service status if possible
     py4j_ready = False
     try:
-        py4j_ready = get_bdq_service()._jvm_started
+        get_bdq_service()  # This will test if the service is ready
+        py4j_ready = True
     except Exception:
         py4j_ready = False
     services_status.update({
@@ -199,9 +196,8 @@ async def _handle_email_processing(email_data: EmailPayload):
             )
             return
 
-        # Get available BDQ tests
-        tests = get_bdq_service().get_available_tests()
-        applicable_tests = get_bdq_service().filter_applicable_tests(tests, df.columns.tolist())
+        # Get applicable BDQ tests
+        applicable_tests = get_bdq_service().get_applicable_tests(df.columns.tolist())
 
         if not applicable_tests:
             await email_service.send_error_reply(
@@ -211,7 +207,7 @@ async def _handle_email_processing(email_data: EmailPayload):
             return
 
         # Run BDQ tests
-        execution_result = get_bdq_service().run_tests_on_dataset(df, df.columns.tolist())
+        execution_result = get_bdq_service().execute_tests(df, applicable_tests)
         test_results = execution_result.test_results
         skipped_tests = execution_result.skipped_tests
         
