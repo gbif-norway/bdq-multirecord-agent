@@ -29,19 +29,209 @@ public class BDQTestExecutor {
     }
     
     private void initializeTestMappings() {
-        // This is a placeholder - in reality, you'd parse TG2_tests.csv
-        // For now, we'll add mappings for the most commonly used tests
+        // Load test mappings from TG2_tests.csv
+        loadTestMappingsFromCSV();
+    }
+    
+    private void loadTestMappingsFromCSV() {
+        String[] possiblePaths = {
+            "TG2_tests.csv",
+            "/opt/bdq/TG2_tests.csv",
+            "/app/TG2_tests.csv",
+            "bdq-spec/tg2/core/TG2_tests.csv"
+        };
         
-        // ===== GEO_REF_QC TESTS (Geographic/Location tests) =====
-        testMappings.put("VALIDATION_COUNTRYCODE_STANDARD", 
-            new TestMapping("VALIDATION_COUNTRYCODE_STANDARD", "geo_ref_qc", 
-                "org.filteredpush.qc.georeference.DwCGeoRefDQ", 
-                "validationCountrycodeStandard", 
-                Arrays.asList("dwc:countryCode"), 
-                Collections.emptyList(), 
-                Collections.emptyMap(), 
-                "VALIDATION"));
-                
+        for (String csvPath : possiblePaths) {
+            try (java.io.InputStream is = getClass().getClassLoader().getResourceAsStream("TG2_tests.csv")) {
+                if (is != null) {
+                    csvPath = "classpath:TG2_tests.csv";
+                    parseCSVFromInputStream(is);
+                    logger.info("Loaded {} test mappings from classpath TG2_tests.csv", testMappings.size());
+                    return;
+                }
+            } catch (Exception e) {
+                logger.debug("Could not load TG2_tests.csv from classpath: {}", e.getMessage());
+            }
+            
+            try {
+                java.nio.file.Path path = java.nio.file.Paths.get(csvPath);
+                if (java.nio.file.Files.exists(path)) {
+                    parseCSVFromFile(csvPath);
+                    logger.info("Loaded {} test mappings from {}", testMappings.size(), csvPath);
+                    return;
+                }
+            } catch (Exception e) {
+                logger.debug("Could not load TG2_tests.csv from {}: {}", csvPath, e.getMessage());
+            }
+        }
+        
+        // Fallback to hardcoded critical mappings if CSV not found
+        logger.warn("TG2_tests.csv not found, using fallback hardcoded mappings");
+        loadFallbackMappings();
+    }
+    
+    private void parseCSVFromInputStream(java.io.InputStream is) throws Exception {
+        org.apache.commons.csv.CSVParser parser = org.apache.commons.csv.CSVFormat.DEFAULT
+            .withFirstRecordAsHeader()
+            .parse(new java.io.InputStreamReader(is));
+            
+        for (org.apache.commons.csv.CSVRecord record : parser) {
+            TestMapping mapping = parseCSVRecord(record);
+            if (mapping != null) {
+                testMappings.put(mapping.testId, mapping);
+            }
+        }
+    }
+    
+    private void parseCSVFromFile(String csvPath) throws Exception {
+        org.apache.commons.csv.CSVParser parser = org.apache.commons.csv.CSVFormat.DEFAULT
+            .withFirstRecordAsHeader()
+            .parse(java.nio.file.Files.newBufferedReader(java.nio.file.Paths.get(csvPath)));
+            
+        for (org.apache.commons.csv.CSVRecord record : parser) {
+            TestMapping mapping = parseCSVRecord(record);
+            if (mapping != null) {
+                testMappings.put(mapping.testId, mapping);
+            }
+        }
+    }
+    
+    private TestMapping parseCSVRecord(org.apache.commons.csv.CSVRecord record) {
+        try {
+            String testId = record.get("Label").trim();
+            if (testId.isEmpty()) {
+                return null;
+            }
+            
+            String actedUponStr = record.get("InformationElement:ActedUpon");
+            String consultedStr = record.get("InformationElement:Consulted");
+            String sourceLink = record.get("Link to Specification Source Code");
+            
+            // Parse library and class from source code URL
+            String[] libraryAndClass = parseSourceLink(sourceLink);
+            if (libraryAndClass == null) {
+                logger.debug("Could not determine library/class for test {}", testId);
+                return null;
+            }
+            
+            String library = libraryAndClass[0];
+            String javaClass = libraryAndClass[1];
+            String javaMethod = deriveMethodName(testId);
+            String testType = determineTestType(testId);
+            
+            List<String> actedUpon = parseFieldList(actedUponStr);
+            List<String> consulted = parseFieldList(consultedStr);
+            
+            return new TestMapping(testId, library, javaClass, javaMethod, actedUpon, consulted, Collections.emptyMap(), testType);
+            
+        } catch (Exception e) {
+            logger.debug("Error parsing CSV record: {}", e.getMessage());
+            return null;
+        }
+    }
+    
+    private String[] parseSourceLink(String sourceLink) {
+        if (sourceLink == null || sourceLink.trim().isEmpty()) {
+            return null;
+        }
+        
+        // Identify library from URL path
+        String library = null;
+        if (sourceLink.contains("geo_ref_qc")) {
+            library = "geo_ref_qc";
+        } else if (sourceLink.contains("event_date_qc")) {
+            library = "event_date_qc";  
+        } else if (sourceLink.contains("sci_name_qc")) {
+            library = "sci_name_qc";
+        } else if (sourceLink.contains("rec_occur_qc")) {
+            library = "rec_occur_qc";
+        } else {
+            return null;
+        }
+        
+        // Extract class name from URL (e.g., DwCGeoRefDQ.java -> DwCGeoRefDQ)
+        java.util.regex.Pattern pattern = java.util.regex.Pattern.compile("/([A-Z][a-zA-Z0-9_]+)\\.java");
+        java.util.regex.Matcher matcher = pattern.matcher(sourceLink);
+        if (!matcher.find()) {
+            return null;
+        }
+        
+        String className = matcher.group(1);
+        String fullClassName = getFullClassName(library, className);
+        
+        return new String[]{library, fullClassName};
+    }
+    
+    private String getFullClassName(String library, String className) {
+        // Standard package patterns for each library
+        String packageName;
+        switch (library) {
+            case "geo_ref_qc":
+                packageName = "org.filteredpush.qc.georeference";
+                break;
+            case "event_date_qc":
+                packageName = "org.filteredpush.qc.date";
+                break;
+            case "sci_name_qc":
+                packageName = "org.filteredpush.qc.sciname";
+                break;
+            case "rec_occur_qc":
+                packageName = "org.filteredpush.qc.metadata";
+                break;
+            default:
+                packageName = "org.filteredpush.qc.unknown";
+        }
+        
+        return packageName + "." + className;
+    }
+    
+    private String deriveMethodName(String testId) {
+        // Convert VALIDATION_COUNTRY_FOUND -> validationCountryFound
+        String[] parts = testId.split("_");
+        if (parts.length < 2) {
+            return testId.toLowerCase();
+        }
+        
+        StringBuilder methodName = new StringBuilder(parts[0].toLowerCase());
+        for (int i = 1; i < parts.length; i++) {
+            String part = parts[i].toLowerCase();
+            methodName.append(Character.toUpperCase(part.charAt(0)));
+            if (part.length() > 1) {
+                methodName.append(part.substring(1));
+            }
+        }
+        
+        return methodName.toString();
+    }
+    
+    private String determineTestType(String testId) {
+        if (testId.startsWith("VALIDATION_")) {
+            return "VALIDATION";
+        } else if (testId.startsWith("AMENDMENT_")) {
+            return "AMENDMENT";
+        } else if (testId.startsWith("MEASURE_")) {
+            return "MEASURE";
+        } else if (testId.startsWith("ISSUE_")) {
+            return "ISSUE";
+        } else {
+            return "UNKNOWN";
+        }
+    }
+    
+    private List<String> parseFieldList(String fieldValue) {
+        if (fieldValue == null || fieldValue.trim().isEmpty()) {
+            return Collections.emptyList();
+        }
+        
+        return Arrays.asList(fieldValue.split(","))
+            .stream()
+            .map(String::trim)
+            .filter(s -> !s.isEmpty())
+            .collect(java.util.stream.Collectors.toList());
+    }
+    
+    private void loadFallbackMappings() {
+        // Critical fallback mappings if CSV parsing fails
         testMappings.put("VALIDATION_COUNTRY_FOUND", 
             new TestMapping("VALIDATION_COUNTRY_FOUND", "geo_ref_qc", 
                 "org.filteredpush.qc.georeference.DwCGeoRefDQ", 
@@ -51,79 +241,6 @@ public class BDQTestExecutor {
                 Collections.emptyMap(), 
                 "VALIDATION"));
                 
-        testMappings.put("VALIDATION_DECIMALLONGITUDE_INRANGE", 
-            new TestMapping("VALIDATION_DECIMALLONGITUDE_INRANGE", "geo_ref_qc", 
-                "org.filteredpush.qc.georeference.DwCGeoRefDQ", 
-                "validationDecimallongitudeInrange", 
-                Arrays.asList("dwc:decimalLongitude"), 
-                Collections.emptyList(), 
-                Collections.emptyMap(), 
-                "VALIDATION"));
-                
-        testMappings.put("VALIDATION_DECIMALLATITUDE_INRANGE", 
-            new TestMapping("VALIDATION_DECIMALLATITUDE_INRANGE", "geo_ref_qc", 
-                "org.filteredpush.qc.georeference.DwCGeoRefDQ", 
-                "validationDecimallatitudeInrange", 
-                Arrays.asList("dwc:decimalLatitude"), 
-                Collections.emptyList(), 
-                Collections.emptyMap(), 
-                "VALIDATION"));
-                
-        testMappings.put("VALIDATION_LOCATION_NOTEMPTY", 
-            new TestMapping("VALIDATION_LOCATION_NOTEMPTY", "geo_ref_qc", 
-                "org.filteredpush.qc.georeference.DwCGeoRefDQ", 
-                "validationLocationNotempty", 
-                Arrays.asList("dwc:higherGeographyID", "dwc:higherGeography", "dwc:continent", "dwc:country", "dwc:countryCode", "dwc:stateProvince", "dwc:county", "dwc:municipality", "dwc:waterBody", "dwc:island", "dwc:islandGroup", "dwc:locality", "dwc:locationID", "dwc:verbatimLocality", "dwc:decimalLatitude", "dwc:decimalLongitude", "dwc:verbatimCoordinates", "dwc:verbatimLatitude", "dwc:verbatimLongitude", "dwc:footprintWKT"), 
-                Collections.emptyList(), 
-                Collections.emptyMap(), 
-                "VALIDATION"));
-                
-        testMappings.put("VALIDATION_COUNTRY_NOTEMPTY", 
-            new TestMapping("VALIDATION_COUNTRY_NOTEMPTY", "geo_ref_qc", 
-                "org.filteredpush.qc.georeference.DwCGeoRefDQ", 
-                "validationCountryNotempty", 
-                Arrays.asList("dwc:country"), 
-                Arrays.asList("dwc:countryCode"), 
-                Collections.emptyMap(), 
-                "VALIDATION"));
-                
-        testMappings.put("VALIDATION_COORDINATESTERRESTRIALMARINE_CONSISTENT", 
-            new TestMapping("VALIDATION_COORDINATESTERRESTRIALMARINE_CONSISTENT", "geo_ref_qc", 
-                "org.filteredpush.qc.georeference.DwCGeoRefDQ", 
-                "validationCoordinatesterrestrialmarineConsistent", 
-                Arrays.asList("dwc:decimalLatitude", "dwc:decimalLongitude"), 
-                Collections.emptyList(), 
-                Collections.emptyMap(), 
-                "VALIDATION"));
-                
-        testMappings.put("VALIDATION_MAXDEPTH_INRANGE", 
-            new TestMapping("VALIDATION_MAXDEPTH_INRANGE", "geo_ref_qc", 
-                "org.filteredpush.qc.georeference.DwCGeoRefDQ", 
-                "validationMaxdepthInrange", 
-                Arrays.asList("dwc:maximumDepthInMeters"), 
-                Collections.emptyList(), 
-                Collections.emptyMap(), 
-                "VALIDATION"));
-                
-        testMappings.put("VALIDATION_DECIMALLONGITUDE_NOTEMPTY", 
-            new TestMapping("VALIDATION_DECIMALLONGITUDE_NOTEMPTY", "geo_ref_qc", 
-                "org.filteredpush.qc.georeference.DwCGeoRefDQ", 
-                "validationDecimallongitudeNotempty", 
-                Arrays.asList("dwc:decimalLongitude"), 
-                Collections.emptyList(), 
-                Collections.emptyMap(), 
-                "VALIDATION"));
-                
-        testMappings.put("VALIDATION_DECIMALLATITUDE_NOTEMPTY", 
-            new TestMapping("VALIDATION_DECIMALLATITUDE_NOTEMPTY", "geo_ref_qc", 
-                "org.filteredpush.qc.georeference.DwCGeoRefDQ", 
-                "validationDecimallatitudeNotempty", 
-                Arrays.asList("dwc:decimalLatitude"), 
-                Collections.emptyList(), 
-                Collections.emptyMap(), 
-                "VALIDATION"));
-        
-        // ===== REC_OCCUR_QC TESTS (Occurrence/Record tests) =====
         testMappings.put("VALIDATION_OCCURRENCEID_NOTEMPTY", 
             new TestMapping("VALIDATION_OCCURRENCEID_NOTEMPTY", "rec_occur_qc", 
                 "org.filteredpush.qc.metadata.DwCMetadataDQ", 
