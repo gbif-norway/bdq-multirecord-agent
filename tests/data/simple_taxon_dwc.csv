@@ -1,0 +1,4 @@
+taxonID,scientificName,kingdom,phylum,class,order,family,genus,specificEpithet,taxonRank,scientificNameAuthorship
+tax1,Homo sapiens,Animalia,Chordata,Mammalia,Primates,Hominidae,Homo,sapiens,species,Linnaeus 1758
+tax2,Canis lupus,Animalia,Chordata,Mammalia,Carnivora,Canidae,Canis,lupus,species,Linnaeus 1758
+tax3,InvalidTaxon,BadKingdom,,,,,,species,AuthorName
