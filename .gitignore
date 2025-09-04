@@ -66,5 +66,10 @@ Thumbs.db
 *.tmp
 out/
 
+# Java build artifacts
+*.jar
+java/*/target/
+target/
+
 # Docker
 .dockerignore
