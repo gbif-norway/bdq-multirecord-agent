@@ -21,8 +21,8 @@ class BDQCLIService:
     
     def __init__(self, cli_jar_path: str = None, java_opts: str = None, skip_validation: bool = False):
         self.cli_jar_path = cli_jar_path or os.getenv('BDQ_CLI_JAR', '/opt/bdq/bdq-cli.jar')
-        # Optimized Java settings for Cloud Run environment
-        cloud_run_java_opts = '-Xms256m -Xmx1024m -XX:+UseG1GC -XX:+UseStringDeduplication -XX:MaxGCPauseMillis=200 -XX:+DisableExplicitGC'
+        # EMERGENCY: Simplified Java settings to reduce overhead
+        cloud_run_java_opts = '-Xms128m -Xmx512m -XX:+UseSerialGC'
         default_java_opts = cloud_run_java_opts
         self.java_opts = java_opts or os.getenv('BDQ_JAVA_OPTS', default_java_opts)
         self.test_mappings: Dict[str, TG2TestMapping] = {}
@@ -84,11 +84,11 @@ class BDQCLIService:
         test_results: List[BDQTestExecutionResult] = []
         skipped_tests: List[str] = []
         
-        # Cloud Run optimization: limit number of tests to prevent timeout
-        max_tests_cloud_run = int(os.getenv('MAX_TESTS_CLOUD_RUN', '10'))
+        # EMERGENCY FIX: Drastically reduce tests to prevent timeout
+        max_tests_cloud_run = int(os.getenv('MAX_TESTS_CLOUD_RUN', '3'))  # Reduced from 10 to 3
         if len(applicable_tests) > max_tests_cloud_run:
-            logger.warning(f"⚡ Cloud Run mode: Limiting to {max_tests_cloud_run} tests out of {len(applicable_tests)} to prevent timeout")
-            send_discord_notification(f"⚡ Cloud Run optimization: Running {max_tests_cloud_run}/{len(applicable_tests)} tests to prevent timeout")
+            logger.warning(f"🚨 EMERGENCY: Limiting to {max_tests_cloud_run} tests out of {len(applicable_tests)} to prevent timeout")
+            send_discord_notification(f"🚨 EMERGENCY: Running only {max_tests_cloud_run}/{len(applicable_tests)} tests due to timeout issues")
             applicable_tests = applicable_tests[:max_tests_cloud_run]
         
         logger.info(f"🧪 Starting BDQ test execution on {len(df)} records with {len(applicable_tests)} applicable tests")
@@ -251,7 +251,7 @@ class BDQCLIService:
                 java_cmd,
                 capture_output=True,
                 text=True,
-                timeout=120  # Increased timeout for Cloud Run environment
+                timeout=30  # EMERGENCY: Aggressive timeout to fail fast
             )
             
             if result.returncode != 0:
