@@ -151,6 +151,7 @@ class BDQCLIService:
     
     async def run_tests_on_dataset(self, df, applicable_tests: List[BDQTest], core_type: str) -> Tuple[List[BDQTestExecutionResult], List[str]]:
         """Run BDQ tests on the dataset using the CLI (batched, with tuple dedup)."""
+        overall_start_time = time.time()
         test_results: List[BDQTestExecutionResult] = []
         skipped_tests: List[str] = []
         
@@ -170,6 +171,7 @@ class BDQCLIService:
         prepared_entries = []
 
         # Build requests for all tests with unique tuples and back-mapping to rows
+        preparation_start_time = time.time()
         logger.info("Preparing test requests and deduplicating tuples...")
         for i, test in enumerate(applicable_tests):
             logger.info(f"Preparing test {i+1}/{len(applicable_tests)}: {test.id} [{test.type}]")
@@ -263,6 +265,8 @@ class BDQCLIService:
             return test_results, skipped_tests
 
         total_unique_tuples = sum(len(e["request"]["tuples"]) for e in prepared_entries)
+        preparation_time = time.time() - preparation_start_time
+        logger.info(f"Test preparation completed in {preparation_time:.1f} seconds")
         logger.info(f"Total unique tuples across all tests: {total_unique_tuples}")
         send_discord_notification(f"📊 Deduplication complete: {total_unique_tuples:,} unique tuples across {len(prepared_entries)} tests")
         
@@ -283,6 +287,8 @@ class BDQCLIService:
             return test_results, skipped_tests
 
         # Process response per test, expanding tuple results to all matching rows
+        processing_start_time = time.time()
+        logger.info("Processing CLI response and expanding tuple results to all matching rows...")
         res_map = response.get('results', {}) if isinstance(response, dict) else {}
         for entry in prepared_entries:
             test = entry["test"]
@@ -312,6 +318,13 @@ class BDQCLIService:
                         amendment=None,
                         test_type=test.type
                     ))
+
+        processing_time = time.time() - processing_start_time
+        overall_time = time.time() - overall_start_time
+        logger.info(f"Result processing completed in {processing_time:.1f} seconds")
+        logger.info(f"Overall BDQ test execution completed in {overall_time:.1f} seconds")
+        logger.info(f"Performance breakdown - Preparation: {preparation_time:.1f}s, CLI: {execution_time:.1f}s, Processing: {processing_time:.1f}s")
+        send_discord_notification(f"📈 Performance: Prep {preparation_time:.1f}s + CLI {execution_time:.1f}s + Processing {processing_time:.1f}s = {overall_time:.1f}s total")
 
         return test_results, skipped_tests
     
