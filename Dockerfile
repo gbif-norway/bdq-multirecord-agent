@@ -44,7 +44,7 @@ COPY --from=build /workspace/java/bdq-py4j-gateway/target/bdq-py4j-gateway-1.0.0
 # Copy Python application code
 COPY app/ app/
 COPY requirements.txt .
-COPY bdq-spec/tg2/core/TG2_tests.csv .
+COPY TG2_tests.csv .
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
