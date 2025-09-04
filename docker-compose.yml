@@ -17,7 +17,7 @@ services:
       - GOOGLE_API_KEY=test
     volumes:
       # Mount the TG2 tests CSV for testing
-      - ./bdq-spec/tg2/core/TG2_tests.csv:/app/TG2_tests.csv:ro
+      - ./TG2_tests.csv:/app/TG2_tests.csv:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
@@ -36,14 +36,18 @@ services:
       - PYTHONUNBUFFERED=1
       - BDQ_PY4J_GATEWAY_JAR=/opt/bdq/bdq-py4j-gateway.jar
       - BDQ_JAVA_OPTS=-Xms256m -Xmx1024m
+      - GMAIL_SEND=test
+      - HMAC_SECRET=test-secret
+      - DISCORD_WEBHOOK=test
+      - GOOGLE_API_KEY=test
     volumes:
       - ./tests:/app/tests:ro
       - ./app:/app/app:ro
-      - ./bdq-spec/tg2/core/TG2_tests.csv:/app/TG2_tests.csv:ro
+      - ./TG2_tests.csv:/app/TG2_tests.csv:ro
       - ./requirements.txt:/app/requirements.txt:ro
       - ./pytest.ini:/app/pytest.ini:ro
     working_dir: /app
-    command: ["python", "-m", "pytest", "tests/", "-v", "--tb=short"]
+    command: ["python", "-m", "pytest", "tests/", "-v", "--tb=short", "--maxfail=5"]
     profiles:
       - test
     depends_on:

@@ -19,7 +19,7 @@ class TestMainApp:
         """Test the detailed health check endpoint"""
         with patch('app.main.get_bdq_service') as mock_get_bdq:
             mock_service = Mock()
-            mock_service.test_connection.return_value = True
+            mock_service._jvm_started = True
             mock_get_bdq.return_value = mock_service
             
             response = client.get("/health")
@@ -31,20 +31,20 @@ class TestMainApp:
             assert data["version"] == "1.0.0"
             assert "services" in data
             assert "environment" in data
-            assert data["services"]["bdq_cli_ready"] is True
+            assert data["services"]["bdq_py4j_ready"] is True
 
-    def test_health_endpoint_cli_failure(self, client):
-        """Test health endpoint when CLI connection fails"""
+    def test_health_endpoint_py4j_failure(self, client):
+        """Test health endpoint when Py4J connection fails"""
         with patch('app.main.get_bdq_service') as mock_get_bdq:
             mock_service = Mock()
-            mock_service.test_connection.return_value = False
+            mock_service._jvm_started = False
             mock_get_bdq.return_value = mock_service
             
             response = client.get("/health")
             assert response.status_code == 200
             
             data = response.json()
-            assert data["services"]["bdq_cli_ready"] is False
+            assert data["services"]["bdq_py4j_ready"] is False
 
     def test_reject_get_email_incoming(self, client):
         """Test that GET requests to /email/incoming are rejected"""
@@ -182,7 +182,7 @@ class TestMainApp:
         with patch('app.main.send_discord_notification') as mock_discord:
             with patch('app.main.get_bdq_service') as mock_get_bdq:
                 mock_service = Mock()
-                mock_service.test_connection.return_value = True
+                mock_service._jvm_started = True
                 mock_get_bdq.return_value = mock_service
                 
                 # Import and call the startup function directly

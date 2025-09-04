@@ -140,6 +140,10 @@ class BDQPy4JService:
         logger.info(f"Found {len(applicable_tests)} applicable tests from {len(self.test_mappings)} total")
         return applicable_tests
     
+    def filter_applicable_tests(self, tests: List[TG2TestMapping], csv_columns: List[str]) -> List[TG2TestMapping]:
+        """Filter tests that can be applied to the given CSV columns (alias for get_applicable_tests)"""
+        return self.get_applicable_tests(csv_columns)
+    
     def get_available_tests(self) -> List[TG2TestMapping]:
         """Get all available tests (for testing compatibility)"""
         return list(self.test_mappings.values())
@@ -266,7 +270,7 @@ class BDQPy4JService:
             total_records=total_records,
             total_tests_run=total_tests_run,
             successful_tests=successful_tests,
-            skipped_tests=len(skipped_tests),
+            skipped_tests=skipped_tests,
             total_test_results=len(test_results)
         )
     

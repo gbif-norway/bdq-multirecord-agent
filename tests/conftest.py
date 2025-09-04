@@ -73,11 +73,13 @@ def sample_bdq_test():
 def sample_test_result():
     """Sample test result for testing"""
     return BDQTestResult(
+        record_id="occ1",
         test_id="VALIDATION_COUNTRY_FOUND",
-        row_index=0,
         status="RUN_HAS_RESULT",
         result="PASS",
-        comment="Country field is valid"
+        comment="Country field is valid",
+        amendment=None,
+        test_type="VALIDATION"
     )
 
 
@@ -85,11 +87,9 @@ def sample_test_result():
 def sample_test_execution_result(sample_bdq_test, sample_test_result):
     """Sample test execution result for testing"""
     return BDQTestExecutionResult(
-        test=sample_bdq_test,
-        results=[sample_test_result],
-        total_records=1,
-        successful_records=1,
-        failed_records=0
+        test_results=[sample_test_result],
+        skipped_tests=[],
+        execution_time=1.5
     )
 
 
@@ -138,36 +138,22 @@ VALIDATION_BASIS_OF_RECORD,"dwc:basisOfRecord","","","https://github.com/Filtere
 
 
 @pytest.fixture
-def mock_cli_response():
-    """Mock CLI response for testing"""
+def mock_py4j_response():
+    """Mock Py4J response for testing"""
     return {
-        "requestId": "test-123",
-        "results": {
-            "VALIDATION_COUNTRY_FOUND": {
-                "tupleResults": [
-                    {
-                        "tupleIndex": 0,
-                        "status": "RUN_HAS_RESULT",
-                        "result": "PASS",
-                        "comment": "Country field is valid"
-                    },
-                    {
-                        "tupleIndex": 1,
-                        "status": "RUN_HAS_RESULT",
-                        "result": "PASS",
-                        "comment": "Country field is valid"
-                    }
-                ]
+        "tuple_results": [
+            {
+                "tuple_index": 0,
+                "status": "RUN_HAS_RESULT",
+                "result": "PASS",
+                "comment": "Country field is valid"
+            },
+            {
+                "tuple_index": 1,
+                "status": "RUN_HAS_RESULT",
+                "result": "PASS",
+                "comment": "Country field is valid"
             }
-        }
+        ],
+        "errors": []
     }
-
-
-@pytest.fixture
-def mock_subprocess_result():
-    """Mock subprocess result for testing"""
-    result = Mock()
-    result.returncode = 0
-    result.stdout = "CLI execution successful"
-    result.stderr = ""
-    return result

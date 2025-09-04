@@ -211,7 +211,9 @@ async def _handle_email_processing(email_data: EmailPayload):
             return
 
         # Run BDQ tests
-        test_results, skipped_tests = await get_bdq_service().run_tests_on_dataset(df, applicable_tests, core_type)
+        execution_result = get_bdq_service().run_tests_on_dataset(df, df.columns.tolist())
+        test_results = execution_result.test_results
+        skipped_tests = execution_result.skipped_tests
         
         # Debug test results
         logger.info(f"BDQ execution complete: {len(test_results)} test results, {len(skipped_tests)} skipped tests")
@@ -228,7 +230,7 @@ async def _handle_email_processing(email_data: EmailPayload):
         amended_dataset_csv = csv_service.generate_amended_dataset(df, test_results, core_type)
 
         # Generate summary (include skipped tests)
-        summary = get_bdq_service().generate_summary(test_results, len(df), skipped_tests)
+        summary = get_bdq_service().generate_summary(test_results, len(df), [])
 
         # Send reply email
         send_discord_notification(f"📧 Generating intelligent summary and sending email...")

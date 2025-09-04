@@ -231,7 +231,7 @@ class TestLLMService:
             methodName="validationCountryFound",
             actedUpon=["dwc:country"],
             consulted=[],
-            parameters=[]
+            parameters={}
         )
         
         results = []
