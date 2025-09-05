@@ -7,6 +7,7 @@ import subprocess
 import json
 import tempfile
 import os
+import shutil
 from typing import Dict, List, Any, Optional, Tuple
 from pathlib import Path
 from dataclasses import dataclass
@@ -41,34 +42,89 @@ class BDQPy4JService:
         self._load_test_mappings()
     
     def _start_gateway(self):
-        """Start Py4J gateway as subprocess"""
+        """Start Py4J gateway as subprocess with retry and diagnostics"""
         java_opts = os.getenv('BDQ_JAVA_OPTS', '-Xms256m -Xmx1024m -XX:+UseSerialGC')
         gateway_jar = os.getenv('BDQ_PY4J_GATEWAY_JAR', '/opt/bdq/bdq-py4j-gateway.jar')
-        
+        startup_timeout = float(os.getenv('BDQ_PY4J_STARTUP_TIMEOUT', '60'))
+        retry_interval = float(os.getenv('BDQ_PY4J_RETRY_INTERVAL', '0.5'))
+
+        # Pre-flight diagnostics
+        java_path = shutil.which('java')
+        if not java_path:
+            log("Java binary not found on PATH", "ERROR")
+        else:
+            log(f"Using java at: {java_path}", "DEBUG")
+
+        if not os.path.exists(gateway_jar):
+            log(f"Gateway JAR not found at {gateway_jar}", "ERROR")
+        else:
+            try:
+                st = os.stat(gateway_jar)
+                log(f"Gateway JAR present ({gateway_jar}, {st.st_size} bytes)", "DEBUG")
+            except Exception:
+                pass
+
         java_cmd = ['java'] + java_opts.split() + ['-jar', gateway_jar]
         log(f"Starting Py4J gateway: {' '.join(java_cmd)}")
-        
+
+        process = None
         try:
             # Start the Java process (no need to read port from stdout)
             process = subprocess.Popen(
                 java_cmd,
-                stdout=subprocess.DEVNULL,  # Don't capture stdout
+                stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
                 text=True
             )
-            
+
             # Use the hardcoded port that matches the Java gateway
             port = 25333
             log(f"Py4J gateway starting on port: {port}")
-            
-            # Give the gateway time to fully start up
-            time.sleep(10)
-            
-            # Connect to the gateway
-            self.gateway = JavaGateway(gateway_parameters=GatewayParameters(port=port))
-            log(f"Java version: {self.gateway.jvm.System.getProperty('java.version')}")
-            log(f"BDQ Gateway health: {self.gateway.entry_point.healthCheck()}")
-            
+
+            # Wait for gateway to become available with retries
+            start_ts = time.time()
+            last_err: Optional[Exception] = None
+            while time.time() - start_ts < startup_timeout:
+                # If the Java process exited early, surface stderr and fail fast
+                if process.poll() is not None:
+                    stderr_out = None
+                    try:
+                        stderr_out = process.stderr.read() if process.stderr else ''
+                    except Exception:
+                        stderr_out = ''
+                    msg = f"Py4J gateway process exited with code {process.returncode}."
+                    if stderr_out:
+                        msg += f" Java stderr: {stderr_out.strip()[-2000:]}"
+                    log(msg, "ERROR")
+                    raise RuntimeError(msg)
+
+                try:
+                    self.gateway = JavaGateway(gateway_parameters=GatewayParameters(port=port))
+                    # If connected, emit basic health info and return
+                    log(f"Java version: {self.gateway.jvm.System.getProperty('java.version')}")
+                    log(f"BDQ Gateway health: {self.gateway.entry_point.healthCheck()}")
+                    return
+                except Exception as e:
+                    last_err = e
+                    time.sleep(retry_interval)
+
+            # Timed out waiting for gateway
+            tail = ''
+            try:
+                if process and process.stderr:
+                    contents = process.stderr.read()
+                    if contents:
+                        lines = contents.splitlines()
+                        tail = '\n'.join(lines[-50:])  # last 50 lines
+            except Exception:
+                pass
+            err_msg = (
+                f"Timed out after {startup_timeout}s waiting for Py4J gateway on 127.0.0.1:{port}. "
+                f"Last error: {last_err}. Java stderr tail: {tail}"
+            )
+            log(err_msg, "ERROR")
+            raise RuntimeError(err_msg)
+
         except Exception as e:
             log(f"Failed to start Py4J gateway: {e}", "ERROR")
             raise
