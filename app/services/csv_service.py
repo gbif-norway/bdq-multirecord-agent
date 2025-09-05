@@ -1,11 +1,8 @@
 import pandas as pd
 import io
 import base64
-import logging
 from typing import Tuple, Optional, List, Dict, Any
-from app.models.email_models import BDQTestExecutionResult
-
-logger = logging.getLogger(__name__)
+from app.utils.helper import BDQTestExecutionResult, log
 
 class CSVService:
     """Service for CSV processing and manipulation"""
@@ -29,11 +26,11 @@ class CSVService:
             # Detect core type
             core_type = self._detect_core_type(df.columns.tolist())
             
-            logger.info(f"Parsed CSV with {len(df)} rows, {len(df.columns)} columns, core type: {core_type}")
+            log(f"Parsed CSV with {len(df)} rows, {len(df.columns)} columns, core type: {core_type}")
             return df, core_type
             
         except Exception as e:
-            logger.error(f"Error parsing CSV: {e}")
+            log(f"Error parsing CSV: {e}", "ERROR")
             raise
     
     def _detect_delimiter(self, sample: str) -> str:
@@ -51,9 +48,11 @@ class CSVService:
         """Detect core type based on column presence"""
         columns_lower = [col.lower() for col in columns]
         
-        if 'occurrenceid' in columns_lower:
+        # Check for occurrenceID (with or without dwc: prefix)
+        if any('occurrenceid' in col for col in columns_lower):
             return 'occurrence'
-        elif 'taxonid' in columns_lower:
+        # Check for taxonID (with or without dwc: prefix)
+        elif any('taxonid' in col for col in columns_lower):
             return 'taxon'
         else:
             return None
@@ -82,7 +81,7 @@ class CSVService:
             return csv_buffer.getvalue()
             
         except Exception as e:
-            logger.error(f"Error generating raw results CSV: {e}")
+            log(f"Error generating raw results CSV: {e}", "ERROR")
             raise
     
     def generate_amended_dataset(self, original_df: pd.DataFrame, test_results: List[BDQTestExecutionResult], core_type: str) -> str:
@@ -112,7 +111,7 @@ class CSVService:
                                     amended_df.loc[mask, field] = new_value
                                     amendments_applied += 1
             
-            logger.info(f"Applied {amendments_applied} amendments to dataset")
+            log(f"Applied {amendments_applied} amendments to dataset")
             
             # Convert to CSV string
             csv_buffer = io.StringIO()
@@ -120,59 +119,6 @@ class CSVService:
             return csv_buffer.getvalue()
             
         except Exception as e:
-            logger.error(f"Error generating amended dataset: {e}")
+            log(f"Error generating amended dataset: {e}", "ERROR")
             raise
     
-    def get_unique_tuples(self, df: pd.DataFrame, columns: List[str]) -> List[Tuple]:
-        """Get unique tuples of values for specified columns"""
-        try:
-            # Filter to only existing columns
-            existing_columns = [col for col in columns if col in df.columns]
-            
-            if not existing_columns:
-                return []
-            
-            # Get unique combinations
-            unique_combinations = df[existing_columns].drop_duplicates()
-            
-            # Convert to list of tuples
-            tuples = [tuple(row) for _, row in unique_combinations.iterrows()]
-            
-            logger.info(f"Found {len(tuples)} unique tuples for columns: {existing_columns}")
-            return tuples
-            
-        except Exception as e:
-            logger.error(f"Error getting unique tuples: {e}")
-            raise
-    
-    def map_results_to_rows(self, df: pd.DataFrame, test_results: Dict[Tuple, Any], 
-                           test_id: str, columns: List[str], core_type: str) -> List[BDQTestExecutionResult]:
-        """Map cached test results back to individual rows"""
-        try:
-            results = []
-            existing_columns = [col for col in columns if col in df.columns]
-            
-            for idx, row in df.iterrows():
-                # Create tuple for this row
-                row_tuple = tuple(row[col] for col in existing_columns)
-                
-                # Look up result for this tuple
-                if row_tuple in test_results:
-                    result_data = test_results[row_tuple]
-                    record_id = row[f'{core_type}ID']
-                    
-                    results.append(BDQTestExecutionResult(
-                        record_id=record_id,
-                        test_id=test_id,
-                        status=result_data.get('status', ''),
-                        result=result_data.get('result'),
-                        comment=result_data.get('comment'),
-                        amendment=result_data.get('amendment'),
-                        test_type=result_data.get('test_type', '')
-                    ))
-            
-            return results
-            
-        except Exception as e:
-            logger.error(f"Error mapping results to rows: {e}")
-            raise

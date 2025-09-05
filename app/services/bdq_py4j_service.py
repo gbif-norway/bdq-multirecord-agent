@@ -1,5 +1,5 @@
 """
-Py4J-based BDQ Service - Subprocess Py4J gateway for fast execution
+Py4J-based BDQ Service - Subprocess Py4J gateway for fast execution with test discovery
 """
 import logging
 import time
@@ -9,293 +9,224 @@ import tempfile
 import os
 from typing import Dict, List, Any, Optional, Tuple
 from pathlib import Path
+from dataclasses import dataclass
+import pandas as pd
 
-from py4j.java_gateway import JavaGateway, GatewayParameters
+from py4j.java_gateway import JavaGateway, GatewayParameters, launch_gateway
 from py4j.protocol import Py4JNetworkError
+from app.utils.helper import log
 
-from app.services.tg2_parser import TG2Parser, TG2TestMapping
-from app.models.email_models import BDQTest, BDQTestResult, BDQTestExecutionResult, ProcessingSummary
-from app.utils.logger import send_discord_notification
 
-logger = logging.getLogger(__name__)
+@dataclass
+class TG2TestMapping:
+    """Represents a TG2Test details with corresponding java class so it can be accessed via Py4J"""
+    label: str
+    library: str
+    java_class: str
+    java_method: str
+    acted_upon: List[str]
+    consulted: List[str]
+    test_type: str
+
 
 class BDQPy4JService:
     """
-    Py4J-based BDQ Service - Subprocess gateway for fast execution
+    Py4J-based BDQ Service - Subprocess gateway for fast execution with test discovery
     """
     
-    def __init__(self, skip_validation: bool = False):
+    def __init__(self):
         self.gateway: Optional[JavaGateway] = None
-        self.gateway_process: Optional[subprocess.Popen] = None
-        self.test_mappings: Dict[str, TG2TestMapping] = {}
-        self.skip_validation = skip_validation
-        self._jvm_started = False
-        
-        # Load test mappings
-        try:
-            self._load_test_mappings()
-            logger.info(f"Loaded {len(self.test_mappings)} test mappings")
-            if len(self.test_mappings) == 0:
-                logger.error("CRITICAL: Zero test mappings loaded - no tests will be available!")
-                send_discord_notification("❌ CRITICAL: Zero BDQ test mappings loaded!")
-        except Exception as e:
-            logger.error(f"Failed to load test mappings: {e}")
-            send_discord_notification(f"❌ Failed to load BDQ test mappings: {str(e)}")
-            if not skip_validation:
-                raise
-        
-        if not skip_validation:
-            self._start_gateway()
-    
-    def _load_test_mappings(self):
-        """Load BDQ test mappings from TG2 specification"""
-        tg2_parser = TG2Parser()
-        self.test_mappings = tg2_parser.parse()
-        logger.info(f"Loaded {len(self.test_mappings)} BDQ test mappings")
+        self.tests: Dict[str, TG2TestMapping] = {}
+        self._start_gateway()
+        self._load_test_mappings()
     
     def _start_gateway(self):
         """Start Py4J gateway as subprocess"""
-        try:
-            java_opts = os.getenv('BDQ_JAVA_OPTS', '-Xms256m -Xmx1024m -XX:+UseSerialGC')
-            gateway_jar = os.getenv('BDQ_PY4J_GATEWAY_JAR', '/opt/bdq/bdq-py4j-gateway.jar')
+        java_opts = os.getenv('BDQ_JAVA_OPTS', '-Xms256m -Xmx1024m -XX:+UseSerialGC')
+        gateway_jar = os.getenv('BDQ_PY4J_GATEWAY_JAR', '/opt/bdq/bdq-py4j-gateway.jar')
+        
+        java_cmd = ['java'] + java_opts.split() + ['-jar', gateway_jar]
+        log(f"Starting Py4J gateway: {' '.join(java_cmd)}")
+        port = launch_gateway(java_cmd)
+        self.gateway = JavaGateway(gateway_parameters=GatewayParameters(port=port))
+        log(f"Java version: {self.gateway.jvm.System.getProperty('java.version')}")
+        log(f"BDQ Gateway health: {self.gateway.entry_point.healthCheck()}")
+    
+    def _load_test_mappings(self):
+        """Load test mappings from TG2_tests.csv and map to Java methods via reflection"""
+        df = pd.read_csv("/app/TG2_tests.csv", dtype=str).fillna('')
+        
+        # Filter out measures (they don't have Java implementations)
+        df = df[df['Type'] != 'Measure']
+
+        for _, row in df.iterrows():
+            # Use Py4J reflection to find the method
+            method_info = self._find_method_by_guid(row['MethodGuid'])
             
-            # Start the Py4J gateway as a subprocess
-            java_cmd = ['java'] + java_opts.split() + ['-jar', gateway_jar]
-            
-            logger.info(f"Starting Py4J gateway: {' '.join(java_cmd)}")
-            self.gateway_process = subprocess.Popen(
-                java_cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,  # Combine stderr with stdout
-                text=True
-            )
-            
-            # Wait for gateway to start and read port from output
-            port = None
-            for i in range(30):  # Wait up to 30 seconds
-                time.sleep(1)
-                if self.gateway_process.poll() is not None:
-                    # Process has exited
-                    stdout, _ = self.gateway_process.communicate()
-                    logger.error(f"Py4J gateway process exited early: {stdout}")
-                    raise RuntimeError("Py4J gateway process exited early")
+            if method_info is None:
+                log(f"No Java method found for GUID {row['MethodGuid']} (test: {row['Label']})", "WARNING")
+                continue
                 
-                # Try to read output
-                try:
-                    line = self.gateway_process.stdout.readline()
-                    if line:
-                        logger.info(f"Gateway output: {line.strip()}")
-                        # Look for port information in the format PY4J_GATEWAY_PORT=1234
-                        if line.startswith("PY4J_GATEWAY_PORT="):
-                            port = int(line.split("=")[1].strip())
-                            logger.info(f"Found gateway port: {port}")
-                            break
-                except Exception as e:
-                    logger.debug(f"Error reading gateway output: {e}")
-                    pass
+            # Parse acted_upon and consulted columns (they can be comma-separated)
+            acted_upon = [col.strip() for col in row['InformationElement:ActedUpon'].split(',') if col.strip()]
+            consulted = [col.strip() for col in row['InformationElement:Consulted'].split(',') if col.strip()]
             
-            if port is None:
-                raise RuntimeError("Could not determine Py4J gateway port")
+            mapping = TG2TestMapping(
+                label=row['Label'],
+                library=method_info['library'],
+                java_class=method_info['class_name'],
+                java_method=method_info['method_name'],
+                acted_upon=acted_upon,
+                consulted=consulted,
+                test_type=row['Type']
+            )
+            self.tests[row['Label']] = mapping
             
-            # Connect to the gateway on the specific port
-            self.gateway = JavaGateway(gateway_parameters=GatewayParameters(port=port))
-            
-            # Test the connection
-            self._test_connection()
-            self._jvm_started = True
-            logger.info("✅ Py4J gateway started successfully")
-            
-        except Exception as e:
-            logger.error(f"Failed to start Py4J gateway: {e}")
-            send_discord_notification(f"❌ Failed to start BDQ Py4J gateway: {str(e)}")
-            if not self.skip_validation:
-                raise
-    
-    def _test_connection(self):
-        """Test Py4J connection"""
+        log(f"Loaded {len(self.tests)} tests from TG2_tests.csv")
+
+    def _find_method_by_guid(self, guid: str) -> Optional[Dict[str, str]]:
+        """Use Py4J reflection to find method by GUID"""
+        # List of Java classes to scan (matching bdqtestrunner)
+        java_classes = [
+            'org.filteredpush.qc.metadata.DwCMetadataDQ',
+            'org.filteredpush.qc.metadata.DwCMetadataDQDefaults', 
+            'org.filteredpush.qc.georeference.DwCGeoRefDQ',
+            'org.filteredpush.qc.georeference.DwCGeoRefDQDefaults',
+            'org.filteredpush.qc.date.DwCEventDQ',
+            'org.filteredpush.qc.date.DwCEventDQDefaults',
+            'org.filteredpush.qc.date.DwCOtherDateDQ',
+            'org.filteredpush.qc.date.DwCOtherDateDQDefaults',
+            'org.filteredpush.qc.sciname.DwCSciNameDQ',
+            'org.filteredpush.qc.sciname.DwCSciNameDQDefaults'
+        ]
+        
         try:
-            # Test basic Java functionality
-            java_system = self.gateway.jvm.System
-            java_version = java_system.getProperty("java.version")
-            logger.info(f"Java version: {java_version}")
+            jvm = self.gateway.jvm
             
-            # Test BDQ gateway
-            bdq_gateway = self.gateway.entry_point
-            health = bdq_gateway.healthCheck()
-            logger.info(f"BDQ Gateway health: {health}")
-            
+            for class_name in java_classes:
+                try:
+                    java_class = jvm.Class.forName(class_name)
+                    methods = java_class.getMethods()
+                    
+                    for method in methods:
+                        annotations = method.getAnnotations()
+                        
+                        for annotation in annotations:
+                            if annotation.annotationType().getSimpleName() == 'Provides':
+                                # Get the GUID value
+                                annotation_value = annotation.value()
+                                
+                                # Check if GUID matches (with or without urn:uuid: prefix)
+                                if (annotation_value == guid or annotation_value == f"urn:uuid:{guid}"):
+                                    
+                                    # Extract class and method names
+                                    declaring_class = method.getDeclaringClass()
+                                    class_simple_name = declaring_class.getSimpleName()
+                                    method_name = method.getName()
+                                    
+                                    # Extract library name from package
+                                    package_name = declaring_class.getPackage().getName()
+                                    library = package_name.split('.')[-1]  # e.g., 'georeference' -> 'geo_ref_qc'
+                                    
+                                    # Map library names to match the repo names
+                                    library_map = {
+                                        'metadata': 'rec_occur_qc',
+                                        'georeference': 'geo_ref_qc', 
+                                        'date': 'event_date_qc',
+                                        'sciname': 'sci_name_qc'
+                                    }
+                                    library = library_map.get(library, library)
+                                    log(f"Found method {class_simple_name}.{method_name} for GUID {guid}", "DEBUG")
+                                    
+                                    return {
+                                        'library': library,
+                                        'class_name': class_simple_name,
+                                        'method_name': method_name
+                                    }
+                                    
+                except Exception as e:
+                    log(f"Error scanning class {class_name}: {e}", "DEBUG")
+                    continue
+                    
         except Exception as e:
-            logger.error(f"Py4J connection test failed: {e}")
-            raise
+            log(f"Error during reflection: {e}", "WARNING")
+            
+        log(f"No method found for GUID {guid}", "DEBUG")
+        return None
     
-    def get_applicable_tests(self, csv_columns: List[str]) -> List[TG2TestMapping]:
-        """Get tests that can be applied to the given CSV columns"""
+    def get_applicable_tests_for_dataset(self, columns: List[str]) -> List[TG2TestMapping]:
+        """Get tests that are applicable to the dataset based on available columns"""
         applicable_tests = []
         
-        for test_id, test_mapping in self.test_mappings.items():
-            # Check if all actedUpon columns exist in CSV
-            if all(col in csv_columns for col in test_mapping.acted_upon):
+        for test_label, test_mapping in self.tests.items():
+            # Check if all acted_upon columns exist in the dataset
+            if all(col in columns for col in test_mapping.acted_upon):
                 applicable_tests.append(test_mapping)
+            else:
+                missing_cols = [col for col in test_mapping.acted_upon if col not in columns]
+                log(f"Test {test_label} skipped - missing columns: {missing_cols}", "DEBUG")
         
-        logger.info(f"Found {len(applicable_tests)} applicable tests from {len(self.test_mappings)} total")
+        log(f"Found {len(applicable_tests)} applicable tests out of {len(self.tests)} total tests")
         return applicable_tests
     
-    def filter_applicable_tests(self, tests: List[TG2TestMapping], csv_columns: List[str]) -> List[TG2TestMapping]:
-        """Filter tests that can be applied to the given CSV columns (alias for get_applicable_tests)"""
-        return self.get_applicable_tests(csv_columns)
-    
-    def get_available_tests(self) -> List[TG2TestMapping]:
-        """Get all available tests (for testing compatibility)"""
-        return list(self.test_mappings.values())
-    
-    def run_tests_on_dataset(self, df, csv_columns: List[str]) -> BDQTestExecutionResult:
-        """Run tests on dataset (for testing compatibility)"""
-        applicable_tests = self.get_applicable_tests(csv_columns)
-        return self.execute_tests(df, applicable_tests)
-    
-    def execute_tests(self, df, applicable_tests: List[TG2TestMapping]) -> BDQTestExecutionResult:
-        """Execute BDQ tests using Py4J"""
-        if not self._jvm_started:
-            raise RuntimeError("Py4J gateway not started - cannot execute tests")
-        
-        start_time = time.time()
-        test_results = []
-        skipped_tests = []
-        
-        logger.info(f"🧪 Starting BDQ test execution on {len(df)} records with {len(applicable_tests)} applicable tests")
-        
-        # Get BDQ gateway
-        bdq_gateway = self.gateway.entry_point
-        
-        for i, test_mapping in enumerate(applicable_tests):
-            try:
-                logger.info(f"🔄 [{i+1}/{len(applicable_tests)}] Executing {test_mapping.test_id}...")
-                
-                # Get unique tuples for this test
-                tuples = self._get_unique_tuples(df, test_mapping.acted_upon, test_mapping.consulted)
-                
-                if not tuples:
-                    logger.warning(f"No tuples found for test {test_mapping.test_id}")
-                    skipped_tests.append(test_mapping.test_id)
-                    continue
-                
-                # Execute test via Py4J gateway
-                result = bdq_gateway.executeTest(
-                    test_mapping.test_id,
-                    test_mapping.java_class,
-                    test_mapping.java_method,
-                    test_mapping.acted_upon,
-                    test_mapping.consulted,
-                    test_mapping.parameters or {},
-                    tuples
-                )
-                
-                # Convert Java Map to Python dict
-                tuple_results = list(result.get("tuple_results", []))
-                errors = list(result.get("errors", []))
-                
-                if errors:
-                    logger.warning(f"Test {test_mapping.test_id} had errors: {errors}")
-                
-                if tuple_results:
-                    # Expand results to all rows
-                    row_results = self._expand_tuple_results_to_rows(df, test_mapping, tuple_results)
-                    test_results.extend(row_results)
-                    logger.info(f"✅ [{i+1}/{len(applicable_tests)}] {test_mapping.test_id}: {len(tuple_results)} results")
-                else:
-                    logger.warning(f"❌ [{i+1}/{len(applicable_tests)}] {test_mapping.test_id}: No results returned")
-                    skipped_tests.append(test_mapping.test_id)
-                
-            except Exception as e:
-                logger.error(f"Error executing test {test_mapping.test_id}: {e}")
-                skipped_tests.append(test_mapping.test_id)
-        
-        execution_time = time.time() - start_time
-        logger.info(f"🏁 Py4J test execution completed in {execution_time:.1f} seconds")
-        logger.info(f"📊 Results: {len(test_results)} successful, {len(skipped_tests)} skipped")
-        
-        return BDQTestExecutionResult(
-            test_results=test_results,
-            skipped_tests=skipped_tests,
-            execution_time=execution_time
-        )
-    
-    def _get_unique_tuples(self, df, acted_upon: List[str], consulted: List[str]) -> List[List[str]]:
-        """Get unique tuples for test execution"""
-        # Combine acted_upon and consulted columns
-        all_columns = acted_upon + consulted
-        
-        # Get unique combinations
-        unique_df = df[all_columns].drop_duplicates()
-        tuples = unique_df.values.tolist()
-        
-        logger.debug(f"Found {len(tuples)} unique tuples for columns: {all_columns}")
-        return tuples
-    
-    
-    def _expand_tuple_results_to_rows(self, df, test_mapping: TG2TestMapping, tuple_results: List[Dict]) -> List[BDQTestResult]:
-        """Expand tuple results to individual row results"""
-        row_results = []
-        
-        for tuple_result in tuple_results:
-            tuple_index = tuple_result['tuple_index']
+    def execute_single_test(self, java_class: str, java_method: str, acted_upon: List[str], consulted: List[str], tuple_values: List[str]) -> Dict[str, Any]:
+        """Execute a single BDQ test for a specific tuple of values"""
+        try:
+            # Get BDQ gateway
+            bdq_gateway = self.gateway.entry_point
             
-            # Find all rows that match this tuple
-            all_columns = test_mapping.acted_upon + test_mapping.consulted
-            matching_rows = df[df[all_columns].apply(
-                lambda row: list(row.values) == tuple_results[tuple_index].get('tuple_values', []), 
-                axis=1
-            )]
+            # Execute test via Py4J gateway
+            result = bdq_gateway.executeTest(
+                f"{java_class}.{java_method}",  # test_id
+                java_class,
+                java_method,
+                acted_upon,
+                consulted,
+                {},  # parameters, we're always going to use the defaults
+                [tuple_values]  # single tuple as list
+            )
             
-            # Create BDQTestResult for each matching row
-            for _, row in matching_rows.iterrows():
-                bdq_result = BDQTestResult(
-                    record_id=str(row.get('occurrenceID', row.get('taxonID', 'unknown'))),
-                    test_id=test_mapping.test_id,
-                    status=tuple_result['status'],
-                    result=tuple_result['result'],
-                    comment=tuple_result['comment'],
-                    amendment=None  # TODO: Extract amendment if available
-                )
-                row_results.append(bdq_result)
-        
-        return row_results
-    
-    def generate_summary(self, test_results: List[BDQTestResult], total_records: int, skipped_tests: List[str]) -> ProcessingSummary:
-        """Generate processing summary"""
-        total_tests_run = len(test_results)
-        successful_tests = len([r for r in test_results if r.status == 'RUN_HAS_RESULT'])
-        
-        return ProcessingSummary(
-            total_records=total_records,
-            total_tests_run=total_tests_run,
-            successful_tests=successful_tests,
-            skipped_tests=skipped_tests,
-            total_test_results=len(test_results)
-        )
+            # Convert Java Map to Python dict
+            tuple_results = list(result.get("tuple_results", []))
+            errors = list(result.get("errors", []))
+            
+            if errors:
+                log(f"Test {java_class}.{java_method} had errors: {errors}", "WARNING")
+                return {
+                    'status': 'ERROR',
+                    'result': None,
+                    'comment': f"Test execution error: {', '.join(errors)}",
+                    'amendment': None
+                }
+            
+            if tuple_results and len(tuple_results) > 0:
+                # Return the first (and only) result
+                return tuple_results[0]
+            else:
+                log(f"Test {java_class}.{java_method} returned no results", "WARNING")
+                return {
+                    'status': 'NO_RESULT',
+                    'result': None,
+                    'comment': 'Test returned no results',
+                    'amendment': None
+                }
+                
+        except Exception as e:
+            log(f"Error executing test {java_class}.{java_method}: {e}", "ERROR")
+            return {
+                'status': 'ERROR',
+                'result': None,
+                'comment': f"Test execution error: {str(e)}",
+                'amendment': None
+            }
     
     def shutdown(self):
         """Shutdown Py4J gateway"""
         if self.gateway:
             try:
                 self.gateway.shutdown()
-                logger.info("Py4J gateway connection closed")
+                log("Py4J gateway connection closed")
             except Exception as e:
-                logger.error(f"Error shutting down Py4J gateway connection: {e}")
+                log(f"Error shutting down Py4J gateway connection: {e}", "ERROR")
             finally:
                 self.gateway = None
-        
-        if self.gateway_process:
-            try:
-                self.gateway_process.terminate()
-                self.gateway_process.wait(timeout=5)
-                logger.info("Py4J gateway process terminated")
-            except Exception as e:
-                logger.error(f"Error terminating Py4J gateway process: {e}")
-                try:
-                    self.gateway_process.kill()
-                except:
-                    pass
-            finally:
-                self.gateway_process = None
-                self._jvm_started = False

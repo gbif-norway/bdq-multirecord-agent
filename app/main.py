@@ -1,5 +1,4 @@
 import os
-import logging
 from typing import Dict, Any
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
@@ -10,133 +9,31 @@ import uvicorn
 from dotenv import load_dotenv
 import base64
 import asyncio
+import json
 
 from app.services.email_service import EmailService
 from app.services.bdq_py4j_service import BDQPy4JService
 from app.services.csv_service import CSVService
-from app.models.email_models import EmailPayload
-from app.utils.logger import setup_logging, send_discord_notification
+from app.services.llm_service import LLMService
+from app.utils.helper import get_unique_tuples, expand_single_test_results_to_all_rows, generate_summary_statistics, log
+import pandas as pd
 
 # Load environment variables
 load_dotenv()
 
-# Setup logging
-setup_logging()
-logger = logging.getLogger(__name__)
-
-# Initialize services (BDQ service lazy-loaded to handle missing TG2_tests.csv gracefully)
 email_service = EmailService()
-bdq_service = None  # Lazy-loaded when first needed
+bdq_service = BDQPy4JService()
 csv_service = CSVService()
+llm_service = LLMService()
 
-def get_bdq_service():
-    """Get BDQ service instance, initializing if needed"""
-    global bdq_service
-    if bdq_service is None:
-        try:
-            bdq_service = BDQPy4JService()
-            logger.info("BDQ Py4J Service initialized successfully")
-        except Exception as e:
-            logger.error(f"Failed to initialize BDQ Py4J Service: {e}")
-            raise
-    return bdq_service
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Startup
-    logger.info("Service instance starting")
-    try:
-        send_discord_notification("Instance starting")
-    except Exception:
-        logger.warning("Failed to send Discord startup notification")
-    # Test Py4J connection at service start
-    try:
-        if get_bdq_service()._jvm_started:
-            logger.info("BDQ Py4J connection test successful")
-        else:
-            logger.warning("BDQ Py4J connection test failed")
-    except Exception as e:
-        logger.error(f"Failed to test BDQ Py4J connection: {e}")
-    
-    yield
-    
-    # Shutdown
-    logger.info("Service instance shutting down")
-    try:
-        # Shutdown BDQ service
-        if bdq_service:
-            bdq_service.shutdown()
-        send_discord_notification("Instance shutting down")
-    except Exception:
-        logger.warning("Failed to send Discord shutdown notification")
 
 app = FastAPI(
     title="BDQ Email Report Service",
     description="Service to process biodiversity data quality tests via email",
-    version="1.0.0",
-    lifespan=lifespan
+    version="1.0.0"
 )
 
-# Backward compatibility functions for tests
-async def on_startup():
-    logger.info("Service instance starting")
-    try:
-        send_discord_notification("Instance starting")
-    except Exception:
-        logger.warning("Failed to send Discord startup notification")
-    # Test CLI connection at service start
-    try:
-        if get_bdq_service().test_connection():
-            logger.info("BDQ CLI connection test successful")
-        else:
-            logger.warning("BDQ CLI connection test failed")
-    except Exception as e:
-        logger.error(f"Failed to test BDQ CLI connection: {e}")
 
-
-async def on_shutdown():
-    logger.info("Service instance shutting down")
-    try:
-        send_discord_notification("Instance shutting down")
-    except Exception:
-        logger.warning("Failed to send Discord shutdown notification")
-
-def _normalize_apps_script_payload(raw_data: Dict[str, Any]) -> Dict[str, Any]:
-    headers = raw_data.get('headers') or {}
-    body = raw_data.get('body') or {}
-
-    norm_atts = []
-    for a in (raw_data.get('attachments') or []):
-        content = a.get('contentBase64') or a.get('content_base64')
-        if isinstance(content, list):
-            try:
-                b = bytes(int(x) for x in content)
-                content_b64 = base64.b64encode(b).decode('utf-8')
-            except Exception:
-                content_b64 = ''
-        elif isinstance(content, str):
-            content_b64 = content
-        else:
-            content_b64 = ''
-
-        norm_atts.append({
-            'filename': a.get('filename', ''),
-            'mime_type': a.get('mimeType') or a.get('mime_type') or '',
-            'content_base64': content_b64,
-            'size': a.get('size')
-        })
-
-    return {
-        'message_id': raw_data.get('messageId') or raw_data.get('message_id') or '',
-        'thread_id': raw_data.get('threadId') or raw_data.get('thread_id') or '',
-        'from_email': headers.get('from', ''),
-        'to_email': headers.get('to', ''),
-        'subject': headers.get('subject', ''),
-        'body_text': body.get('text') if isinstance(body, dict) else None,
-        'body_html': body.get('html') if isinstance(body, dict) else None,
-        'attachments': norm_atts,
-        'headers': headers if isinstance(headers, dict) else {}
-    }
 
 @app.get("/")
 async def root():
@@ -146,31 +43,11 @@ async def root():
 @app.get("/health")
 async def health_check():
     """Detailed health check"""
-    logger.info("Health check endpoint called")
-    send_discord_notification("Testing - health check")
-    
-    # Check service health status
-    services_status = {
-        "email_service": "healthy",
-        "bdq_service": "healthy", 
-        "csv_service": "healthy"
-    }
-    
-    # Probe Py4J service status if possible
-    py4j_ready = False
-    try:
-        py4j_ready = get_bdq_service()._jvm_started
-    except Exception:
-        py4j_ready = False
-    services_status.update({
-        "bdq_py4j_ready": py4j_ready
-    })
+    log("Health check endpoint called")
 
     return {
         "status": "healthy",
         "service": "BDQ Email Report Service",
-        "version": "1.0.0",
-        "services": services_status,
         "environment": {
             "gmail_send_configured": bool(os.getenv("GMAIL_SEND")),
             "hmac_secret_configured": bool(os.getenv("HMAC_SECRET")),
@@ -179,7 +56,7 @@ async def health_check():
         }
     }
 
-async def _handle_email_processing(email_data: EmailPayload):
+async def _handle_email_processing(email_data: Dict[str, Any]):
     try:
         # Extract and validate CSV attachment
         csv_data = email_service.extract_csv_attachment(email_data)
@@ -199,62 +76,82 @@ async def _handle_email_processing(email_data: EmailPayload):
             )
             return
 
-        # Get available BDQ tests
-        tests = get_bdq_service().get_available_tests()
-        applicable_tests = get_bdq_service().filter_applicable_tests(tests, df.columns.tolist())
+        # Get applicable BDQ tests
+        applicable_tests = bdq_service.get_applicable_tests_for_dataset(df.columns.tolist())
 
         if not applicable_tests:
+            log(f"No applicable BDQ tests found for provided CSV columns: {df.columns.tolist()}", "WARNING")
             await email_service.send_error_reply(
                 email_data,
                 "No applicable BDQ tests found for the provided CSV columns."
             )
             return
 
-        # Run BDQ tests
-        execution_result = get_bdq_service().run_tests_on_dataset(df, df.columns.tolist())
-        test_results = execution_result.test_results
-        skipped_tests = execution_result.skipped_tests
+        # Execute BDQ tests and collect results
+        test_results = []
         
-        # Debug test results
-        logger.info(f"BDQ execution complete: {len(test_results)} test results, {len(skipped_tests)} skipped tests")
-        if test_results:
-            sample_result = test_results[0]
-            logger.info(f"Sample result: {sample_result.test_id} -> {sample_result.status} for record {sample_result.record_id}")
-        else:
-            logger.error("CRITICAL: No test results returned from BDQ CLI!")
-            send_discord_notification("❌ CRITICAL: BDQ CLI returned zero test results!")
-
-        # Generate result files
-        send_discord_notification(f"📊 Generating result files with {len(test_results)} test results...")
+        for test in applicable_tests:
+            log(f"Processing test: {test.label}")
+            
+            # Get all unique value combinations in acted_upon + consulted
+            unique_tuples = get_unique_tuples(df, test.acted_upon, test.consulted)
+            
+            if not unique_tuples:
+                log(f"No unique tuples found for test {test.label}", "WARNING")
+                continue
+            
+            # Execute test for each unique tuple
+            for tuple_values in unique_tuples:
+                try:
+                    # Run test using bdq_service
+                    tuple_result = bdq_service.execute_single_test(
+                        test.java_class,
+                        test.java_method,
+                        test.acted_upon,
+                        test.consulted,
+                        tuple_values
+                    )
+                    
+                    # Expand results to all rows that match this tuple
+                    row_results = expand_single_test_results_to_all_rows(
+                        df, test, tuple_result, tuple_values, core_type
+                    )
+                    test_results.extend(row_results)
+                    
+                except Exception as e:
+                    log(f"Error executing test {test.label} for tuple {tuple_values}: {e}", "ERROR")
+                    continue
+        
+        if not test_results:
+            await email_service.send_error_reply(
+                email_data,
+                "No test results were generated. Please check your data format."
+            )
+            return
+        
+        # Generate LLM summary
+        body = llm_service.generate_intelligent_summary(test_results, email_data, core_type, generate_summary_statistics(test_results, df, core_type))
+        
+        log(f"Generating result files with {len(test_results)} test results...")
         raw_results_csv = csv_service.generate_raw_results_csv(test_results, core_type)
         amended_dataset_csv = csv_service.generate_amended_dataset(df, test_results, core_type)
 
-        # Generate summary (include skipped tests)
-        summary = get_bdq_service().generate_summary(test_results, len(df), [])
-
-        # Send reply email
-        send_discord_notification(f"📧 Generating intelligent summary and sending email...")
+        log("Sending reply email...")
         await email_service.send_results_reply(
             email_data,
-            summary,
+            body,
             raw_results_csv,
-            amended_dataset_csv,
-            test_results,
-            core_type
+            amended_dataset_csv
         )
-        send_discord_notification(f"✅ Email sent successfully to {email_data.from_email}!")
-
-        logger.info(f"Successfully processed email from {email_data.from_email}")
     except Exception as e:
-        logger.error(f"Error processing email in background: {str(e)}", exc_info=True)
-        send_discord_notification(f"Processing error (background): {str(e)}")
+        log(f"Error processing email in background: {str(e)}", "ERROR")
         try:
             await email_service.send_error_reply(
                 email_data,
                 f"An error occurred while processing your request: {str(e)}"
             )
         except Exception as reply_error:
-            logger.error(f"Failed to send error reply: {str(reply_error)}")
+            log(f"Failed to send error reply: {str(reply_error)}", "ERROR")
 
 
 @app.post("/email/incoming")
@@ -264,85 +161,24 @@ async def process_incoming_email(request: Request, background_tasks: BackgroundT
     """
     # Log the raw request for debugging
     body = await request.body()
-    logger.info(f"Received request with {len(body)} bytes")
-    # Send Discord notification immediately for live updates
-    send_discord_notification(f"Received email request: {len(body)} bytes")
-
-    # Try to parse as JSON
+    log(f"Received request with {len(body)} bytes")
+    
     try:
-        import json
         raw_data = json.loads(body.decode('utf-8'))
-        logger.info(f"Parsed JSON data keys: {list(raw_data.keys())}")
-    except Exception as parse_error:
-        logger.error(f"Failed to parse JSON: {parse_error}")
-        logger.error(f"Raw body (first 500 chars): {body[:500]}")
-        # Send Discord notification immediately for live updates
-        send_discord_notification(f"JSON parse error: {str(parse_error)}")
-        # Still return 200 to avoid blocking the forwarder, but report error body
-        return JSONResponse(status_code=200, content={"status": "error", "message": "Invalid JSON payload"})
-
-    # Convert to EmailPayload model
-    try:
-        normalized = _normalize_apps_script_payload(raw_data)
-        email_data = EmailPayload(**normalized)
-        logger.info(f"Successfully parsed email from {email_data.from_email}")
-    except Exception as model_error:
-        logger.error(f"Failed to create EmailPayload model: {model_error}")
-        logger.error(f"Raw data: {raw_data}")
-        # Send Discord notification immediately for live updates
-        send_discord_notification(f"Model validation error: {str(model_error)}")
-        # Still return 200 to avoid blocking the forwarder
-        return JSONResponse(status_code=200, content={"status": "error", "message": "Invalid email payload structure"})
-
+    except json.JSONDecodeError as e:
+        log(f"Invalid JSON in request: {e}", "ERROR")
+        return JSONResponse(status_code=400, content={"status": "error", "message": "Invalid JSON in request"})
+    
     # Schedule background processing and return immediately
     # Use the running loop to schedule the async handler without blocking the response
-    asyncio.create_task(_handle_email_processing(email_data))
-    
-    # Send Discord notification for successful queuing
-    send_discord_notification(f"Email from {email_data.from_email} queued for processing")
+    asyncio.create_task(_handle_email_processing(raw_data))
     
     return JSONResponse(status_code=200, content={"status": "accepted", "message": "Email queued for processing"})
 
 
-@app.get("/email/incoming")
-async def reject_incoming_email_get(request: Request):
-    """Explicitly reject GET requests to /email/incoming with 405 and alert."""
-    client_ip = getattr(request.client, "host", "unknown")
-    logger.warning(f"GET /email/incoming from {client_ip} - returning 405")
-    try:
-        send_discord_notification(f"Suspicious GET /email/incoming from {client_ip}")
-    except Exception:
-        logger.warning("Failed to send Discord notification for GET /email/incoming")
-    return JSONResponse(status_code=405, content={"detail": "Method Not Allowed"})
-
-
-@app.exception_handler(HTTPException)
-async def http_exception_handler(request: Request, exc: HTTPException):
-    logger.error(f"HTTPException {exc.status_code}: {exc.detail}", exc_info=True)
-    try:
-        send_discord_notification(f"HTTPException {exc.status_code}: {exc.detail}")
-    except Exception:
-        logger.warning("Failed to send Discord notification for HTTPException")
-    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
-
-
-@app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    logger.error("Request validation error", exc_info=True)
-    try:
-        send_discord_notification("Request validation error on incoming request")
-    except Exception:
-        logger.warning("Failed to send Discord notification for validation error")
-    return JSONResponse(status_code=422, content={"detail": exc.errors()})
-
-
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
-    logger.error(f"Unhandled exception: {exc}", exc_info=True)
-    try:
-        send_discord_notification(f"Unhandled exception: {exc}")
-    except Exception:
-        logger.warning("Failed to send Discord notification for unhandled exception")
+    log(f"Unhandled exception: {exc}", "ERROR")
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 if __name__ == "__main__":

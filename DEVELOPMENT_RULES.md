@@ -50,4 +50,4 @@ The entire point of this app is that it's supposed to run ALL relevant BDQ tests
 
 ## **RULE 4: DOCUMENT DESIGN DECISIONS BUT STOP MAKING MULTIPLE MD FILES**
 
-If something is obvious, do not put it in the documentation, but ALL IMPORTANT DECISIONS MUST BE DOCUMENTED. When documenting a design decision, add it to one of the current md files, do not create a new one. 
+If something is obvious, do not put it in the documentation, but ALL IMPORTANT DECISIONS MUST BE DOCUMENTED. When documenting a design decision, add it to one of the current md files, do not create a new md. Make sure you don't add fluff, don't write congratulatory epistles on how much more efficient or good something is, just state very simply what it is and how it works with the rest of the app, in the same style as the way the README is written. 
