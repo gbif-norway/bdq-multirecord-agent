@@ -71,7 +71,7 @@ class BDQPy4JService:
             # Start Java process and wait for explicit "started on port" line on stderr
             process = subprocess.Popen(
                 java_cmd,
-                stdout=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
                 bufsize=1
@@ -80,44 +80,65 @@ class BDQPy4JService:
             started_port: Optional[int] = None
             start_ts = time.time()
             stderr_buf: List[str] = []
+            stdout_buf: List[str] = []
             log("Waiting for BDQ Py4J Gateway to report its listening port...")
 
             while time.time() - start_ts < startup_timeout:
                 # Exit early if process died
                 if process.poll() is not None:
                     try:
-                        remaining = process.stderr.read() if process.stderr else ''
+                        remaining_err = process.stderr.read() if process.stderr else ''
+                        remaining_out = process.stdout.read() if process.stdout else ''
                     except Exception:
-                        remaining = ''
-                    stderr_text = ''.join(stderr_buf) + (remaining or '')
-                    msg = f"Py4J gateway process exited with code {process.returncode}. Stderr: {stderr_text[-2000:]}"
+                        remaining_err = ''
+                        remaining_out = ''
+                    stderr_text = ''.join(stderr_buf) + (remaining_err or '')
+                    stdout_text = ''.join(stdout_buf) + (remaining_out or '')
+                    msg = (
+                        f"Py4J gateway process exited with code {process.returncode}. "
+                        f"Stderr: {stderr_text[-2000:]} Stdout: {stdout_text[-2000:]}"
+                    )
                     log(msg, "ERROR")
                     raise RuntimeError(msg)
 
                 # Read available stderr non-blocking
-                if process.stderr:
-                    rlist, _, _ = select.select([process.stderr], [], [], retry_interval)
-                    if rlist:
-                        line = process.stderr.readline()
-                        if line:
-                            stderr_buf.append(line)
-                            if "BDQ Py4J Gateway started on port" in line:
-                                try:
-                                    started_port = int(line.strip().rsplit(' ', 1)[-1])
-                                    log(f"Py4J gateway reported listening port: {started_port}")
-                                    break
-                                except Exception:
-                                    pass
+                rlist = []
+                try:
+                    to_check = []
+                    if process.stderr:
+                        to_check.append(process.stderr)
+                    if process.stdout:
+                        to_check.append(process.stdout)
+                    if to_check:
+                        rlist, _, _ = select.select(to_check, [], [], retry_interval)
+                except Exception:
+                    pass
+
+                for ready in rlist:
+                    line = ready.readline()
+                    if not line:
                         continue
+                    if ready is process.stderr:
+                        stderr_buf.append(line)
+                    else:
+                        stdout_buf.append(line)
+                    if "BDQ Py4J Gateway started on port" in line:
+                        try:
+                            started_port = int(line.strip().rsplit(' ', 1)[-1])
+                            log(f"Py4J gateway reported listening port: {started_port}")
+                            break
+                        except Exception:
+                            pass
 
                 # Small sleep to avoid tight loop when no data
                 time.sleep(0.05)
 
             if started_port is None:
-                tail = ''.join(stderr_buf)[-2000:]
+                tail_err = ''.join(stderr_buf)[-2000:]
+                tail_out = ''.join(stdout_buf)[-2000:]
                 err_msg = (
                     f"Timed out after {startup_timeout}s waiting for BDQ gateway startup banner. "
-                    f"Stderr tail: {tail}"
+                    f"Stderr tail: {tail_err} Stdout tail: {tail_out}"
                 )
                 log(err_msg, "ERROR")
                 raise RuntimeError(err_msg)
