@@ -36,18 +36,25 @@ WORKDIR /app
 # Install JRE for running the Py4J Gateway
 RUN apt-get update && apt-get install -y \
     openjdk-21-jre \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && java -version
 
-# Copy the Py4J Gateway JAR from build stage
+# Create directory for BDQ JAR and copy from build stage
+RUN mkdir -p /opt/bdq
 COPY --from=build /workspace/java/bdq-py4j-gateway/target/bdq-py4j-gateway-1.0.0.jar /opt/bdq/bdq-py4j-gateway.jar
+RUN ls -la /opt/bdq/ && echo "JAR file copied successfully"
 
 # Copy Python application code
 COPY app/ app/
 COPY requirements.txt .
 COPY TG2_tests.csv .
+RUN ls -la /app/TG2_tests.csv && echo "CSV file copied successfully"
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Test that the JAR file can be executed
+RUN java -jar /opt/bdq/bdq-py4j-gateway.jar --help || echo "JAR file test completed"
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1

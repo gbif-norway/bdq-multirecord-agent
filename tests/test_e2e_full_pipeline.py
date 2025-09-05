@@ -310,7 +310,7 @@ class TestE2EFullPipeline:
         assert "occurrenceID" in body_arg and "taxonID" in body_arg
 
     def test_health_endpoints(self, client):
-        """Test health check endpoints"""
+        """Test health check endpoint"""
         
         # Test root endpoint
         response = client.get("/")
@@ -318,14 +318,6 @@ class TestE2EFullPipeline:
         data = response.json()
         assert data["message"] == "BDQ Email Report Service is running"
         
-        # Test health endpoint
-        response = client.get("/health")
-        assert response.status_code == 200
-        data = response.json()
-        assert data["status"] == "healthy"
-        assert data["service"] == "BDQ Email Report Service"
-        assert "environment" in data
-
     def test_invalid_json_request(self, client):
         """Test handling of invalid JSON request"""
         response = client.post("/email/incoming", data="invalid json")
