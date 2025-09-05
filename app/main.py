@@ -22,7 +22,7 @@ import pandas as pd
 load_dotenv()
 
 email_service = EmailService()
-bdq_service = None  # Initialize lazily
+bdq_service = None  # Will be initialized at startup
 csv_service = CSVService()
 llm_service = LLMService()
 
@@ -40,6 +40,15 @@ app = FastAPI(
     description="Service to process biodiversity data quality tests via email",
     version="1.0.0"
 )
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize BDQ gateway at service startup (before handling traffic)."""
+    global bdq_service
+    if bdq_service is None:
+        log("Initializing BDQ service at startup...")
+        bdq_service = BDQPy4JService()
+        log("BDQ service initialized")
 
 @app.on_event("shutdown")
 async def shutdown_event():
