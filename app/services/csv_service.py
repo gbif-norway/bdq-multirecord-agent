@@ -1,11 +1,8 @@
 import pandas as pd
 import io
 import base64
-import logging
 from typing import Tuple, Optional, List, Dict, Any
-from app.utils.helper import BDQTestExecutionResult
-
-logger = logging.getLogger(__name__)
+from app.utils.helper import BDQTestExecutionResult, log
 
 class CSVService:
     """Service for CSV processing and manipulation"""
@@ -29,11 +26,11 @@ class CSVService:
             # Detect core type
             core_type = self._detect_core_type(df.columns.tolist())
             
-            logger.info(f"Parsed CSV with {len(df)} rows, {len(df.columns)} columns, core type: {core_type}")
+            log(f"Parsed CSV with {len(df)} rows, {len(df.columns)} columns, core type: {core_type}")
             return df, core_type
             
         except Exception as e:
-            logger.error(f"Error parsing CSV: {e}")
+            log(f"Error parsing CSV: {e}", "ERROR")
             raise
     
     def _detect_delimiter(self, sample: str) -> str:
@@ -82,7 +79,7 @@ class CSVService:
             return csv_buffer.getvalue()
             
         except Exception as e:
-            logger.error(f"Error generating raw results CSV: {e}")
+            log(f"Error generating raw results CSV: {e}", "ERROR")
             raise
     
     def generate_amended_dataset(self, original_df: pd.DataFrame, test_results: List[BDQTestExecutionResult], core_type: str) -> str:
@@ -112,7 +109,7 @@ class CSVService:
                                     amended_df.loc[mask, field] = new_value
                                     amendments_applied += 1
             
-            logger.info(f"Applied {amendments_applied} amendments to dataset")
+            log(f"Applied {amendments_applied} amendments to dataset")
             
             # Convert to CSV string
             csv_buffer = io.StringIO()
@@ -120,6 +117,6 @@ class CSVService:
             return csv_buffer.getvalue()
             
         except Exception as e:
-            logger.error(f"Error generating amended dataset: {e}")
+            log(f"Error generating amended dataset: {e}", "ERROR")
             raise
     

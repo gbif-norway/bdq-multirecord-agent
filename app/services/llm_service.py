@@ -1,10 +1,7 @@
 import os
-import logging
 import google.generativeai as genai
 from typing import List, Dict, Any, Optional
-from app.utils.helper import BDQTestExecutionResult
-
-logger = logging.getLogger(__name__)
+from app.utils.helper import BDQTestExecutionResult, log
 
 class LLMService:
     """Service for generating intelligent summaries using Google Gemini"""
@@ -37,7 +34,7 @@ class LLMService:
             # Parse the response and generate both text and HTML versions
             return self._convert_to_html(response.text.strip())
         else:
-            logger.error("No response text from Gemini API")
+            log("No response text from Gemini API", "ERROR")
             return "<p>Unable to generate summary at this time.</p>"
                 
     

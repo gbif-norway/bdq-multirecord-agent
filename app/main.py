@@ -1,5 +1,4 @@
 import os
-import logging
 from typing import Dict, Any
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
@@ -16,16 +15,11 @@ from app.services.email_service import EmailService
 from app.services.bdq_py4j_service import BDQPy4JService
 from app.services.csv_service import CSVService
 from app.services.llm_service import LLMService
-from app.utils.logger import setup_logging, send_discord_notification
-from app.utils.helper import get_unique_tuples, expand_single_test_results_to_all_rows, generate_summary_statistics
+from app.utils.helper import get_unique_tuples, expand_single_test_results_to_all_rows, generate_summary_statistics, log
 import pandas as pd
 
 # Load environment variables
 load_dotenv()
-
-# Setup logging
-setup_logging()
-logger = logging.getLogger(__name__)
 
 email_service = EmailService()
 bdq_service = BDQPy4JService()
@@ -49,8 +43,7 @@ async def root():
 @app.get("/health")
 async def health_check():
     """Detailed health check"""
-    logger.info("Health check endpoint called")
-    send_discord_notification("Testing - health check")
+    log("Health check endpoint called")
 
     return {
         "status": "healthy",
@@ -87,7 +80,7 @@ async def _handle_email_processing(email_data: Dict[str, Any]):
         applicable_tests = bdq_service.get_applicable_tests_for_dataset(df.columns.tolist())
 
         if not applicable_tests:
-            send_discord_notification(f"❗ No applicable BDQ tests found for provided CSV columns: {df.columns.tolist()}")
+            log(f"No applicable BDQ tests found for provided CSV columns: {df.columns.tolist()}", "WARNING")
             await email_service.send_error_reply(
                 email_data,
                 "No applicable BDQ tests found for the provided CSV columns."
@@ -98,13 +91,13 @@ async def _handle_email_processing(email_data: Dict[str, Any]):
         test_results = []
         
         for test in applicable_tests:
-            logger.info(f"Processing test: {test.label}")
+            log(f"Processing test: {test.label}")
             
             # Get all unique value combinations in acted_upon + consulted
             unique_tuples = get_unique_tuples(df, test.acted_upon, test.consulted)
             
             if not unique_tuples:
-                logger.warning(f"No unique tuples found for test {test.label}")
+                log(f"No unique tuples found for test {test.label}", "WARNING")
                 continue
             
             # Execute test for each unique tuple
@@ -126,7 +119,7 @@ async def _handle_email_processing(email_data: Dict[str, Any]):
                     test_results.extend(row_results)
                     
                 except Exception as e:
-                    logger.error(f"Error executing test {test.label} for tuple {tuple_values}: {e}")
+                    log(f"Error executing test {test.label} for tuple {tuple_values}: {e}", "ERROR")
                     continue
         
         if not test_results:
@@ -139,11 +132,11 @@ async def _handle_email_processing(email_data: Dict[str, Any]):
         # Generate LLM summary
         body = llm_service.generate_intelligent_summary(test_results, email_data, core_type, generate_summary_statistics(test_results, df, core_type))
         
-        send_discord_notification(f"📊 Generating result files with {len(test_results)} test results...")
+        log(f"Generating result files with {len(test_results)} test results...")
         raw_results_csv = csv_service.generate_raw_results_csv(test_results, core_type)
         amended_dataset_csv = csv_service.generate_amended_dataset(df, test_results, core_type)
 
-        send_discord_notification(f"Sending reply email...")
+        log("Sending reply email...")
         await email_service.send_results_reply(
             email_data,
             body,
@@ -151,15 +144,14 @@ async def _handle_email_processing(email_data: Dict[str, Any]):
             amended_dataset_csv
         )
     except Exception as e:
-        logger.error(f"Error processing email in background: {str(e)}", exc_info=True)
-        send_discord_notification(f"Processing error (background): {str(e)}")
+        log(f"Error processing email in background: {str(e)}", "ERROR")
         try:
             await email_service.send_error_reply(
                 email_data,
                 f"An error occurred while processing your request: {str(e)}"
             )
         except Exception as reply_error:
-            logger.error(f"Failed to send error reply: {str(reply_error)}")
+            log(f"Failed to send error reply: {str(reply_error)}", "ERROR")
 
 
 @app.post("/email/incoming")
@@ -169,8 +161,7 @@ async def process_incoming_email(request: Request, background_tasks: BackgroundT
     """
     # Log the raw request for debugging
     body = await request.body()
-    logger.info(f"Received request with {len(body)} bytes")
-    send_discord_notification(f"Received email request: {len(body)} bytes")
+    log(f"Received request with {len(body)} bytes")
     raw_data = json.loads(body.decode('utf-8'))
     
     # Schedule background processing and return immediately
@@ -182,11 +173,7 @@ async def process_incoming_email(request: Request, background_tasks: BackgroundT
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
-    logger.error(f"Unhandled exception: {exc}", exc_info=True)
-    try:
-        send_discord_notification(f"Unhandled exception: {exc}")
-    except Exception:
-        logger.warning("Failed to send Discord notification for unhandled exception")
+    log(f"Unhandled exception: {exc}", "ERROR")
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 if __name__ == "__main__":

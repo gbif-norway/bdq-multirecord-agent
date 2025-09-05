@@ -14,9 +14,7 @@ import pandas as pd
 
 from py4j.java_gateway import JavaGateway, GatewayParameters, launch_gateway
 from py4j.protocol import Py4JNetworkError
-from app.utils.logger import send_discord_notification
-
-logger = logging.getLogger(__name__)
+from app.utils.helper import log
 
 
 @dataclass
@@ -48,11 +46,11 @@ class BDQPy4JService:
         gateway_jar = os.getenv('BDQ_PY4J_GATEWAY_JAR', '/opt/bdq/bdq-py4j-gateway.jar')
         
         java_cmd = ['java'] + java_opts.split() + ['-jar', gateway_jar]
-        logger.info(f"Starting Py4J gateway: {' '.join(java_cmd)}")
+        log(f"Starting Py4J gateway: {' '.join(java_cmd)}")
         port = launch_gateway(java_cmd)
         self.gateway = JavaGateway(gateway_parameters=GatewayParameters(port=port))
-        logger.info(f"Java version: {self.gateway.jvm.System.getProperty('java.version')}")
-        logger.info(f"BDQ Gateway health: {self.gateway.entry_point.healthCheck()}")
+        log(f"Java version: {self.gateway.jvm.System.getProperty('java.version')}")
+        log(f"BDQ Gateway health: {self.gateway.entry_point.healthCheck()}")
     
     def _load_test_mappings(self):
         """Load test mappings from TG2_tests.csv and map to Java methods via reflection"""
@@ -66,7 +64,7 @@ class BDQPy4JService:
             method_info = self._find_method_by_guid(row['MethodGuid'])
             
             if method_info is None:
-                logger.warning(f"No Java method found for GUID {row['MethodGuid']} (test: {row['Label']})")
+                log(f"No Java method found for GUID {row['MethodGuid']} (test: {row['Label']})", "WARNING")
                 continue
                 
             # Parse acted_upon and consulted columns (they can be comma-separated)
@@ -84,7 +82,7 @@ class BDQPy4JService:
             )
             self.tests[row['Label']] = mapping
             
-        logger.info(f"Loaded {len(self.tests)} tests from TG2_tests.csv")
+        log(f"Loaded {len(self.tests)} tests from TG2_tests.csv")
 
     def _find_method_by_guid(self, guid: str) -> Optional[Dict[str, str]]:
         """Use Py4J reflection to find method by GUID"""
@@ -138,7 +136,7 @@ class BDQPy4JService:
                                         'sciname': 'sci_name_qc'
                                     }
                                     library = library_map.get(library, library)
-                                    logger.debug(f"Found method {class_simple_name}.{method_name} for GUID {guid}")
+                                    log(f"Found method {class_simple_name}.{method_name} for GUID {guid}", "DEBUG")
                                     
                                     return {
                                         'library': library,
@@ -147,13 +145,13 @@ class BDQPy4JService:
                                     }
                                     
                 except Exception as e:
-                    logger.debug(f"Error scanning class {class_name}: {e}")
+                    log(f"Error scanning class {class_name}: {e}", "DEBUG")
                     continue
                     
         except Exception as e:
-            logger.warning(f"Error during reflection: {e}")
+            log(f"Error during reflection: {e}", "WARNING")
             
-        logger.debug(f"No method found for GUID {guid}")
+        log(f"No method found for GUID {guid}", "DEBUG")
         return None
     
     def get_applicable_tests_for_dataset(self, columns: List[str]) -> List[TG2TestMapping]:
@@ -166,9 +164,9 @@ class BDQPy4JService:
                 applicable_tests.append(test_mapping)
             else:
                 missing_cols = [col for col in test_mapping.acted_upon if col not in columns]
-                logger.debug(f"Test {test_label} skipped - missing columns: {missing_cols}")
+                log(f"Test {test_label} skipped - missing columns: {missing_cols}", "DEBUG")
         
-        logger.info(f"Found {len(applicable_tests)} applicable tests out of {len(self.tests)} total tests")
+        log(f"Found {len(applicable_tests)} applicable tests out of {len(self.tests)} total tests")
         return applicable_tests
     
     def execute_single_test(self, java_class: str, java_method: str, acted_upon: List[str], consulted: List[str], tuple_values: List[str]) -> Dict[str, Any]:
@@ -193,7 +191,7 @@ class BDQPy4JService:
             errors = list(result.get("errors", []))
             
             if errors:
-                logger.warning(f"Test {java_class}.{java_method} had errors: {errors}")
+                log(f"Test {java_class}.{java_method} had errors: {errors}", "WARNING")
                 return {
                     'status': 'ERROR',
                     'result': None,
@@ -205,7 +203,7 @@ class BDQPy4JService:
                 # Return the first (and only) result
                 return tuple_results[0]
             else:
-                logger.warning(f"Test {java_class}.{java_method} returned no results")
+                log(f"Test {java_class}.{java_method} returned no results", "WARNING")
                 return {
                     'status': 'NO_RESULT',
                     'result': None,
@@ -214,7 +212,7 @@ class BDQPy4JService:
                 }
                 
         except Exception as e:
-            logger.error(f"Error executing test {java_class}.{java_method}: {e}")
+            log(f"Error executing test {java_class}.{java_method}: {e}", "ERROR")
             return {
                 'status': 'ERROR',
                 'result': None,
@@ -227,8 +225,8 @@ class BDQPy4JService:
         if self.gateway:
             try:
                 self.gateway.shutdown()
-                logger.info("Py4J gateway connection closed")
+                log("Py4J gateway connection closed")
             except Exception as e:
-                logger.error(f"Error shutting down Py4J gateway connection: {e}")
+                log(f"Error shutting down Py4J gateway connection: {e}", "ERROR")
             finally:
                 self.gateway = None

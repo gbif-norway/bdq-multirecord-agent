@@ -2,7 +2,34 @@
 from typing import List, Dict, Optional, Any
 import pandas as pd
 import logging
+import requests
+import os
 from pydantic import BaseModel
+
+
+def log(message: str, level: str = "INFO"):
+    """Simple logging function that logs to console and Discord"""
+    logger = logging.getLogger(__name__)
+    
+    # Log to console using standard Python logging
+    if level.upper() == "DEBUG":
+        logger.debug(message)
+    elif level.upper() == "INFO":
+        logger.info(message)
+    elif level.upper() == "WARNING":
+        logger.warning(message)
+    elif level.upper() == "ERROR":
+        logger.error(message)
+    else:
+        logger.info(message)
+    
+    # Send to Discord
+    webhook_url = os.getenv("DISCORD_WEBHOOK")
+    if webhook_url:
+        try:
+            requests.post(webhook_url, json={"content": message}, timeout=10)
+        except Exception:
+            pass  # Don't let Discord failures break logging
 
 class BDQTestExecutionResult(BaseModel):
     """Model for complete test execution result for a row"""
@@ -16,29 +43,26 @@ class BDQTestExecutionResult(BaseModel):
 
 def get_unique_tuples(df, acted_upon: List[str], consulted: List[str]) -> List[List[str]]:
     """Get unique tuples for test execution"""
-    logger = logging.getLogger(__name__)
-    
     # Combine acted_upon and consulted columns
     all_columns = acted_upon + consulted
     
     # Check if all columns exist in the dataframe
     missing_columns = [col for col in all_columns if col not in df.columns]
     if missing_columns:
-        logger.warning(f"Missing columns for tuple generation: {missing_columns}")
+        log(f"Missing columns for tuple generation: {missing_columns}", "WARNING")
         return []
     
     # Get unique combinations
     unique_df = df[all_columns].drop_duplicates()
     tuples = unique_df.values.tolist()
     
-    logger.debug(f"Found {len(tuples)} unique tuples for columns: {all_columns}")
+    log(f"Found {len(tuples)} unique tuples for columns: {all_columns}", "DEBUG")
     return tuples
     
     
 def expand_single_test_results_to_all_rows(df, test_mapping, tuple_result, tuple_values, core_type) -> List:
     """Expand tuple results to individual row results"""
     
-    logger = logging.getLogger(__name__)
     row_results = []
     
     # Find all rows that match this tuple
@@ -47,7 +71,7 @@ def expand_single_test_results_to_all_rows(df, test_mapping, tuple_result, tuple
     # Check if all columns exist
     missing_columns = [col for col in all_columns if col not in df.columns]
     if missing_columns:
-        logger.warning(f"Missing columns for result expansion: {missing_columns}")
+        log(f"Missing columns for result expansion: {missing_columns}", "WARNING")
         return []
     
     # Create a mask for rows that match the tuple values
@@ -73,7 +97,7 @@ def expand_single_test_results_to_all_rows(df, test_mapping, tuple_result, tuple
         )
         row_results.append(bdq_result)
     
-    logger.debug(f"Expanded tuple result to {len(row_results)} row results")
+    log(f"Expanded tuple result to {len(row_results)} row results", "DEBUG")
     return row_results
 
 

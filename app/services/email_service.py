@@ -1,13 +1,11 @@
 import base64
-import logging
 import requests
 import os
 import hmac
 import hashlib
 import json
 from typing import Optional, List
-
-logger = logging.getLogger(__name__)
+from app.utils.helper import log
 
 class EmailService:
     """Service for handling email operations"""
@@ -50,7 +48,7 @@ class EmailService:
                 b64_raw = (csv_attachment['contentBase64']
                 b64 = b64_raw.strip()
 
-                logger.info(
+                log(
                     f"CSV attachment candidate: filename={csv_attachment.get('filename')}, "
                     f"mime={csv_attachment.get('mimeType')}, size={csv_attachment.get('size')}, b64_len={len(b64)}"
                 )
@@ -65,7 +63,7 @@ class EmailService:
                     try:
                         decoded_bytes = base64.b64decode(b64.encode('utf-8'))
                     except Exception as decode_err:
-                        logger.error(
+                        log(
                             f"Failed to decode base64 for {csv_attachment.get('filename')}: {decode_err}"
                         )
                         continue
@@ -73,32 +71,32 @@ class EmailService:
                 try:
                     csv_content = decoded_bytes.decode('utf-8', errors='replace')
                 except Exception as enc_err:
-                    logger.error(
+                    log(
                         f"Failed to decode bytes to UTF-8 for {csv_attachment.get('filename')}: {enc_err}"
                     )
                     continue
 
-                logger.info(
+                log(
                     f"Extracted CSV attachment: {csv_attachment.get('filename')} ({len(csv_content)} chars)"
                 )
                 return csv_content
 
-            logger.warning("All CSV-like attachments were empty or undecodable")
+            log("All CSV-like attachments were empty or undecodable", "WARNING")
             return None
 
         except Exception as e:
-            logger.error(f"Error extracting CSV attachment: {e}")
+            log(f"Error extracting CSV attachment: {e}", "ERROR")
             return None
     
     async def send_reply(self, email_data: dict, body: str, attachments: Optional[List[dict]] = None):
         """Send reply email with optional attachments"""
         try:
             if not self.gmail_send_endpoint:
-                logger.error("GMAIL_SEND endpoint not configured")
+                log("GMAIL_SEND endpoint not configured", "ERROR")
                 return
             
             if not self.hmac_secret:
-                logger.error("HMAC_SECRET not configured")
+                log("HMAC_SECRET not configured", "ERROR")
                 return
             
             reply_data = {
@@ -106,7 +104,7 @@ class EmailService:
                 "htmlBody": body,
                 "attachments": attachments or []
             }
-            logger.info(f"Reply data: {reply_data}")
+            log(f"Reply data: {reply_data}")
             
             # Convert to JSON string for HMAC
             body_json = json.dumps(reply_data)
@@ -123,7 +121,7 @@ class EmailService:
                 timeout=30
             )
             response.raise_for_status()
-            logger.info(
+            log(
                 f"Sent reply to {email_data.get('headers').get('from')}; status={response.status_code}; body={(response.text or '')[:200]}"
             )
             
@@ -131,7 +129,7 @@ class EmailService:
             try:
                 status = getattr(e.response, 'status_code', None) if hasattr(e, 'response') else None
                 text = getattr(e.response, 'text', '') if hasattr(e, 'response') else ''
-                logger.error(f"Error sending reply: {e}; status={status}; body={(text or '')[:200]}")
+                log(f"Error sending reply: {e}; status={status}; body={(text or '')[:200]}", "ERROR")
             except Exception:
-                logger.error(f"Error sending reply: {e}")
+                log(f"Error sending reply: {e}", "ERROR")
     
