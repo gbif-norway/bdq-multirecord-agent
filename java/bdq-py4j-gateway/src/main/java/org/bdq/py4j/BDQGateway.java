@@ -231,6 +231,90 @@ public class BDQGateway {
     public String getJavaVersion() {
         return System.getProperty("java.version");
     }
+
+    /**
+     * Discover available BDQ methods keyed by their annotation label across known classes.
+     * Returns a Map: label -> { library, class_name, method_name, annotation_type, annotation_label }
+     */
+    public Map<String, Map<String, String>> getAvailableMethodsByLabel() {
+        Map<String, Map<String, String>> out = new HashMap<>();
+        // Classes to scan
+        String[] classNames = new String[] {
+            "org.filteredpush.qc.metadata.DwCMetadataDQ",
+            "org.filteredpush.qc.metadata.DwCMetadataDQDefaults",
+            "org.filteredpush.qc.georeference.DwCGeoRefDQ",
+            "org.filteredpush.qc.georeference.DwCGeoRefDQDefaults",
+            "org.filteredpush.qc.date.DwCEventDQ",
+            "org.filteredpush.qc.date.DwCEventDQDefaults",
+            "org.filteredpush.qc.date.DwCOtherDateDQ",
+            "org.filteredpush.qc.date.DwCOtherDateDQDefaults",
+            "org.filteredpush.qc.sciname.DwCSciNameDQ",
+            "org.filteredpush.qc.sciname.DwCSciNameDQDefaults"
+        };
+
+        Set<String> accepted = new HashSet<>(Arrays.asList("Validation","Amendment","Issue","Measure"));
+
+        for (String className : classNames) {
+            try {
+                Class<?> clazz = Class.forName(className);
+                for (Method m : clazz.getMethods()) {
+                    for (java.lang.annotation.Annotation ann : m.getAnnotations()) {
+                        String annType = ann.annotationType().getSimpleName();
+                        if (!accepted.contains(annType)) continue;
+                        try {
+                            // All target annotations expose label()
+                            Method labelMethod = ann.annotationType().getMethod("label");
+                            Object labelObj = labelMethod.invoke(ann);
+                            if (labelObj == null) continue;
+                            String label = labelObj.toString();
+                            if (label.isEmpty()) continue;
+
+                            String simpleClass = clazz.getSimpleName();
+                            String methodName = m.getName();
+                            String pkg = clazz.getPackage().getName();
+                            String lib = pkg.substring(pkg.lastIndexOf('.') + 1);
+                            if ("metadata".equals(lib)) lib = "rec_occur_qc";
+                            else if ("georeference".equals(lib)) lib = "geo_ref_qc";
+                            else if ("date".equals(lib)) lib = "event_date_qc";
+                            else if ("sciname".equals(lib)) lib = "sci_name_qc";
+
+                            Map<String, String> candidate = new HashMap<>();
+                            candidate.put("library", lib);
+                            candidate.put("class_name", simpleClass);
+                            candidate.put("method_name", methodName);
+                            candidate.put("annotation_type", annType);
+                            candidate.put("annotation_label", label);
+
+                            Map<String, String> prev = out.get(label);
+                            if (prev == null) {
+                                out.put(label, candidate);
+                            } else {
+                                // Prefer non-String suffixed method names if duplicates
+                                String prevName = prev.get("method_name");
+                                if (prevName != null && prevName.endsWith("String") && !methodName.endsWith("String")) {
+                                    out.put(label, candidate);
+                                }
+                            }
+                        } catch (Exception ignore) {
+                            // If label() missing, skip
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                logger.warn("Discovery error in {}: {}", className, e.getMessage());
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Find single method info by label.
+     */
+    public Map<String, String> findMethodByLabel(String label) {
+        Map<String, Map<String, String>> all = getAvailableMethodsByLabel();
+        Map<String, String> m = all.get(label);
+        return m != null ? m : new HashMap<>();
+    }
     
     public static void main(String[] args) {
         try {
