@@ -6,6 +6,14 @@ import requests
 import os
 from pydantic import BaseModel
 
+# Minimal root logger config so Cloud Run captures logs
+_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=getattr(logging, _LEVEL, logging.INFO),
+    handlers=[logging.StreamHandler()],
+    force=True,
+)
+
 
 def log(message: str, level: str = "INFO"):
     """Simple logging function that logs to console and Discord"""
