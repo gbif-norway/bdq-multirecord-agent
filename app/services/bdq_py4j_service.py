@@ -1,13 +1,13 @@
 """
 Py4J-based BDQ Service - Subprocess Py4J gateway for fast execution with test discovery
 """
-import logging
 import time
 import subprocess
 import json
 import tempfile
 import os
 import shutil
+import select
 from typing import Dict, List, Any, Optional, Tuple
 from pathlib import Path
 from dataclasses import dataclass
@@ -67,40 +67,67 @@ class BDQPy4JService:
         java_cmd = ['java'] + java_opts.split() + ['-jar', gateway_jar]
         log(f"Starting Py4J gateway: {' '.join(java_cmd)}")
 
-        process = None
         try:
-            # Start the Java process (no need to read port from stdout)
+            # Start Java process and wait for explicit "started on port" line on stderr
             process = subprocess.Popen(
                 java_cmd,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
-                text=True
+                text=True,
+                bufsize=1
             )
 
-            # Use the hardcoded port that matches the Java gateway
-            port = 25333
-            log(f"Py4J gateway starting on port: {port}")
-
-            # Wait for gateway to become available with retries
+            started_port: Optional[int] = None
             start_ts = time.time()
-            last_err: Optional[Exception] = None
+            stderr_buf: List[str] = []
+            log("Waiting for BDQ Py4J Gateway to report its listening port...")
+
             while time.time() - start_ts < startup_timeout:
-                # If the Java process exited early, surface stderr and fail fast
+                # Exit early if process died
                 if process.poll() is not None:
-                    stderr_out = None
                     try:
-                        stderr_out = process.stderr.read() if process.stderr else ''
+                        remaining = process.stderr.read() if process.stderr else ''
                     except Exception:
-                        stderr_out = ''
-                    msg = f"Py4J gateway process exited with code {process.returncode}."
-                    if stderr_out:
-                        msg += f" Java stderr: {stderr_out.strip()[-2000:]}"
+                        remaining = ''
+                    stderr_text = ''.join(stderr_buf) + (remaining or '')
+                    msg = f"Py4J gateway process exited with code {process.returncode}. Stderr: {stderr_text[-2000:]}"
                     log(msg, "ERROR")
                     raise RuntimeError(msg)
 
+                # Read available stderr non-blocking
+                if process.stderr:
+                    rlist, _, _ = select.select([process.stderr], [], [], retry_interval)
+                    if rlist:
+                        line = process.stderr.readline()
+                        if line:
+                            stderr_buf.append(line)
+                            if "BDQ Py4J Gateway started on port" in line:
+                                try:
+                                    started_port = int(line.strip().rsplit(' ', 1)[-1])
+                                    log(f"Py4J gateway reported listening port: {started_port}")
+                                    break
+                                except Exception:
+                                    pass
+                        continue
+
+                # Small sleep to avoid tight loop when no data
+                time.sleep(0.05)
+
+            if started_port is None:
+                tail = ''.join(stderr_buf)[-2000:]
+                err_msg = (
+                    f"Timed out after {startup_timeout}s waiting for BDQ gateway startup banner. "
+                    f"Stderr tail: {tail}"
+                )
+                log(err_msg, "ERROR")
+                raise RuntimeError(err_msg)
+
+            # Connect to the reported port
+            last_err: Optional[Exception] = None
+            connect_start = time.time()
+            while time.time() - connect_start < startup_timeout:
                 try:
-                    self.gateway = JavaGateway(gateway_parameters=GatewayParameters(port=port))
-                    # If connected, emit basic health info and return
+                    self.gateway = JavaGateway(gateway_parameters=GatewayParameters(port=started_port))
                     log(f"Java version: {self.gateway.jvm.System.getProperty('java.version')}")
                     log(f"BDQ Gateway health: {self.gateway.entry_point.healthCheck()}")
                     return
@@ -108,22 +135,7 @@ class BDQPy4JService:
                     last_err = e
                     time.sleep(retry_interval)
 
-            # Timed out waiting for gateway
-            tail = ''
-            try:
-                if process and process.stderr:
-                    contents = process.stderr.read()
-                    if contents:
-                        lines = contents.splitlines()
-                        tail = '\n'.join(lines[-50:])  # last 50 lines
-            except Exception:
-                pass
-            err_msg = (
-                f"Timed out after {startup_timeout}s waiting for Py4J gateway on 127.0.0.1:{port}. "
-                f"Last error: {last_err}. Java stderr tail: {tail}"
-            )
-            log(err_msg, "ERROR")
-            raise RuntimeError(err_msg)
+            raise RuntimeError(f"Could not connect to gateway on port {started_port}: {last_err}")
 
         except Exception as e:
             log(f"Failed to start Py4J gateway: {e}", "ERROR")
@@ -163,7 +175,9 @@ class BDQPy4JService:
 
 
     def _find_method_by_label(self, label: str) -> Optional[Dict[str, str]]:
-        """Use Py4J reflection to find method by annotation label"""
+        """Use Py4J reflection to find method by annotation label.
+        Preference: choose non-"String" suffixed methods when multiple share a label.
+        """
         # List of Java classes to scan (matching bdqtestrunner)
         java_classes = [
             'org.filteredpush.qc.metadata.DwCMetadataDQ',
@@ -183,7 +197,7 @@ class BDQPy4JService:
         
         try:
             jvm = self.gateway.jvm
-            
+            best_candidate: Optional[Dict[str, str]] = None
             for class_name in java_classes:
                 try:
                     java_class = jvm.Class.forName(class_name)
@@ -220,15 +234,20 @@ class BDQPy4JService:
                                             'sciname': 'sci_name_qc'
                                         }
                                         library = library_map.get(library, library)
-                                        log(f"Found method {class_simple_name}.{method_name} for label {label}", "DEBUG")
-                                        
-                                        return {
+                                        candidate = {
                                             'library': library,
                                             'class_name': class_simple_name,
                                             'method_name': method_name,
                                             'annotation_type': annotation_type,
                                             'annotation_label': annotation_label
                                         }
+                                        # Prefer non-String-suffixed methods; otherwise keep first seen
+                                        if best_candidate is None:
+                                            best_candidate = candidate
+                                        else:
+                                            if best_candidate['method_name'].endswith('String') and not method_name.endswith('String'):
+                                                best_candidate = candidate
+                                        continue
                                         
                                 except Exception as e:
                                     # Some annotations might not have a label() method
@@ -241,12 +260,16 @@ class BDQPy4JService:
                     
         except Exception as e:
             log(f"Error in _find_method_by_label: {e}", "WARNING")
-            
+        if best_candidate:
+            log(f"Found method {best_candidate['class_name']}.{best_candidate['method_name']} for label {label}", "DEBUG")
+            return best_candidate
         log(f"No method found for label {label}", "DEBUG")
         return None
 
     def _get_all_available_methods(self) -> Dict[str, Dict[str, str]]:
-        """Get all available methods with their annotation labels"""
+        """Get all available methods with their annotation labels.
+        If multiple methods share a label, prefer non-"String" suffixed method names.
+        """
         # List of Java classes to scan
         java_classes = [
             'org.filteredpush.qc.metadata.DwCMetadataDQ',
@@ -305,13 +328,20 @@ class BDQPy4JService:
                                         }
                                         library = library_map.get(library, library)
                                         
-                                        available_methods[annotation_label] = {
+                                        new_candidate = {
                                             'library': library,
                                             'class_name': class_simple_name,
                                             'method_name': method_name,
                                             'annotation_type': annotation_type,
                                             'annotation_label': annotation_label
                                         }
+                                        prev = available_methods.get(annotation_label)
+                                        if prev is None:
+                                            available_methods[annotation_label] = new_candidate
+                                        else:
+                                            # Replace only if previous endswith('String') and new does not
+                                            if prev['method_name'].endswith('String') and not method_name.endswith('String'):
+                                                available_methods[annotation_label] = new_candidate
                                         
                                 except Exception as e:
                                     # Some annotations might not have a label() method
