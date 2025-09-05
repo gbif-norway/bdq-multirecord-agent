@@ -22,6 +22,9 @@ class CSVService:
             
             # Clean column names (remove surrounding quotes, whitespace)
             df.columns = df.columns.str.strip().str.strip("\"'")
+
+            # Ensure Darwin Core prefixes exist (e.g., convert 'country' to 'dwc:country')
+            df = self._ensure_dwc_prefixed_columns(df)
             
             # Detect core type
             core_type = self._detect_core_type(df.columns.tolist())
@@ -56,6 +59,27 @@ class CSVService:
             return 'taxon'
         else:
             return None
+
+    def _ensure_dwc_prefixed_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        """For each column that does not start with 'dwc:', convert to a 'dwc:' alias if missing.
+
+        Keeps original columns intact and creates additional prefixed columns so that
+        BDQ mappings that expect 'dwc:' names resolve without changing inputs.
+        """
+        try:
+            added = 0
+            for col in list(df.columns):
+                if not col.startswith('dwc:'):
+                    prefixed = f'dwc:{col}'
+                    if prefixed not in df.columns:
+                        df[prefixed] = df[col]
+                        added += 1
+            if added:
+                log(f"Added {added} 'dwc:'-prefixed column aliases to match BDQ mappings")
+            return df
+        except Exception as e:
+            log(f"Error ensuring dwc-prefixed columns: {e}", "WARNING")
+            return df
     
     def generate_raw_results_csv(self, test_results: List[BDQTestExecutionResult], core_type: str) -> str:
         """Generate CSV with raw BDQ test results"""

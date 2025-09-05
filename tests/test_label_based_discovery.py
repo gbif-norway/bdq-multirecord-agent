@@ -20,11 +20,12 @@ class TestLabelBasedDiscovery:
     
     @pytest.fixture(scope="class")
     def bdq_service(self):
-        """Shared BDQ service instance for all tests in this class."""
-        # Skip tests if we're not in Docker environment
-        if not os.path.exists('/opt/bdq/bdq-py4j-gateway.jar'):
-            pytest.skip("BDQ Py4J gateway not available - run in Docker environment")
-        
+        """Shared BDQ service instance for all tests in this class (no guards)."""
+        gateway_jar = os.getenv('BDQ_PY4J_GATEWAY_JAR', '/opt/bdq/bdq-py4j-gateway.jar')
+        assert os.path.exists(gateway_jar), (
+            f"Expected BDQ gateway JAR at {gateway_jar}. Run inside the Docker image that contains the gateway."
+        )
+
         service = BDQPy4JService()
         yield service
         service.shutdown()

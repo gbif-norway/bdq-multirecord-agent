@@ -13,6 +13,7 @@ All local development should be done in Docker containers.
 3. **CSV Extraction**: Extracts and validates CSV attachments
 4. **Core Detection**: Identifies occurrence vs taxon core based on column presence
 5. **Test Discovery**: Finds applicable BDQ tests from TG2_tests.csv
+   - If multiple Java methods share the same annotation label, the service prefers the method whose name does not end with `String` (for stability across libraries)
 6. **Test candidate deduplication**: Extract unique tuples for running on each test
 7. **Test Execution**: Runs tests on unique tuples via Py4J integration with Java BDQ libraries
    - Local JVM process bdq-py4j-gateway (in the same Docker container) with resident FilteredPush BDQ libraries git submodules (geo_ref_qc, event_date_qc, sci_name_qc, rec_occur_qc)

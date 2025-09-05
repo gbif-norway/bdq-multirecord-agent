@@ -90,6 +90,7 @@ async def _handle_email_processing(email_data: Dict[str, Any]):
         # Get applicable BDQ tests
         bdq_service_instance = get_bdq_service()
         applicable_tests = bdq_service_instance.get_applicable_tests_for_dataset(df.columns.tolist())
+        log(f"Applicable BDQ tests: {len(applicable_tests)} of {len(bdq_service_instance.tests)} total")
 
         if not applicable_tests:
             log(f"No applicable BDQ tests found for provided CSV columns: {df.columns.tolist()}", "WARNING")
