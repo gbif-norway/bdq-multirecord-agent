@@ -16,7 +16,6 @@ from app.services.email_service import EmailService
 from app.services.bdq_py4j_service import BDQPy4JService
 from app.services.csv_service import CSVService
 from app.services.llm_service import LLMService
-from app.services.tg2test_service import TG2TestMapper
 from app.utils.logger import setup_logging, send_discord_notification
 from app.utils.helper import get_unique_tuples, expand_single_test_results_to_all_rows, generate_summary_statistics
 import pandas as pd
@@ -32,7 +31,6 @@ email_service = EmailService()
 bdq_service = BDQPy4JService()
 csv_service = CSVService()
 llm_service = LLMService()
-test_mapper = TG2TestMapper(bdq_service)
 
 
 app = FastAPI(
@@ -86,7 +84,7 @@ async def _handle_email_processing(email_data: Dict[str, Any]):
             return
 
         # Get applicable BDQ tests
-        applicable_tests = test_mapper.get_applicable_tests_for_dataset(df.columns.tolist())
+        applicable_tests = bdq_service.get_applicable_tests_for_dataset(df.columns.tolist())
 
         if not applicable_tests:
             send_discord_notification(f"❗ No applicable BDQ tests found for provided CSV columns: {df.columns.tolist()}")

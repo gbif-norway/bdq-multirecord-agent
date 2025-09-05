@@ -1,5 +1,5 @@
 """
-Py4J-based BDQ Service - Subprocess Py4J gateway for fast execution
+Py4J-based BDQ Service - Subprocess Py4J gateway for fast execution with test discovery
 """
 import logging
 import time
@@ -9,6 +9,8 @@ import tempfile
 import os
 from typing import Dict, List, Any, Optional, Tuple
 from pathlib import Path
+from dataclasses import dataclass
+import pandas as pd
 
 from py4j.java_gateway import JavaGateway, GatewayParameters, launch_gateway
 from py4j.protocol import Py4JNetworkError
@@ -17,14 +19,28 @@ from app.utils.logger import send_discord_notification
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class TG2TestMapping:
+    """Represents a TG2Test details with corresponding java class so it can be accessed via Py4J"""
+    label: str
+    library: str
+    java_class: str
+    java_method: str
+    acted_upon: List[str]
+    consulted: List[str]
+    test_type: str
+
+
 class BDQPy4JService:
     """
-    Py4J-based BDQ Service - Subprocess gateway for fast execution
+    Py4J-based BDQ Service - Subprocess gateway for fast execution with test discovery
     """
     
     def __init__(self):
         self.gateway: Optional[JavaGateway] = None
+        self.tests: Dict[str, TG2TestMapping] = {}
         self._start_gateway()
+        self._load_test_mappings()
     
     def _start_gateway(self):
         """Start Py4J gateway as subprocess"""
@@ -38,7 +54,122 @@ class BDQPy4JService:
         logger.info(f"Java version: {self.gateway.jvm.System.getProperty('java.version')}")
         logger.info(f"BDQ Gateway health: {self.gateway.entry_point.healthCheck()}")
     
+    def _load_test_mappings(self):
+        """Load test mappings from TG2_tests.csv and map to Java methods via reflection"""
+        df = pd.read_csv("/app/TG2_tests.csv", dtype=str).fillna('')
+        
+        # Filter out measures (they don't have Java implementations)
+        df = df[df['Type'] != 'Measure']
+
+        for _, row in df.iterrows():
+            # Use Py4J reflection to find the method
+            method_info = self._find_method_by_guid(row['MethodGuid'])
+            
+            if method_info is None:
+                logger.warning(f"No Java method found for GUID {row['MethodGuid']} (test: {row['Label']})")
+                continue
+                
+            # Parse acted_upon and consulted columns (they can be comma-separated)
+            acted_upon = [col.strip() for col in row['InformationElement:ActedUpon'].split(',') if col.strip()]
+            consulted = [col.strip() for col in row['InformationElement:Consulted'].split(',') if col.strip()]
+            
+            mapping = TG2TestMapping(
+                label=row['Label'],
+                library=method_info['library'],
+                java_class=method_info['class_name'],
+                java_method=method_info['method_name'],
+                acted_upon=acted_upon,
+                consulted=consulted,
+                test_type=row['Type']
+            )
+            self.tests[row['Label']] = mapping
+            
+        logger.info(f"Loaded {len(self.tests)} tests from TG2_tests.csv")
+
+    def _find_method_by_guid(self, guid: str) -> Optional[Dict[str, str]]:
+        """Use Py4J reflection to find method by GUID"""
+        # List of Java classes to scan (matching bdqtestrunner)
+        java_classes = [
+            'org.filteredpush.qc.metadata.DwCMetadataDQ',
+            'org.filteredpush.qc.metadata.DwCMetadataDQDefaults', 
+            'org.filteredpush.qc.georeference.DwCGeoRefDQ',
+            'org.filteredpush.qc.georeference.DwCGeoRefDQDefaults',
+            'org.filteredpush.qc.date.DwCEventDQ',
+            'org.filteredpush.qc.date.DwCEventDQDefaults',
+            'org.filteredpush.qc.date.DwCOtherDateDQ',
+            'org.filteredpush.qc.date.DwCOtherDateDQDefaults',
+            'org.filteredpush.qc.sciname.DwCSciNameDQ',
+            'org.filteredpush.qc.sciname.DwCSciNameDQDefaults'
+        ]
+        
+        try:
+            jvm = self.gateway.jvm
+            
+            for class_name in java_classes:
+                try:
+                    java_class = jvm.Class.forName(class_name)
+                    methods = java_class.getMethods()
+                    
+                    for method in methods:
+                        annotations = method.getAnnotations()
+                        
+                        for annotation in annotations:
+                            if annotation.annotationType().getSimpleName() == 'Provides':
+                                # Get the GUID value
+                                annotation_value = annotation.value()
+                                
+                                # Check if GUID matches (with or without urn:uuid: prefix)
+                                if (annotation_value == guid or annotation_value == f"urn:uuid:{guid}"):
+                                    
+                                    # Extract class and method names
+                                    declaring_class = method.getDeclaringClass()
+                                    class_simple_name = declaring_class.getSimpleName()
+                                    method_name = method.getName()
+                                    
+                                    # Extract library name from package
+                                    package_name = declaring_class.getPackage().getName()
+                                    library = package_name.split('.')[-1]  # e.g., 'georeference' -> 'geo_ref_qc'
+                                    
+                                    # Map library names to match the repo names
+                                    library_map = {
+                                        'metadata': 'rec_occur_qc',
+                                        'georeference': 'geo_ref_qc', 
+                                        'date': 'event_date_qc',
+                                        'sciname': 'sci_name_qc'
+                                    }
+                                    library = library_map.get(library, library)
+                                    logger.debug(f"Found method {class_simple_name}.{method_name} for GUID {guid}")
+                                    
+                                    return {
+                                        'library': library,
+                                        'class_name': class_simple_name,
+                                        'method_name': method_name
+                                    }
+                                    
+                except Exception as e:
+                    logger.debug(f"Error scanning class {class_name}: {e}")
+                    continue
+                    
+        except Exception as e:
+            logger.warning(f"Error during reflection: {e}")
+            
+        logger.debug(f"No method found for GUID {guid}")
+        return None
     
+    def get_applicable_tests_for_dataset(self, columns: List[str]) -> List[TG2TestMapping]:
+        """Get tests that are applicable to the dataset based on available columns"""
+        applicable_tests = []
+        
+        for test_label, test_mapping in self.tests.items():
+            # Check if all acted_upon columns exist in the dataset
+            if all(col in columns for col in test_mapping.acted_upon):
+                applicable_tests.append(test_mapping)
+            else:
+                missing_cols = [col for col in test_mapping.acted_upon if col not in columns]
+                logger.debug(f"Test {test_label} skipped - missing columns: {missing_cols}")
+        
+        logger.info(f"Found {len(applicable_tests)} applicable tests out of {len(self.tests)} total tests")
+        return applicable_tests
     
     def execute_single_test(self, java_class: str, java_method: str, acted_upon: List[str], consulted: List[str], tuple_values: List[str]) -> Dict[str, Any]:
         """Execute a single BDQ test for a specific tuple of values"""
