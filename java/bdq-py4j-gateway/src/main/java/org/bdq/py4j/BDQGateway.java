@@ -235,16 +235,13 @@ public class BDQGateway {
     public static void main(String[] args) {
         try {
             BDQGateway gateway = new BDQGateway();
-            GatewayServer server = new GatewayServer(gateway, 0); // Port 0 = auto-assign
+            int port = 25333; // Fixed port for Py4J gateway
+            GatewayServer server = new GatewayServer(gateway, port);
             server.start();
             
-            int port = server.getListeningPort();
-            logger.info("🚀 BDQ Py4J Gateway started on port {}", port);
-            logger.info("Java version: {}", System.getProperty("java.version"));
-            
-            // Output port to stdout for Python to read
-            System.out.println("PY4J_GATEWAY_PORT=" + port);
-            System.out.flush();
+            // Log startup info to stderr
+            System.err.println("🚀 BDQ Py4J Gateway started on port " + port);
+            System.err.println("Java version: " + System.getProperty("java.version"));
             
             // Keep the server running
             Thread.currentThread().join();

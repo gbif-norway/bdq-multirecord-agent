@@ -49,27 +49,43 @@ class BDQPy4JService:
         log(f"Starting Py4J gateway: {' '.join(java_cmd)}")
         
         try:
-            port = launch_gateway(java_cmd)
+            # Start the Java process (no need to read port from stdout)
+            process = subprocess.Popen(
+                java_cmd,
+                stdout=subprocess.DEVNULL,  # Don't capture stdout
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            
+            # Use the hardcoded port that matches the Java gateway
+            port = 25333
+            log(f"Py4J gateway starting on port: {port}")
+            
+            # Give the gateway time to fully start up
+            time.sleep(10)
+            
+            # Connect to the gateway
             self.gateway = JavaGateway(gateway_parameters=GatewayParameters(port=port))
             log(f"Java version: {self.gateway.jvm.System.getProperty('java.version')}")
             log(f"BDQ Gateway health: {self.gateway.entry_point.healthCheck()}")
+            
         except Exception as e:
             log(f"Failed to start Py4J gateway: {e}", "ERROR")
             raise
     
     def _load_test_mappings(self):
-        """Load test mappings from TG2_tests.csv and map to Java methods via reflection"""
+        """Load test mappings from TG2_tests.csv and map to Java methods via label-based reflection"""
         df = pd.read_csv("/app/TG2_tests.csv", dtype=str).fillna('')
         
-        # Filter out measures (they don't have Java implementations)
-        df = df[df['Type'] != 'Measure']
+        # No need to filter out measures - they have Java implementations with @Measure annotations
+        log(f"Loading test mappings for {len(df)} tests from TG2_tests.csv using label-based discovery...")
 
         for _, row in df.iterrows():
-            # Use Py4J reflection to find the method
-            method_info = self._find_method_by_guid(row['MethodGuid'])
+            # Use Py4J reflection to find the method by label
+            method_info = self._find_method_by_label(row['Label'])
             
             if method_info is None:
-                log(f"No Java method found for GUID {row['MethodGuid']} (test: {row['Label']})", "WARNING")
+                log(f"No Java method found for label {row['Label']}", "ERROR")
                 continue
                 
             # Parse acted_upon and consulted columns (they can be comma-separated)
@@ -87,10 +103,11 @@ class BDQPy4JService:
             )
             self.tests[row['Label']] = mapping
             
-        log(f"Loaded {len(self.tests)} tests from TG2_tests.csv")
+        log(f"Loaded {len(self.tests)} tests from TG2_tests.csv using label-based discovery")
 
-    def _find_method_by_guid(self, guid: str) -> Optional[Dict[str, str]]:
-        """Use Py4J reflection to find method by GUID"""
+
+    def _find_method_by_label(self, label: str) -> Optional[Dict[str, str]]:
+        """Use Py4J reflection to find method by annotation label"""
         # List of Java classes to scan (matching bdqtestrunner)
         java_classes = [
             'org.filteredpush.qc.metadata.DwCMetadataDQ',
@@ -105,6 +122,9 @@ class BDQPy4JService:
             'org.filteredpush.qc.sciname.DwCSciNameDQDefaults'
         ]
         
+        # Annotation types to look for
+        annotation_types = ['Validation', 'Amendment', 'Issue', 'Measure']
+        
         try:
             jvm = self.gateway.jvm
             
@@ -117,47 +137,139 @@ class BDQPy4JService:
                         annotations = method.getAnnotations()
                         
                         for annotation in annotations:
-                            if annotation.annotationType().getSimpleName() == 'Provides':
-                                # Get the GUID value
-                                annotation_value = annotation.value()
-                                
-                                # Check if GUID matches (with or without urn:uuid: prefix)
-                                if (annotation_value == guid or annotation_value == f"urn:uuid:{guid}"):
+                            annotation_type = annotation.annotationType().getSimpleName()
+                            
+                            # Check if this is one of our target annotation types
+                            if annotation_type in annotation_types:
+                                try:
+                                    # Get the label value from the annotation
+                                    annotation_label = annotation.label()
                                     
-                                    # Extract class and method names
-                                    declaring_class = method.getDeclaringClass()
-                                    class_simple_name = declaring_class.getSimpleName()
-                                    method_name = method.getName()
-                                    
-                                    # Extract library name from package
-                                    package_name = declaring_class.getPackage().getName()
-                                    library = package_name.split('.')[-1]  # e.g., 'georeference' -> 'geo_ref_qc'
-                                    
-                                    # Map library names to match the repo names
-                                    library_map = {
-                                        'metadata': 'rec_occur_qc',
-                                        'georeference': 'geo_ref_qc', 
-                                        'date': 'event_date_qc',
-                                        'sciname': 'sci_name_qc'
-                                    }
-                                    library = library_map.get(library, library)
-                                    log(f"Found method {class_simple_name}.{method_name} for GUID {guid}", "DEBUG")
-                                    
-                                    return {
-                                        'library': library,
-                                        'class_name': class_simple_name,
-                                        'method_name': method_name
-                                    }
+                                    # Check if label matches
+                                    if annotation_label == label:
+                                        # Extract class and method names
+                                        declaring_class = method.getDeclaringClass()
+                                        class_simple_name = declaring_class.getSimpleName()
+                                        method_name = method.getName()
+                                        
+                                        # Extract library name from package
+                                        package_name = declaring_class.getPackage().getName()
+                                        library = package_name.split('.')[-1]
+                                        
+                                        # Map library names to match the repo names
+                                        library_map = {
+                                            'metadata': 'rec_occur_qc',
+                                            'georeference': 'geo_ref_qc', 
+                                            'date': 'event_date_qc',
+                                            'sciname': 'sci_name_qc'
+                                        }
+                                        library = library_map.get(library, library)
+                                        log(f"Found method {class_simple_name}.{method_name} for label {label}", "DEBUG")
+                                        
+                                        return {
+                                            'library': library,
+                                            'class_name': class_simple_name,
+                                            'method_name': method_name,
+                                            'annotation_type': annotation_type,
+                                            'annotation_label': annotation_label
+                                        }
+                                        
+                                except Exception as e:
+                                    # Some annotations might not have a label() method
+                                    log(f"Error getting label from {annotation_type} annotation: {e}", "DEBUG")
+                                    continue
                                     
                 except Exception as e:
                     log(f"Error scanning class {class_name}: {e}", "DEBUG")
                     continue
                     
         except Exception as e:
-            log(f"Error during reflection: {e}", "WARNING")
+            log(f"Error in _find_method_by_label: {e}", "WARNING")
             
-        log(f"No method found for GUID {guid}", "DEBUG")
+        log(f"No method found for label {label}", "DEBUG")
         return None
+
+    def _get_all_available_methods(self) -> Dict[str, Dict[str, str]]:
+        """Get all available methods with their annotation labels"""
+        # List of Java classes to scan
+        java_classes = [
+            'org.filteredpush.qc.metadata.DwCMetadataDQ',
+            'org.filteredpush.qc.metadata.DwCMetadataDQDefaults', 
+            'org.filteredpush.qc.georeference.DwCGeoRefDQ',
+            'org.filteredpush.qc.georeference.DwCGeoRefDQDefaults',
+            'org.filteredpush.qc.date.DwCEventDQ',
+            'org.filteredpush.qc.date.DwCEventDQDefaults',
+            'org.filteredpush.qc.date.DwCOtherDateDQ',
+            'org.filteredpush.qc.date.DwCOtherDateDQDefaults',
+            'org.filteredpush.qc.sciname.DwCSciNameDQ',
+            'org.filteredpush.qc.sciname.DwCSciNameDQDefaults'
+        ]
+        
+        # Annotation types to look for
+        annotation_types = ['Validation', 'Amendment', 'Issue', 'Measure']
+        
+        available_methods = {}
+        
+        try:
+            jvm = self.gateway.jvm
+            
+            for class_name in java_classes:
+                try:
+                    java_class = jvm.Class.forName(class_name)
+                    methods = java_class.getMethods()
+                    
+                    for method in methods:
+                        annotations = method.getAnnotations()
+                        
+                        for annotation in annotations:
+                            annotation_type = annotation.annotationType().getSimpleName()
+                            
+                            # Check if this is one of our target annotation types
+                            if annotation_type in annotation_types:
+                                try:
+                                    # Get the label value from the annotation
+                                    annotation_label = annotation.label()
+                                    
+                                    if annotation_label:  # Only include methods with labels
+                                        # Extract class and method names
+                                        declaring_class = method.getDeclaringClass()
+                                        class_simple_name = declaring_class.getSimpleName()
+                                        method_name = method.getName()
+                                        
+                                        # Extract library name from package
+                                        package_name = declaring_class.getPackage().getName()
+                                        library = package_name.split('.')[-1]
+                                        
+                                        # Map library names to match the repo names
+                                        library_map = {
+                                            'metadata': 'rec_occur_qc',
+                                            'georeference': 'geo_ref_qc', 
+                                            'date': 'event_date_qc',
+                                            'sciname': 'sci_name_qc'
+                                        }
+                                        library = library_map.get(library, library)
+                                        
+                                        available_methods[annotation_label] = {
+                                            'library': library,
+                                            'class_name': class_simple_name,
+                                            'method_name': method_name,
+                                            'annotation_type': annotation_type,
+                                            'annotation_label': annotation_label
+                                        }
+                                        
+                                except Exception as e:
+                                    # Some annotations might not have a label() method
+                                    log(f"Error getting label from {annotation_type} annotation: {e}", "DEBUG")
+                                    continue
+                                    
+                except Exception as e:
+                    log(f"Error scanning class {class_name}: {e}", "DEBUG")
+                    continue
+                    
+        except Exception as e:
+            log(f"Error in _get_all_available_methods: {e}", "WARNING")
+            
+        return available_methods
     
     def get_applicable_tests_for_dataset(self, columns: List[str]) -> List[TG2TestMapping]:
         """Get tests that are applicable to the dataset based on available columns"""
