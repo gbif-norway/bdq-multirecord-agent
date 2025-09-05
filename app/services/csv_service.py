@@ -48,9 +48,11 @@ class CSVService:
         """Detect core type based on column presence"""
         columns_lower = [col.lower() for col in columns]
         
-        if 'occurrenceid' in columns_lower:
+        # Check for occurrenceID (with or without dwc: prefix)
+        if any('occurrenceid' in col for col in columns_lower):
             return 'occurrence'
-        elif 'taxonid' in columns_lower:
+        # Check for taxonID (with or without dwc: prefix)
+        elif any('taxonid' in col for col in columns_lower):
             return 'taxon'
         else:
             return None

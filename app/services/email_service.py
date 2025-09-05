@@ -33,10 +33,10 @@ class EmailService:
             csv_attachments = []
 
             for attachment in email_data['attachments']:
-                fn = (attachment.filename or '').lower()
-                mt = (attachment.mime_type or '').lower()
+                fn = (attachment.get('filename') or '').lower()
+                mt = (attachment.get('mimeType') or '').lower()
                 if (
-                    fn.endswith(('.csv', '.tsv', '.txt'))
+                    fn.endswith(('.csv', '.tsv'))
                     or 'csv' in mt
                     or 'text/plain' in mt
                     or 'tab-separated' in mt
@@ -45,7 +45,7 @@ class EmailService:
 
             # Try attachments in order; skip empties/undecodable
             for csv_attachment in csv_attachments:
-                b64_raw = (csv_attachment['contentBase64']
+                b64_raw = csv_attachment['contentBase64']
                 b64 = b64_raw.strip()
 
                 log(
@@ -132,4 +132,25 @@ class EmailService:
                 log(f"Error sending reply: {e}; status={status}; body={(text or '')[:200]}", "ERROR")
             except Exception:
                 log(f"Error sending reply: {e}", "ERROR")
+    
+    async def send_error_reply(self, email_data: dict, error_message: str):
+        """Send error reply email"""
+        error_body = f"<p>Error processing your request:</p><p>{error_message}</p>"
+        await self.send_reply(email_data, error_body)
+    
+    async def send_results_reply(self, email_data: dict, body: str, raw_results_csv: str, amended_dataset_csv: str):
+        """Send results reply email with CSV attachments"""
+        attachments = [
+            {
+                "filename": "bdq_raw_results.csv",
+                "mimeType": "text/csv",
+                "contentBase64": base64.b64encode(raw_results_csv.encode('utf-8')).decode('utf-8')
+            },
+            {
+                "filename": "amended_dataset.csv", 
+                "mimeType": "text/csv",
+                "contentBase64": base64.b64encode(amended_dataset_csv.encode('utf-8')).decode('utf-8')
+            }
+        ]
+        await self.send_reply(email_data, body, attachments)
     

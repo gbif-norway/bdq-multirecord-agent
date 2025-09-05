@@ -162,7 +162,12 @@ async def process_incoming_email(request: Request, background_tasks: BackgroundT
     # Log the raw request for debugging
     body = await request.body()
     log(f"Received request with {len(body)} bytes")
-    raw_data = json.loads(body.decode('utf-8'))
+    
+    try:
+        raw_data = json.loads(body.decode('utf-8'))
+    except json.JSONDecodeError as e:
+        log(f"Invalid JSON in request: {e}", "ERROR")
+        return JSONResponse(status_code=400, content={"status": "error", "message": "Invalid JSON in request"})
     
     # Schedule background processing and return immediately
     # Use the running loop to schedule the async handler without blocking the response
