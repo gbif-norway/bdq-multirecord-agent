@@ -85,7 +85,10 @@ class BDQPy4JService:
                     raise RuntimeError(msg)
 
                 try:
-                    self.gateway = JavaGateway(gateway_parameters=GatewayParameters(port=port))
+                    self.gateway = JavaGateway(
+                        gateway_parameters=GatewayParameters(port=port),
+                        auto_convert=True
+                    )
                     log(f"Java version: {self.gateway.jvm.System.getProperty('java.version')}")
                     log(f"BDQ Gateway health: {self.gateway.entry_point.healthCheck()}")
                     return
