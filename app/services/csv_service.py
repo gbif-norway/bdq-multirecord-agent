@@ -3,7 +3,7 @@ import io
 import base64
 import logging
 from typing import Tuple, Optional, List, Dict, Any
-from app.models.email_models import BDQTestExecutionResult
+from app.utils.helper import BDQTestExecutionResult
 
 logger = logging.getLogger(__name__)
 

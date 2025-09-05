@@ -65,12 +65,11 @@ class TestEndToEndEmailProcessing:
         }
     
     @patch('app.main.send_discord_notification')
-    @patch('app.services.email_service.EmailService.send_results_reply')
-    @patch('app.services.email_service.EmailService.send_error_reply')
+    @patch('app.services.email_service.EmailService.send_reply')
     @patch('app.services.bdq_py4j_service.BDQPy4JService.execute_tests')
     @patch('app.services.bdq_py4j_service.BDQPy4JService.get_applicable_tests')
-    def test_complete_occurrence_processing_pipeline(self, mock_filter_tests, mock_execute_tests, mock_send_error, 
-                                                   mock_send_results, mock_discord, 
+    def test_complete_occurrence_processing_pipeline(self, mock_filter_tests, mock_execute_tests, mock_send_reply, 
+                                                   mock_discord, 
                                                    client, test_data_dir):
         """Test the complete pipeline for occurrence data processing"""
         # Setup mock test results
@@ -118,11 +117,11 @@ class TestEndToEndEmailProcessing:
         mock_execute_tests.assert_called_once()
         
         # Verify results reply was sent
-        mock_send_results.assert_called_once()
+        mock_send_reply.assert_called_once()
     
     @patch('app.main.send_discord_notification')
-    @patch('app.services.email_service.EmailService.send_error_reply')
-    def test_taxon_data_processing_pipeline(self, mock_send_error, mock_discord, client, test_data_dir):
+    @patch('app.services.email_service.EmailService.send_reply')
+    def test_taxon_data_processing_pipeline(self, mock_send_reply, mock_discord, client, test_data_dir):
         """Test the complete pipeline for taxon data processing"""
         payload = self.create_email_payload_with_csv(test_data_dir, "simple_taxon_dwc.csv")
         
@@ -139,8 +138,8 @@ class TestEndToEndEmailProcessing:
         assert mock_discord.call_count >= 1
     
     @patch('app.main.send_discord_notification')
-    @patch('app.services.email_service.EmailService.send_error_reply')
-    def test_no_csv_attachment_error_handling(self, mock_send_error, mock_discord, client):
+    @patch('app.services.email_service.EmailService.send_reply')
+    def test_no_csv_attachment_error_handling(self, mock_send_reply, mock_discord, client):
         """Test error handling when no CSV attachment is provided"""
         payload = {
             "messageId": "test_msg_123",
@@ -166,11 +165,11 @@ class TestEndToEndEmailProcessing:
         time.sleep(0.1)
         
         # Verify error reply was sent
-        mock_send_error.assert_called_once()
+        mock_send_reply.assert_called_once()
     
     @patch('app.main.send_discord_notification')
-    @patch('app.services.email_service.EmailService.send_error_reply')
-    def test_invalid_csv_attachment_error_handling(self, mock_send_error, mock_discord, client):
+    @patch('app.services.email_service.EmailService.send_reply')
+    def test_invalid_csv_attachment_error_handling(self, mock_send_reply, mock_discord, client):
         """Test error handling with invalid CSV data"""
         invalid_csv = base64.b64encode("This is not CSV data".encode()).decode()
         
@@ -203,11 +202,11 @@ class TestEndToEndEmailProcessing:
         time.sleep(0.1)
         
         # Verify error reply was sent
-        mock_send_error.assert_called_once()
+        mock_send_reply.assert_called_once()
     
     @patch('app.main.send_discord_notification')
-    @patch('app.services.email_service.EmailService.send_error_reply')
-    def test_unsupported_core_type_error_handling(self, mock_send_error, mock_discord, client):
+    @patch('app.services.email_service.EmailService.send_reply')
+    def test_unsupported_core_type_error_handling(self, mock_send_reply, mock_discord, client):
         """Test error handling when CSV doesn't contain required core type columns"""
         # Create CSV without occurrenceID or taxonID
         csv_content = """name,description,value
@@ -245,7 +244,7 @@ test2,description2,value2"""
         time.sleep(0.1)
         
         # Verify error reply was sent
-        mock_send_error.assert_called_once()
+        mock_send_reply.assert_called_once()
     
     def test_health_check_endpoint(self, client):
         """Test the health check endpoint"""

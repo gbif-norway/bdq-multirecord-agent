@@ -34,16 +34,23 @@ class TG2TestMapper:
         for _, row in df.iterrows():
             # Use Py4J reflection to find the method
             method_info = self._find_method_by_guid(row['MethodGuid'])
+                
+            # Parse acted_upon and consulted columns (they can be comma-separated)
+            acted_upon = [col.strip() for col in row['InformationElement:ActedUpon'].split(',') if col.strip()]
+            consulted = [col.strip() for col in row['InformationElement:Consulted'].split(',') if col.strip()]
+            
             mapping = TG2TestMapping(
                 label=row['Label'],
                 library=method_info['library'],
                 java_class=method_info['class_name'],
                 java_method=method_info['method_name'],
-                acted_upon=row['InformationElement:ActedUpon'],
-                consulted=row['InformationElement:Consulted'],
+                acted_upon=acted_upon,
+                consulted=consulted,
                 test_type=row['Type']
             )
             tests[row['Label']] = mapping
+            
+        logger.info(f"Loaded {len(tests)} tests from TG2_tests.csv")
         return tests
 
     def _find_method_by_guid(self, guid: str) -> Optional[Dict[str, str]]:
@@ -116,4 +123,16 @@ class TG2TestMapper:
         logger.debug(f"No method found for GUID {guid}")
         return None
     
-    def get_applicable_tests_for_dataset(self, columns):
+    def get_applicable_tests_for_dataset(self, columns: List[str]) -> List[TG2TestMapping]:
+        """Get tests that are applicable to the dataset based on available columns"""
+        applicable_tests = []
+        
+        for test_label, test_mapping in self.tests.items():
+            # Check if all acted_upon columns exist in the dataset
+            if all(col in columns for col in test_mapping.acted_upon):
+                applicable_tests.append(test_mapping)
+            else:
+                missing_cols = [col for col in test_mapping.acted_upon if col not in columns]
+        
+        logger.info(f"Found {len(applicable_tests)} applicable tests out of {len(self.tests)} total tests")
+        return applicable_tests

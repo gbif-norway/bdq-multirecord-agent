@@ -171,13 +171,14 @@ occ2,Canada,2023-01-02"""
 
     @patch('app.services.email_service.requests.post')
     @pytest.mark.asyncio
-    async def test_send_error_reply_success(self, mock_post, email_service, sample_email_payload):
-        """Test successful error reply sending"""
+    async def test_send_reply_success(self, mock_post, email_service, sample_email_payload):
+        """Test successful reply sending"""
         mock_post.return_value = Mock(status_code=200, text="Success")
         
-        await email_service.send_error_reply(
+        error_body = "<h3>BDQ Processing Error</h3><p>An error occurred while processing your request</p><p>Please check your CSV file and try again.</p>"
+        await email_service.send_reply(
             sample_email_payload,
-            "An error occurred while processing your request"
+            error_body
         )
         
         mock_post.assert_called_once()
@@ -193,15 +194,16 @@ occ2,Canada,2023-01-02"""
 
     @patch('app.services.email_service.requests.post')
     @pytest.mark.asyncio
-    async def test_send_error_reply_failure(self, mock_post, email_service, sample_email_payload):
-        """Test error reply sending failure"""
+    async def test_send_reply_failure(self, mock_post, email_service, sample_email_payload):
+        """Test reply sending failure"""
         mock_post.side_effect = Exception("Network error")
         
         # Should handle failure gracefully
         try:
-            await email_service.send_error_reply(
+            error_body = "<h3>BDQ Processing Error</h3><p>An error occurred while processing your request</p><p>Please check your CSV file and try again.</p>"
+            await email_service.send_reply(
                 sample_email_payload,
-                "An error occurred while processing your request"
+                error_body
             )
         except Exception:
             # Expected to fail, but should not crash the service
@@ -209,8 +211,8 @@ occ2,Canada,2023-01-02"""
 
     @patch('app.services.email_service.requests.post')
     @pytest.mark.asyncio
-    async def test_send_results_reply_success(self, mock_post, email_service, sample_email_payload, sample_test_results):
-        """Test successful results reply sending"""
+    async def test_send_reply_with_attachments_success(self, mock_post, email_service, sample_email_payload, sample_test_results):
+        """Test successful reply sending with attachments"""
         mock_post.return_value = Mock(status_code=200, text="Success")
         
         raw_results_csv = "test_id,row_index,status,result\nVALIDATION_COUNTRY_FOUND,0,PASS,Valid"
@@ -226,13 +228,23 @@ occ2,Canada,2023-01-02"""
             skipped_tests=[]
         )
         
-        await         email_service.send_results_reply(
+        attachments = [
+            {
+                "filename": "bdq_raw_results.csv",
+                "mimeType": "text/csv",
+                "contentBase64": base64.b64encode(raw_results_csv.encode('utf-8')).decode('utf-8')
+            },
+            {
+                "filename": "amended_dataset.csv",
+                "mimeType": "text/csv",
+                "contentBase64": base64.b64encode(amended_dataset_csv.encode('utf-8')).decode('utf-8')
+            }
+        ]
+        
+        await email_service.send_reply(
             sample_email_payload,
-            summary,
-            raw_results_csv,
-            amended_dataset_csv,
-            [sample_test_results],
-            "Occurrence"
+            str(summary),
+            attachments
         )
         
         # The post method is called multiple times: once for Discord notifications and once for email sending
@@ -254,8 +266,8 @@ occ2,Canada,2023-01-02"""
 
     @patch('app.services.email_service.requests.post')
     @pytest.mark.asyncio
-    async def test_send_results_reply_failure(self, mock_post, email_service, sample_email_payload, sample_test_results):
-        """Test results reply sending failure"""
+    async def test_send_reply_with_attachments_failure(self, mock_post, email_service, sample_email_payload, sample_test_results):
+        """Test reply sending with attachments failure"""
         mock_post.side_effect = Exception("Network error")
         
         raw_results_csv = "test_id,row_index,status,result\nVALIDATION_COUNTRY_FOUND,0,PASS,Valid"
@@ -273,13 +285,23 @@ occ2,Canada,2023-01-02"""
                 skipped_tests=[]
             )
             
-            await email_service.send_results_reply(
+            attachments = [
+                {
+                    "filename": "bdq_raw_results.csv",
+                    "mimeType": "text/csv",
+                    "contentBase64": base64.b64encode(raw_results_csv.encode('utf-8')).decode('utf-8')
+                },
+                {
+                    "filename": "amended_dataset.csv",
+                    "mimeType": "text/csv",
+                    "contentBase64": base64.b64encode(amended_dataset_csv.encode('utf-8')).decode('utf-8')
+                }
+            ]
+            
+            await email_service.send_reply(
                 sample_email_payload,
-                summary,
-                raw_results_csv,
-                amended_dataset_csv,
-                [sample_test_results],
-                "Occurrence"
+                str(summary),
+                attachments
             )
         except Exception:
             # Expected to fail, but should not crash the service

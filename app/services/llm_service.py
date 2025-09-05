@@ -2,7 +2,7 @@ import os
 import logging
 import google.generativeai as genai
 from typing import List, Dict, Any, Optional
-from app.models.email_models import ProcessingSummary, BDQTestExecutionResult, EmailPayload
+from app.utils.helper import BDQTestExecutionResult
 
 logger = logging.getLogger(__name__)
 
@@ -17,8 +17,9 @@ class LLMService:
     def generate_intelligent_summary(
         self, 
         test_results: List[BDQTestExecutionResult],
-        original_email_data: EmailPayload,
-        core_type: str
+        original_email_data: Dict[str, Any],
+        core_type: str,
+        summary_stats: Dict[str, Any]
     ) -> Dict[str, str]:
         """
         Generate intelligent summary using Gemini LLM
@@ -26,64 +27,62 @@ class LLMService:
         Returns:
             Dict with 'text' and 'html' keys containing the generated summaries
         """
-        try:
-            # Generate the prompt
-            prompt = self._create_summary_prompt(test_results, original_email_data, core_type)
-            
-            # Call Gemini API
-            response = self.model.generate_content(prompt)
-            
-            if response.text:
-                # Parse the response and generate both text and HTML versions
-                llm_summary = response.text.strip()
-                return {
-                    'text': llm_summary,
-                    'html': self._convert_to_html(llm_summary)
-                }
+        # Generate the prompt
+        prompt = self._create_summary_prompt(test_results, original_email_data, core_type, summary_stats)
+        
+        # Call Gemini API
+        response = self.model.generate_content(prompt)
+        
+        if response.text:
+            # Parse the response and generate both text and HTML versions
+            return self._convert_to_html(response.text.strip())
+        else:
+            logger.error("No response text from Gemini API")
+            return "<p>Unable to generate summary at this time.</p>"
                 
-        except Exception as e:
-            logger.error(f"Error generating LLM summary: {e}")
     
-    
-    def _create_summary_prompt(self, context: Dict[str, Any]) -> str:
+    def _create_summary_prompt(self, test_results: List[BDQTestExecutionResult], original_email_data: Dict[str, Any], core_type: str, summary_stats: Dict[str, Any]) -> str:
         """Create the prompt for the LLM"""
+        
+        # Analyze test results for validation failures
+        validation_failures = [r for r in test_results if r.result in ['NOT_COMPLIANT', 'POTENTIAL_ISSUE']]
+        amendments_applied = [r for r in test_results if r.status in ['AMENDED', 'FILLED_IN']]
+        
+        # Group failures by test type
+        failures_by_test = {}
+        for failure in validation_failures:
+            if failure.test_id not in failures_by_test:
+                failures_by_test[failure.test_id] = []
+            failures_by_test[failure.test_id].append(failure.comment or 'No comment')
         
         prompt = f"""You are a biodiversity data quality expert. Generate a helpful, informative email summary for a user who has submitted a dataset for BDQ (Biodiversity Data Quality) testing.
 
 CONTEXT:
-- Dataset type: {context['core_type']} core
-- Total records: {context['summary'].total_records:,}
-- Total tests run: {context['summary'].total_tests_run:,}
-- Data quality score: {context['data_quality_score']}%
-- Amendments applied: {context['summary'].amendments_applied}
 
-USER'S ORIGINAL EMAIL:
-Subject: {context['email_context']['subject']}
-From: {context['email_context']['from_email']}
-Body: {context['email_context']['body_text'] or 'No text body provided'}
+- Dataset type: {core_type} core
 
-VALIDATION RESULTS:
+- Summary statistics: {str(summary_stats)}
+
+- USER'S ORIGINAL EMAIL: {str(original_email_data)}
+
+DETAILED VALIDATION RESULTS:
 """
         
-        if context['validation_failures_by_field']:
-            prompt += "The following data quality issues were found:\n"
-            for field, failures in context['validation_failures_by_field'].items():
-                prompt += f"- {field}: {len(failures)} issues\n"
+        if validation_failures:
+            prompt += f"Found {len(validation_failures)} validation issues across {len(failures_by_test)} different test types:\n"
+            for test_id, comments in list(failures_by_test.items())[:5]:  # Limit to top 5 test types
+                prompt += f"- {test_id}: {len(comments)} issues\n"
                 # Add a few examples
-                for failure in failures[:2]:  # Limit to 2 examples per field
-                    prompt += f"  • {failure['comment']}\n"
+                for comment in comments[:2]:  # Limit to 2 examples per test
+                    prompt += f"  • {comment}\n"
         else:
             prompt += "No validation failures were found - excellent data quality!\n"
         
-        if context['amendment_insights']:
+        if amendments_applied:
             prompt += f"\nAMENDMENTS APPLIED:\n"
-            prompt += f"{context['summary'].amendments_applied} records were automatically improved with standardized values.\n"
+            prompt += f"{len(amendments_applied)} records were automatically improved with standardized values.\n"
         
-        if context['skipped_tests']:
-            prompt += "\nNOTE ON TECHNICAL LIMITATIONS:\n"
-            prompt += "The following tests could not be run due to a temporary technical issue and were skipped for this run. We can try these again later without you needing to resend the data.\n"
-            for t in context['skipped_tests'][:10]:
-                prompt += f"- {t}\n"
+        # TODO add common issues list (we need to generate this)
         
         prompt += """
 
@@ -95,9 +94,15 @@ TASK: Write a professional, helpful email summary that:
 5. Explains what the attached files contain
 6. Maintains a helpful, encouraging tone
 
-Format the response as a professional email body. Be specific about the data quality score and what it means. If there are issues, explain them in terms a biologist would understand, not technical jargon.
+Format the response as a professional email body. If there are issues, explain them in terms a biologist would understand, not technical jargon.
 
 Focus on being helpful and actionable rather than just reporting numbers."""
 
         return prompt
+    
+    def _convert_to_html(self, text: str) -> str:
+        """Convert plain text to basic HTML"""
+        # Simple conversion - replace newlines with <br> and wrap in <p> tags
+        html = text.replace('\n\n', '</p><p>').replace('\n', '<br>')
+        return f"<p>{html}</p>"
     

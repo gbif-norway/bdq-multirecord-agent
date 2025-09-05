@@ -12,12 +12,10 @@ from pathlib import Path
 
 from py4j.java_gateway import JavaGateway, GatewayParameters, launch_gateway
 from py4j.protocol import Py4JNetworkError
-
-from app.services.tg2test_service import TG2TestMapper, TG2TestMapping
-from app.models.email_models import BDQTest, BDQTestResult, BDQTestExecutionResult, ProcessingSummary
 from app.utils.logger import send_discord_notification
 
 logger = logging.getLogger(__name__)
+
 
 class BDQPy4JService:
     """
@@ -26,7 +24,6 @@ class BDQPy4JService:
     
     def __init__(self):
         self.gateway: Optional[JavaGateway] = None
-        self.test_mapper = TG2TestMapper()
         self._start_gateway()
     
     def _start_gateway(self):
@@ -42,110 +39,57 @@ class BDQPy4JService:
         logger.info(f"BDQ Gateway health: {self.gateway.entry_point.healthCheck()}")
     
     
-    def execute_tests(self, df, applicable_tests: List[TG2TestMapping]) -> BDQTestExecutionResult:
-        """Execute BDQ tests using Py4J"""
-        start_time = time.time()
-        test_results = []
-        skipped_tests = []
-        
-        logger.info(f"🧪 Starting BDQ test execution on {len(df)} records with {len(applicable_tests)} applicable tests")
-        
-        # Get BDQ gateway
-        bdq_gateway = self.gateway.entry_point
-        
-        for i, test_mapping in enumerate(applicable_tests):
-            try:
-                logger.info(f"🔄 [{i+1}/{len(applicable_tests)}] Executing {test_mapping.test_id}...")
-                
-                # Get unique tuples for this test
-                tuples = self._get_unique_tuples(df, test_mapping.acted_upon, test_mapping.consulted)
-                
-                if not tuples:
-                    logger.warning(f"No tuples found for test {test_mapping.test_id}")
-                    skipped_tests.append(test_mapping.test_id)
-                    continue
-                
-                # Execute test via Py4J gateway
-                result = bdq_gateway.executeTest(
-                    test_mapping.test_id,
-                    test_mapping.java_class,
-                    test_mapping.java_method,
-                    test_mapping.acted_upon,
-                    test_mapping.consulted,
-                    {}, # parameters, we're always going to use the defaults
-                    tuples
-                )
-                
-                # Convert Java Map to Python dict
-                tuple_results = list(result.get("tuple_results", []))
-                errors = list(result.get("errors", []))
-                
-                if errors:
-                    logger.warning(f"Test {test_mapping.test_id} had errors: {errors}")
-                
-                if tuple_results:
-                    # Expand results to all rows
-                    row_results = self._expand_tuple_results_to_rows(df, test_mapping, tuple_results)
-                    test_results.extend(row_results)
-                    logger.info(f"✅ [{i+1}/{len(applicable_tests)}] {test_mapping.test_id}: {len(tuple_results)} results")
-                else:
-                    logger.warning(f"❌ [{i+1}/{len(applicable_tests)}] {test_mapping.test_id}: No results returned")
-                    skipped_tests.append(test_mapping.test_id)
-                
-            except Exception as e:
-                logger.error(f"Error executing test {test_mapping.test_id}: {e}")
-                skipped_tests.append(test_mapping.test_id)
-        
-        execution_time = time.time() - start_time
-        logger.info(f"🏁 Py4J test execution completed in {execution_time:.1f} seconds")
-        logger.info(f"📊 Results: {len(test_results)} successful, {len(skipped_tests)} skipped")
-        
-        return BDQTestExecutionResult(
-            test_results=test_results,
-            skipped_tests=skipped_tests,
-            execution_time=execution_time
-        )
     
-    def _get_unique_tuples(self, df, acted_upon: List[str], consulted: List[str]) -> List[List[str]]:
-        """Get unique tuples for test execution"""
-        # Combine acted_upon and consulted columns
-        all_columns = acted_upon + consulted
-        
-        # Get unique combinations
-        unique_df = df[all_columns].drop_duplicates()
-        tuples = unique_df.values.tolist()
-        
-        logger.debug(f"Found {len(tuples)} unique tuples for columns: {all_columns}")
-        return tuples
-    
-    
-    def _expand_tuple_results_to_rows(self, df, test_mapping: TG2TestMapping, tuple_results: List[Dict]) -> List[BDQTestResult]:
-        """Expand tuple results to individual row results"""
-        row_results = []
-        
-        for tuple_result in tuple_results:
-            tuple_index = tuple_result['tuple_index']
+    def execute_single_test(self, java_class: str, java_method: str, acted_upon: List[str], consulted: List[str], tuple_values: List[str]) -> Dict[str, Any]:
+        """Execute a single BDQ test for a specific tuple of values"""
+        try:
+            # Get BDQ gateway
+            bdq_gateway = self.gateway.entry_point
             
-            # Find all rows that match this tuple
-            all_columns = test_mapping.acted_upon + test_mapping.consulted
-            matching_rows = df[df[all_columns].apply(
-                lambda row: list(row.values) == tuple_results[tuple_index].get('tuple_values', []), 
-                axis=1
-            )]
+            # Execute test via Py4J gateway
+            result = bdq_gateway.executeTest(
+                f"{java_class}.{java_method}",  # test_id
+                java_class,
+                java_method,
+                acted_upon,
+                consulted,
+                {},  # parameters, we're always going to use the defaults
+                [tuple_values]  # single tuple as list
+            )
             
-            # Create BDQTestResult for each matching row
-            for _, row in matching_rows.iterrows():
-                bdq_result = BDQTestResult(
-                    record_id=str(row.get('occurrenceID', row.get('taxonID', 'unknown'))),
-                    test_id=test_mapping.test_id,
-                    status=tuple_result['status'],
-                    result=tuple_result['result'],
-                    comment=tuple_result['comment'],
-                    amendment=None  # TODO: Extract amendment if available
-                )
-                row_results.append(bdq_result)
-        
-        return row_results
+            # Convert Java Map to Python dict
+            tuple_results = list(result.get("tuple_results", []))
+            errors = list(result.get("errors", []))
+            
+            if errors:
+                logger.warning(f"Test {java_class}.{java_method} had errors: {errors}")
+                return {
+                    'status': 'ERROR',
+                    'result': None,
+                    'comment': f"Test execution error: {', '.join(errors)}",
+                    'amendment': None
+                }
+            
+            if tuple_results and len(tuple_results) > 0:
+                # Return the first (and only) result
+                return tuple_results[0]
+            else:
+                logger.warning(f"Test {java_class}.{java_method} returned no results")
+                return {
+                    'status': 'NO_RESULT',
+                    'result': None,
+                    'comment': 'Test returned no results',
+                    'amendment': None
+                }
+                
+        except Exception as e:
+            logger.error(f"Error executing test {java_class}.{java_method}: {e}")
+            return {
+                'status': 'ERROR',
+                'result': None,
+                'comment': f"Test execution error: {str(e)}",
+                'amendment': None
+            }
     
     def shutdown(self):
         """Shutdown Py4J gateway"""
