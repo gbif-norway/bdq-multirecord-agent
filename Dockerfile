@@ -53,8 +53,8 @@ RUN ls -la /app/TG2_tests.csv && echo "CSV file copied successfully"
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Test that the JAR file can be executed
-RUN java -jar /opt/bdq/bdq-py4j-gateway.jar --help || echo "JAR file test completed"
+# Verify JAR file exists and is executable
+RUN ls -la /opt/bdq/bdq-py4j-gateway.jar && echo "JAR file verified"
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1

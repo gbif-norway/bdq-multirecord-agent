@@ -48,6 +48,12 @@ Delete and clean up anything which is no longer relevant. We have the code histo
 
 The entire point of this app is that it's supposed to run ALL relevant BDQ tests on any dataset which gets sent in. We don't just run the "top 10" tests or similar. We provide a comprehensive report. 
 
-## **RULE 4: DOCUMENT DESIGN DECISIONS BUT STOP MAKING MULTIPLE MD FILES**
+## **RULE 4: MINIMAL DOCUMENTATOIN**
 
-If something is obvious, do not put it in the documentation, but ALL IMPORTANT DECISIONS MUST BE DOCUMENTED. When documenting a design decision, add it to one of the current md files, do not create a new md. Make sure you don't add fluff, don't write congratulatory epistles on how much more efficient or good something is, just state very simply what it is and how it works with the rest of the app, in the same style as the way the README is written. 
+If something is obvious, do not put it in the documentation, but ALL IMPORTANT DECISIONS MUST BE DOCUMENTED. By obvious, I mean something which is clear from just reading the code - don't document it. But if you have to read across multiple files or it's important conceptually to understand something, document it. 
+
+When documenting a design decision, add it to one of the current md files, do not create a new md. Make sure you don't add fluff, don't write congratulatory epistles on how much more efficient or good something is, just state very simply what it is and how it works with the rest of the app, in the same style as the way the README is written. 
+
+## **RULE 5: ADD MINIMAL CODE**
+
+Do not add multiple safety fixes and checks in one go. Implement a fix, check if it works, if it doesn't then remove it and try something else. I don't want to have multiple attempts to e.g. start the bdq gateway service and not know which is the one which is actually doing the work. In this repo if you come across a problem you do ONE small fix, and make it as clean and minimal as possible. 
