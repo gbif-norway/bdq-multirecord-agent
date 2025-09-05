@@ -33,28 +33,21 @@ app = FastAPI(
     version="1.0.0"
 )
 
-
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Clean up resources on shutdown"""
+    log("Shutting down BDQ Email Report Service...")
+    try:
+        bdq_service.shutdown()
+        log("BDQ service shutdown completed")
+    except Exception as e:
+        log(f"Error during BDQ service shutdown: {e}", "ERROR")
+    log("Service shutdown completed")
 
 @app.get("/")
 async def root():
     """Health check endpoint"""
     return {"message": "BDQ Email Report Service is running"}
-
-@app.get("/health")
-async def health_check():
-    """Detailed health check"""
-    log("Health check endpoint called")
-
-    return {
-        "status": "healthy",
-        "service": "BDQ Email Report Service",
-        "environment": {
-            "gmail_send_configured": bool(os.getenv("GMAIL_SEND")),
-            "hmac_secret_configured": bool(os.getenv("HMAC_SECRET")),
-            "discord_webhook_configured": bool(os.getenv("DISCORD_WEBHOOK")),
-            "google_api_key_configured": bool(os.getenv("GOOGLE_API_KEY"))
-        }
-    }
 
 async def _handle_email_processing(email_data: Dict[str, Any]):
     try:

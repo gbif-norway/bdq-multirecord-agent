@@ -47,10 +47,15 @@ class BDQPy4JService:
         
         java_cmd = ['java'] + java_opts.split() + ['-jar', gateway_jar]
         log(f"Starting Py4J gateway: {' '.join(java_cmd)}")
-        port = launch_gateway(java_cmd)
-        self.gateway = JavaGateway(gateway_parameters=GatewayParameters(port=port))
-        log(f"Java version: {self.gateway.jvm.System.getProperty('java.version')}")
-        log(f"BDQ Gateway health: {self.gateway.entry_point.healthCheck()}")
+        
+        try:
+            port = launch_gateway(java_cmd)
+            self.gateway = JavaGateway(gateway_parameters=GatewayParameters(port=port))
+            log(f"Java version: {self.gateway.jvm.System.getProperty('java.version')}")
+            log(f"BDQ Gateway health: {self.gateway.entry_point.healthCheck()}")
+        except Exception as e:
+            log(f"Failed to start Py4J gateway: {e}", "ERROR")
+            raise
     
     def _load_test_mappings(self):
         """Load test mappings from TG2_tests.csv and map to Java methods via reflection"""

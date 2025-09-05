@@ -2,13 +2,13 @@
 
 A lightweight email-based service that runs Biodiversity Data Quality (BDQ) tests on incoming datasets and replies with results.
 
-This service receives dataset submissions via email, processes CSV files, runs BDQ tests, and replies with detailed results including validation failures and proposed amendments. To be deployed on Google Cloud Run.
+This service receives dataset submissions via email, processes CSV files, runs BDQ tests, and replies with detailed results including validation failures and proposed amendments. Deployed on Google Cloud Run using CI/CD on push to `main` branch. Google Cloud Build builds from `Dockerfile`.
 
 All local development should be done in Docker containers.
 
 ## Service Flow
 
-1. **Email Reception**: FastAPI receives JSON payload to  from Google Apps Script
+1. **Email Reception**: FastAPI receives JSON payload to from Google Apps Script
 2. **Immediate Response**: Returns 200 status immediately for Apps Script acknowledgment
 3. **CSV Extraction**: Extracts and validates CSV attachments
 4. **Core Detection**: Identifies occurrence vs taxon core based on column presence
