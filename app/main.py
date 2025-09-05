@@ -22,9 +22,17 @@ import pandas as pd
 load_dotenv()
 
 email_service = EmailService()
-bdq_service = BDQPy4JService()
+bdq_service = None  # Initialize lazily
 csv_service = CSVService()
 llm_service = LLMService()
+
+
+def get_bdq_service():
+    """Get BDQ service instance, initializing it lazily if needed"""
+    global bdq_service
+    if bdq_service is None:
+        bdq_service = BDQPy4JService()
+    return bdq_service
 
 
 app = FastAPI(
@@ -38,8 +46,9 @@ async def shutdown_event():
     """Clean up resources on shutdown"""
     log("Shutting down BDQ Email Report Service...")
     try:
-        bdq_service.shutdown()
-        log("BDQ service shutdown completed")
+        if bdq_service is not None:
+            bdq_service.shutdown()
+            log("BDQ service shutdown completed")
     except Exception as e:
         log(f"Error during BDQ service shutdown: {e}", "ERROR")
     log("Service shutdown completed")
@@ -70,7 +79,8 @@ async def _handle_email_processing(email_data: Dict[str, Any]):
             return
 
         # Get applicable BDQ tests
-        applicable_tests = bdq_service.get_applicable_tests_for_dataset(df.columns.tolist())
+        bdq_service_instance = get_bdq_service()
+        applicable_tests = bdq_service_instance.get_applicable_tests_for_dataset(df.columns.tolist())
 
         if not applicable_tests:
             log(f"No applicable BDQ tests found for provided CSV columns: {df.columns.tolist()}", "WARNING")
@@ -97,7 +107,7 @@ async def _handle_email_processing(email_data: Dict[str, Any]):
             for tuple_values in unique_tuples:
                 try:
                     # Run test using bdq_service
-                    tuple_result = bdq_service.execute_single_test(
+                    tuple_result = bdq_service_instance.execute_single_test(
                         test.java_class,
                         test.java_method,
                         test.acted_upon,
