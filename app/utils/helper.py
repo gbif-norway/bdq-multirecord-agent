@@ -39,15 +39,6 @@ def log(message: str, level: str = "INFO"):
         except Exception:
             pass  # Don't let Discord failures break logging
 
-class BDQTestExecutionResult(BaseModel):
-    """Model for complete test execution result for a row"""
-    record_id: str
-    test_id: str
-    status: str
-    result: Optional[str] = None
-    comment: Optional[str] = None
-    amendment: Optional[Dict[str, Any]] = None
-    test_type: str
 
 def get_unique_tuples(df, acted_upon: List[str], consulted: List[str]) -> List[List[str]]:
     """Get unique tuples for test execution"""
@@ -68,21 +59,11 @@ def get_unique_tuples(df, acted_upon: List[str], consulted: List[str]) -> List[L
     return tuples
     
     
-def expand_single_test_results_to_all_rows(df, test_mapping, tuple_result, tuple_values, core_type) -> List:
-    """Expand tuple results to individual row results"""
-    
-    row_results = []
+def expand_single_test_results_to_all_rows(df, test_mapping, tuple_result, tuple_values, core_type) -> pd.DataFrame:
+    """Expand tuple results to individual row results as DataFrame"""
     
     # Find all rows that match this tuple
     all_columns = test_mapping.acted_upon + test_mapping.consulted
-    
-    # Check if all columns exist
-    missing_columns = [col for col in all_columns if col not in df.columns]
-    if missing_columns:
-        log(f"Missing columns for result expansion: {missing_columns}", "WARNING")
-        return []
-    
-    # Create a mask for rows that match the tuple values
     mask = pd.Series([True] * len(df))
     for i, col in enumerate(all_columns):
         if i < len(tuple_values):
@@ -90,55 +71,44 @@ def expand_single_test_results_to_all_rows(df, test_mapping, tuple_result, tuple
     
     matching_rows = df[mask]
     
-    # Create BDQTestExecutionResult for each matching row
+    # Create DataFrame with BDQTestExecutionResult fields as columns
+    result_data = []
     for _, row in matching_rows.iterrows():
         record_id = str(row.get('occurrenceID', row.get('taxonID', 'unknown')))
         
-        bdq_result = BDQTestExecutionResult(
-            record_id=record_id,
-            test_id=test_mapping.label,  # Use label as test_id
-            status=tuple_result.get('status', 'UNKNOWN'),
-            result=tuple_result.get('result'),
-            comment=tuple_result.get('comment'),
-            amendment=tuple_result.get('amendment'),
-            test_type=test_mapping.test_type
-        )
-        row_results.append(bdq_result)
+        result_data.append({
+            'record_id': record_id,
+            'test_id': test_mapping.label,  # Use label as test_id
+            'status': tuple_result.get('status', 'UNKNOWN'),
+            'result': tuple_result.get('result'),
+            'comment': tuple_result.get('comment'),
+            'amendment': tuple_result.get('amendment'),
+            'test_type': test_mapping.test_type
+        })
     
-    log(f"Expanded tuple result to {len(row_results)} row results", "DEBUG")
-    return row_results
+    result_df = pd.DataFrame(result_data)
+    log(f"Expanded tuple result to {len(result_df)} row results", "DEBUG")
+    return result_df
 
 
-def generate_summary_statistics(test_results, df, core_type):
-    """Generate summary statistics from test results"""
-    if not test_results:
+def generate_summary_statistics(test_results_df, df, core_type):
+    """Generate summary statistics from test results DataFrame"""
+    if test_results_df is None or test_results_df.empty:
         return {}
-    
-    # Convert to DataFrame for easier analysis
-    results_df = pd.DataFrame([
-        {
-            'record_id': r.record_id,
-            'test_id': r.test_id,
-            'status': r.status,
-            'result': r.result,
-            'comment': r.comment,
-            'test_type': r.test_type
-        } for r in test_results
-    ])
     
     # Calculate basic stats
     total_records = len(df)
-    total_tests_run = len(test_results)
+    total_tests_run = len(test_results_df)
     
     # Count validation failures by field
-    validation_failures = results_df[
-        (results_df['result'] == 'NOT_COMPLIANT') | 
-        (results_df['result'] == 'POTENTIAL_ISSUE')
+    validation_failures = test_results_df[
+        (test_results_df['result'] == 'NOT_COMPLIANT') | 
+        (test_results_df['result'] == 'POTENTIAL_ISSUE')
     ]
     
     # Count amendments applied
-    amendments_applied = len(results_df[
-        results_df['status'].isin(['AMENDED', 'FILLED_IN'])
+    amendments_applied = len(test_results_df[
+        test_results_df['status'].isin(['AMENDED', 'FILLED_IN'])
     ])
     
     # Get common issues

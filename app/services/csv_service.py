@@ -12,54 +12,22 @@ class CSVService:
         Parse CSV data and detect core type (occurrence or taxon)
         Returns (dataframe, core_type)
         """
-        try:
-            # Try to detect delimiter
-            sample = csv_data[:1024]  # First 1KB to detect delimiter
-            delimiter = self._detect_delimiter(sample)
-            
-            # Parse CSV
-            df = pd.read_csv(io.StringIO(csv_data), delimiter=delimiter, dtype=str)
-            
-            # Clean column names (remove surrounding quotes, whitespace)
-            df.columns = df.columns.str.strip().str.strip("\"'")
+        # Parse CSV with automatic delimiter detection
+        df = pd.read_csv(io.StringIO(csv_data), sep=None, engine='python', dtype=str)
+        df.columns = df.columns.str.strip().str.strip("\"'")
+        df = self._ensure_dwc_prefixed_columns(df)
 
-            # Ensure Darwin Core prefixes exist (e.g., convert 'country' to 'dwc:country')
-            df = self._ensure_dwc_prefixed_columns(df)
-            
-            # Detect core type
-            core_type = self._detect_core_type(df.columns.tolist())
-            
-            log(f"Parsed CSV with {len(df)} rows, {len(df.columns)} columns, core type: {core_type}")
-            return df, core_type
-            
-        except Exception as e:
-            log(f"Error parsing CSV: {e}", "ERROR")
-            raise
-    
-    def _detect_delimiter(self, sample: str) -> str:
-        """Detect CSV delimiter from sample"""
-        delimiters = [',', ';', '\t', '|']
-        delimiter_counts = {}
-        
-        for delimiter in delimiters:
-            delimiter_counts[delimiter] = sample.count(delimiter)
-        
-        # Return delimiter with highest count
-        return max(delimiter_counts, key=delimiter_counts.get)
-    
-    def _detect_core_type(self, columns: List[str]) -> Optional[str]:
-        """Detect core type based on column presence"""
-        columns_lower = [col.lower() for col in columns]
-        
-        # Check for occurrenceID (with or without dwc: prefix)
-        if any('occurrenceid' in col for col in columns_lower):
-            return 'occurrence'
-        # Check for taxonID (with or without dwc: prefix)
-        elif any('taxonid' in col for col in columns_lower):
-            return 'taxon'
+        cols = [c.lower() for c in df.columns]]
+        if 'occurrenceid' in cols:
+            core_type = 'occurrence'
+        elif 'taxonid' in cols:
+            core_type = 'taxon'
         else:
-            return None
-
+            raise ValueError("CSV must contain either 'occurrenceID' or 'taxonID' column to identify the core type.")
+        
+        log(f"Parsed CSV with {len(df)} rows, {len(df.columns)} columns, core type: {core_type}")
+        return df, core_type
+ 
     def _ensure_dwc_prefixed_columns(self, df: pd.DataFrame) -> pd.DataFrame:
         """For each column that does not start with 'dwc:', convert to a 'dwc:' alias if missing.
 
@@ -81,32 +49,11 @@ class CSVService:
             log(f"Error ensuring dwc-prefixed columns: {e}", "WARNING")
             return df
     
-    def generate_raw_results_csv(self, test_results: List[BDQTestExecutionResult], core_type: str) -> str:
+    def generate_raw_results_csv(self, results_df: pd.DataFrame, core_type: str) -> str:
         """Generate CSV with raw BDQ test results"""
-        try:
-            # Convert results to DataFrame
-            data = []
-            for result in test_results:
-                data.append({
-                    f'{core_type}ID': result.record_id,
-                    'test_id': result.test_id,
-                    'status': result.status,
-                    'result': result.result or '',
-                    'comment': result.comment or '',
-                    'amendment': str(result.amendment) if result.amendment else '',
-                    'test_type': result.test_type
-                })
-            
-            df = pd.DataFrame(data)
-            
-            # Convert to CSV string
-            csv_buffer = io.StringIO()
-            df.to_csv(csv_buffer, index=False)
-            return csv_buffer.getvalue()
-            
-        except Exception as e:
-            log(f"Error generating raw results CSV: {e}", "ERROR")
-            raise
+        csv_buffer = io.StringIO()
+        results_df.to_csv(csv_buffer, index=False)
+        return csv_buffer.getvalue()
     
     def generate_amended_dataset(self, original_df: pd.DataFrame, test_results: List[BDQTestExecutionResult], core_type: str) -> str:
         """Generate amended dataset with proposed changes applied"""

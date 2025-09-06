@@ -12,7 +12,7 @@ import asyncio
 import json
 
 from app.services.email_service import EmailService
-from app.services.bdq_py4j_service import BDQPy4JService
+from app.services.bdq_api_service import BDQAPIService
 from app.services.csv_service import CSVService
 from app.services.llm_service import LLMService
 from app.utils.helper import get_unique_tuples, expand_single_test_results_to_all_rows, generate_summary_statistics, log
@@ -22,17 +22,9 @@ import pandas as pd
 load_dotenv()
 
 email_service = EmailService()
-bdq_service = None  # Will be initialized at startup
+bdq_service = BDQAPIService()
 csv_service = CSVService()
 llm_service = LLMService()
-
-
-def get_bdq_service():
-    """Get BDQ service instance, initializing it lazily if needed"""
-    global bdq_service
-    if bdq_service is None:
-        bdq_service = BDQPy4JService()
-    return bdq_service
 
 
 app = FastAPI(
@@ -43,24 +35,11 @@ app = FastAPI(
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialize BDQ gateway at service startup (before handling traffic)."""
-    global bdq_service
-    if bdq_service is None:
-        log("Initializing BDQ service at startup...")
-        bdq_service = BDQPy4JService()
-        log("BDQ service initialized")
+    log("BDQ Email Report service initialized")
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    """Clean up resources on shutdown"""
     log("Shutting down BDQ Email Report Service...")
-    try:
-        if bdq_service is not None:
-            bdq_service.shutdown()
-            log("BDQ service shutdown completed")
-    except Exception as e:
-        log(f"Error during BDQ service shutdown: {e}", "ERROR")
-    log("Service shutdown completed")
 
 @app.get("/")
 async def root():
@@ -85,87 +64,26 @@ async def _handle_email_processing(email_data: Dict[str, Any]):
                 email_data,
                 "CSV must contain either 'occurrenceID' or 'taxonID' column to identify the core type."
             )
-            return
+            return)
 
-        # Get applicable BDQ tests
-        bdq_service_instance = get_bdq_service()
-        applicable_tests = bdq_service_instance.get_applicable_tests_for_dataset(df.columns.tolist())
-        log(f"Applicable BDQ tests: {len(applicable_tests)} of {len(bdq_service_instance.tests)} total")
+        # Run BDQ tests
+        test_results, skipped_tests = await bdq_service.run_tests(df, applicable_tests, core_type)
 
-        if not applicable_tests:
-            log(f"No applicable BDQ tests found for provided CSV columns: {df.columns.tolist()}", "WARNING")
-            await email_service.send_error_reply(
-                email_data,
-                "No applicable BDQ tests found for the provided CSV columns."
-            )
-            return
-
-        # Execute BDQ tests and collect results
-        test_results = []
-        
-        for test in applicable_tests:
-            log(f"Processing test: {test.label}")
-
-            # Get all unique value combinations in acted_upon + consulted
-            unique_tuples = get_unique_tuples(df, test.acted_upon, test.consulted)
-
-            if not unique_tuples:
-                log(f"No unique tuples found for test {test.label}", "WARNING")
-                continue
-
-            # Batch tuples for efficient gateway calls
-            import os as _os
-            try:
-                batch_size = int(_os.getenv('BDQ_TUPLE_BATCH_SIZE', '1000'))
-            except Exception:
-                batch_size = 1000
-
-            for i in range(0, len(unique_tuples), batch_size):
-                batch = unique_tuples[i:i+batch_size]
-                try:
-                    batch_results = bdq_service_instance.execute_tests(
-                        test.java_class,
-                        test.java_method,
-                        test.acted_upon,
-                        test.consulted,
-                        batch
-                    )
-                except Exception as e:
-                    log(f"Error executing batch for {test.label} (tuples {i}-{i+len(batch)-1}): {e}", "ERROR")
-                    continue
-
-                # Align batch results with tuples and expand
-                for tuple_values, tuple_result in zip(batch, batch_results):
-                    try:
-                        row_results = expand_single_test_results_to_all_rows(
-                            df, test, tuple_result, tuple_values, core_type
-                        )
-                        test_results.extend(row_results)
-                    except Exception as e:
-                        log(f"Error expanding results for {test.label} tuple {tuple_values}: {e}", "ERROR")
-                        continue
-        
-        if not test_results:
-            await email_service.send_error_reply(
-                email_data,
-                "No test results were generated. Please check your data format."
-            )
-            return
-        
-        # Generate LLM summary
-        body = llm_service.generate_intelligent_summary(test_results, email_data, core_type, generate_summary_statistics(test_results, df, core_type))
-        
-        log(f"Generating result files with {len(test_results)} test results...")
+        # Generate result files
         raw_results_csv = csv_service.generate_raw_results_csv(test_results, core_type)
         amended_dataset_csv = csv_service.generate_amended_dataset(df, test_results, core_type)
 
-        log("Sending reply email...")
+        # Generate summary (include skipped tests)
+        body = llm_service.generate_intelligent_summary(test_results, email_data, core_type, generate_summary_statistics(test_results, df, core_type))
+
+        # Send reply email
         await email_service.send_results_reply(
             email_data,
             body,
             raw_results_csv,
             amended_dataset_csv
         )
+        
     except Exception as e:
         log(f"Error processing email in background: {str(e)}", "ERROR")
         try:
