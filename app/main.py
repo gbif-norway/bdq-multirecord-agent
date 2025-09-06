@@ -64,7 +64,7 @@ async def _handle_email_processing(email_data: Dict[str, Any]):
     body = llm_service.generate_intelligent_summary(test_results, email_data, core_type, summary_stats)
 
     # Send reply email
-    raw_results_csv = csv_service.generate_raw_results_csv(test_results, core_type)
+    raw_results_csv = csv_service.generate_raw_results_csv(test_results)
     amended_dataset_csv = csv_service.generate_amended_dataset(df, test_results, core_type)
     await email_service.send_results_reply(email_data, body, raw_results_csv, amended_dataset_csv)
     

@@ -98,18 +98,14 @@ occ5,2023-01-05,BadCountry,ZZ,91.0,181.0,InvalidName,BadBasis"""
     ])
     mock_bdq_service.run_tests_on_dataset = AsyncMock(return_value=mock_test_results)
     
-    mock_csv_service = Mock()
-    mock_csv_service.parse_csv_and_detect_core.return_value = (pd.DataFrame(), 'occurrence')
-    mock_csv_service.generate_raw_results_csv.return_value = "occurrenceID,test_id,test_type,status,result,comment\nocc1,VALIDATION_COUNTRYCODE_VALID,Validation,RUN_HAS_RESULT,COMPLIANT,Valid country code"
-    mock_csv_service.generate_amended_dataset.return_value = "occurrenceID,eventDate,country,countryCode,decimalLatitude,decimalLongitude,scientificName,basisOfRecord\nocc1,2023-01-01,United States,US,37.7749,-122.4194,Homo sapiens,HumanObservation"
+    # Use real CSV service - no mocking needed
     
     mock_llm_service = Mock()
     mock_llm_service.generate_intelligent_summary.return_value = "<p>BDQ Test Results for occurrence dataset: Found 3 test results with 2 validation failures.</p>"
     
-    # Mock the module-level services
+    # Mock the module-level services (except CSV service)
     with patch('app.main.email_service', mock_email_service), \
          patch('app.main.bdq_api_service', mock_bdq_service), \
-         patch('app.main.csv_service', mock_csv_service), \
          patch('app.main.llm_service', mock_llm_service):
         
         from app.main import _handle_email_processing
@@ -119,11 +115,8 @@ occ5,2023-01-05,BadCountry,ZZ,91.0,181.0,InvalidName,BadBasis"""
         
         # Verify services were called correctly
         mock_email_service.extract_csv_attachment.assert_called_once_with(sample_email)
-        mock_csv_service.parse_csv_and_detect_core.assert_called_once()
         mock_bdq_service.run_tests_on_dataset.assert_called_once()
         mock_llm_service.generate_intelligent_summary.assert_called_once()
-        mock_csv_service.generate_raw_results_csv.assert_called_once()
-        mock_csv_service.generate_amended_dataset.assert_called_once()
         mock_email_service.send_results_reply.assert_called_once()
         
         # Verify the email was sent with correct parameters
@@ -169,11 +162,9 @@ async def test_invalid_csv_structure_error():
     mock_email_service.extract_csv_attachment.return_value = "name,value\nJohn,25"
     mock_email_service.send_error_reply = AsyncMock()
     
-    mock_csv_service = Mock()
-    mock_csv_service.parse_csv_and_detect_core.return_value = (pd.DataFrame(), None)
+    # Use real CSV service - no mocking needed
     
-    with patch('app.main.email_service', mock_email_service), \
-         patch('app.main.csv_service', mock_csv_service):
+    with patch('app.main.email_service', mock_email_service):
         
         from app.main import _handle_email_processing
         

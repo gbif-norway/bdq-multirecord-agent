@@ -28,21 +28,23 @@ class CSVService:
         return df, core_type
  
     def _ensure_dwc_prefixed_columns(self, df: pd.DataFrame) -> pd.DataFrame:
-        """For each column that does not start with 'dwc:', convert to a 'dwc:' alias if missing.
+        """Rename columns to have 'dwc:' prefix if they don't already have it.
 
-        Keeps original columns intact and creates additional prefixed columns so that
-        BDQ mappings that expect 'dwc:' names resolve without changing inputs.
+        This ensures BDQ mappings that expect 'dwc:' names resolve without duplicating data.
         """
         try:
-            added = 0
-            for col in list(df.columns):
+            renamed = 0
+            new_columns = []
+            for col in df.columns:
                 if not col.startswith('dwc:'):
-                    prefixed = f'dwc:{col}'
-                    if prefixed not in df.columns:
-                        df[prefixed] = df[col]
-                        added += 1
-            if added:
-                log(f"Added {added} 'dwc:'-prefixed column aliases to match BDQ mappings")
+                    new_columns.append(f'dwc:{col}')
+                    renamed += 1
+                else:
+                    new_columns.append(col)
+            
+            if renamed:
+                df.columns = new_columns
+                log(f"Renamed {renamed} columns to have 'dwc:' prefix to match BDQ mappings")
             return df
         except Exception as e:
             log(f"Error ensuring dwc-prefixed columns: {e}", "WARNING")

@@ -66,8 +66,8 @@ occ2,2023-01-02,Canada,CA,43.6532,-79.3832,Canis lupus,HumanObservation"""
     
     assert core_type == 'occurrence'
     assert len(df) == 2
-    assert 'occurrenceID' in df.columns
     assert 'dwc:occurrenceID' in df.columns  # Should have dwc: prefix
+    assert 'occurrenceID' not in df.columns  # Original column should be renamed
     
     # Test taxon CSV
     taxon_csv = """taxonID,scientificName,kingdom,phylum,class,order,family,genus,specificEpithet,taxonRank,scientificNameAuthorship
@@ -77,8 +77,8 @@ tax1,Homo sapiens,Animalia,Chordata,Mammalia,Primates,Hominidae,Homo,sapiens,spe
     
     assert core_type == 'taxon'
     assert len(df) == 1
-    assert 'taxonID' in df.columns
     assert 'dwc:taxonID' in df.columns  # Should have dwc: prefix
+    assert 'taxonID' not in df.columns  # Original column should be renamed
     
     # Test invalid CSV
     invalid_csv = "name,value\nJohn,25"
