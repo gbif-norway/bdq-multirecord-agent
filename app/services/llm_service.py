@@ -11,19 +11,7 @@ class LLMService:
         genai.configure(api_key=self.api_key)
         self.model = genai.GenerativeModel('gemini-1.5-flash')
     
-    def generate_intelligent_summary(
-        self, 
-        test_results: List[BDQTestExecutionResult],
-        original_email_data: Dict[str, Any],
-        core_type: str,
-        summary_stats: Dict[str, Any]
-    ) -> Dict[str, str]:
-        """
-        Generate intelligent summary using Gemini LLM
-        
-        Returns:
-            Dict with 'text' and 'html' keys containing the generated summaries
-        """
+    def generate_intelligent_summary(self, test_results, original_email_data, core_type, summary_stats):
         # Generate the prompt
         prompt = self._create_summary_prompt(test_results, original_email_data, core_type, summary_stats)
         
@@ -38,7 +26,7 @@ class LLMService:
             return "<p>Unable to generate summary at this time.</p>"
                 
     
-    def _create_summary_prompt(self, test_results: List[BDQTestExecutionResult], original_email_data: Dict[str, Any], core_type: str, summary_stats: Dict[str, Any]) -> str:
+    def _create_summary_prompt(self, test_results, original_email_data, core_type, summary_stats):
         """Create the prompt for the LLM"""
         
         # Analyze test results for validation failures

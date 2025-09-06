@@ -18,12 +18,11 @@ class CSVService:
         df = self._ensure_dwc_prefixed_columns(df)
 
         cols = [c.lower() for c in df.columns]]
+        core_type = None
         if 'occurrenceid' in cols:
             core_type = 'occurrence'
         elif 'taxonid' in cols:
             core_type = 'taxon'
-        else:
-            raise ValueError("CSV must contain either 'occurrenceID' or 'taxonID' column to identify the core type.")
         
         log(f"Parsed CSV with {len(df)} rows, {len(df.columns)} columns, core type: {core_type}")
         return df, core_type
@@ -49,13 +48,13 @@ class CSVService:
             log(f"Error ensuring dwc-prefixed columns: {e}", "WARNING")
             return df
     
-    def generate_raw_results_csv(self, results_df: pd.DataFrame, core_type: str) -> str:
+    def generate_raw_results_csv(self, results_df):
         """Generate CSV with raw BDQ test results"""
         csv_buffer = io.StringIO()
         results_df.to_csv(csv_buffer, index=False)
         return csv_buffer.getvalue()
     
-    def generate_amended_dataset(self, original_df: pd.DataFrame, test_results: List[BDQTestExecutionResult], core_type: str) -> str:
+    def generate_amended_dataset(self, original_df, results_df, core_type):
         """Generate amended dataset with proposed changes applied"""
         try:
             # Create a copy of the original dataframe
