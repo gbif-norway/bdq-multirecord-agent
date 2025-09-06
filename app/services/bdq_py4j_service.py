@@ -198,16 +198,30 @@ class BDQPy4JService:
         try:
             # Get BDQ gateway
             bdq_gateway = self.gateway.entry_point
-            
+            jvm = self.gateway.jvm
+            # Convert Python lists/dicts to explicit Java collections to avoid Py4J marshalling issues
+            def to_java_list(py_list: List[str]):
+                j_list = jvm.java.util.ArrayList()
+                for v in py_list:
+                    j_list.add(v)
+                return j_list
+
+            j_acted = to_java_list(acted_upon)
+            j_consulted = to_java_list(consulted)
+            j_tuples = jvm.java.util.ArrayList()
+            inner = to_java_list(tuple_values)
+            j_tuples.add(inner)
+            j_params = jvm.java.util.HashMap()  # empty parameters
+
             # Execute test via Py4J gateway
             result = bdq_gateway.executeTest(
                 f"{java_class}.{java_method}",  # test_id
                 java_class,
                 java_method,
-                acted_upon,
-                consulted,
-                {},  # parameters, we're always going to use the defaults
-                [tuple_values]  # single tuple as list
+                j_acted,
+                j_consulted,
+                j_params,  # parameters, using defaults
+                j_tuples  # single tuple as Java list
             )
             
             # Convert Java Map to Python dict

@@ -70,7 +70,7 @@ class TestLabelBasedDiscovery:
         
         assert method_info is not None, f"Could not find method for label {test_label}"
         assert method_info['library'] == 'geo_ref_qc'
-        assert method_info['class_name'] in ['DwCGeoRefDQ', 'DwCGeoRefDQDefaults']
+        assert method_info['class_name'].endswith(('DwCGeoRefDQ', 'DwCGeoRefDQDefaults'))
         assert method_info['method_name'] is not None
         assert method_info['annotation_type'] == 'Validation'
         assert method_info['annotation_label'] == test_label
@@ -84,7 +84,7 @@ class TestLabelBasedDiscovery:
         
         assert method_info is not None, f"Could not find method for label {test_label}"
         assert method_info['library'] == 'geo_ref_qc'
-        assert method_info['class_name'] in ['DwCGeoRefDQ', 'DwCGeoRefDQDefaults']
+        assert method_info['class_name'].endswith(('DwCGeoRefDQ', 'DwCGeoRefDQDefaults'))
         assert method_info['method_name'] is not None
         assert method_info['annotation_type'] == 'Amendment'
         assert method_info['annotation_label'] == test_label
@@ -98,7 +98,7 @@ class TestLabelBasedDiscovery:
         
         assert method_info is not None, f"Could not find method for label {test_label}"
         assert method_info['library'] == 'event_date_qc'
-        assert method_info['class_name'] in ['DwCEventDQ', 'DwCEventDQDefaults']
+        assert method_info['class_name'].endswith(('DwCEventDQ', 'DwCEventDQDefaults'))
         assert method_info['method_name'] is not None
         assert method_info['annotation_type'] == 'Measure'
         assert method_info['annotation_label'] == test_label
@@ -112,7 +112,7 @@ class TestLabelBasedDiscovery:
         
         assert method_info is not None, f"Could not find method for label {test_label}"
         assert method_info['library'] == 'rec_occur_qc'
-        assert method_info['class_name'] in ['DwCMetadataDQ', 'DwCMetadataDQDefaults']
+        assert method_info['class_name'].endswith(('DwCMetadataDQ', 'DwCMetadataDQDefaults'))
         assert method_info['method_name'] is not None
         assert method_info['annotation_type'] == 'Issue'
         assert method_info['annotation_label'] == test_label

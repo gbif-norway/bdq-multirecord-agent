@@ -129,8 +129,14 @@ class TestE2EFullPipelineIntegration:
             raw_df = pd.read_csv(io.StringIO(raw_csv))
             result_labels = set(raw_df.get('test_id', pd.Series([], dtype=str)).dropna().astype(str))
             assert result_labels, "No test_id values found in raw results"
-            assert applicable_labels.intersection(result_labels), (
+            overlap = applicable_labels.intersection(result_labels)
+            assert overlap, (
                 f"No overlap between applicable tests ({len(applicable_labels)}) and executed tests ({len(result_labels)})"
+            )
+            # Ensure no ERROR statuses for overlapping labels on this small dataset
+            overlap_df = raw_df[raw_df['test_id'].isin(list(overlap))]
+            assert not (overlap_df['status'].astype(str) == 'ERROR').any(), (
+                f"Found ERROR statuses in executed tests: {overlap_df[overlap_df['status']=='ERROR'].to_dict(orient='records')[:5]}"
             )
 
             # Amended dataset should be a valid CSV with original headers

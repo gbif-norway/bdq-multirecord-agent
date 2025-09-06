@@ -269,7 +269,7 @@ public class BDQGateway {
                             String label = labelObj.toString();
                             if (label.isEmpty()) continue;
 
-                            String simpleClass = clazz.getSimpleName();
+                            String fqnClass = clazz.getName();
                             String methodName = m.getName();
                             String pkg = clazz.getPackage().getName();
                             String lib = pkg.substring(pkg.lastIndexOf('.') + 1);
@@ -280,7 +280,7 @@ public class BDQGateway {
 
                             Map<String, String> candidate = new HashMap<>();
                             candidate.put("library", lib);
-                            candidate.put("class_name", simpleClass);
+                            candidate.put("class_name", fqnClass);
                             candidate.put("method_name", methodName);
                             candidate.put("annotation_type", annType);
                             candidate.put("annotation_label", label);
