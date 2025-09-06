@@ -91,6 +91,83 @@ async def process_incoming_email(request: Request, background_tasks: BackgroundT
 
 def _generate_summary_stats(df):
     # Generate some summary stats from the results file, should be a dict
+    # Previously i had something like this, but there may be missing info now, just take and use what you can and make some stats you think are useful
+    # version 1:
+    #  """Generate summary statistics from test results DataFrame"""
+    # if test_results_df is None or test_results_df.empty:
+    #     return {}
+    
+    # # Calculate basic stats
+    # total_records = len(df)
+    # total_tests_run = len(test_results_df)
+    
+    # # Count validation failures by field
+    # validation_failures = test_results_df[
+    #     (test_results_df['result'] == 'NOT_COMPLIANT') | 
+    #     (test_results_df['result'] == 'POTENTIAL_ISSUE')
+    # ]
+    
+    # # Count amendments applied
+    # amendments_applied = len(test_results_df[
+    #     test_results_df['status'].isin(['AMENDED', 'FILLED_IN'])
+    # ])
+    
+    # # Get common issues
+    # common_issues = validation_failures['comment'].value_counts().head(5).to_dict()
+    
+    # return {
+    #     'total_records': total_records,
+    #     'total_tests_run': total_tests_run,
+    #     'validation_failures': len(validation_failures),
+    #     'amendments_applied': amendments_applied,
+    #     'common_issues': common_issues
+    # }
+    # version 2
+    #     """Generate processing summary from test results"""
+    #     try:
+    #         # Count validation failures by field
+    #         validation_failures = {}
+    #         amendments_applied = 0
+    #         common_issues = []
+            
+    #         # Track unique issues for common issues list
+    #         issue_counts = {}
+            
+    #         for result in test_results:
+    #             if result.result == "NOT_COMPLIANT":
+    #                 # This is a validation failure
+    #                 if result.test_id not in validation_failures:
+    #                     validation_failures[result.test_id] = 0
+    #                 validation_failures[result.test_id] += 1
+                    
+    #                 # Track common issues
+    #                 if result.comment:
+    #                     issue_key = f"{result.test_id}: {result.comment}"
+    #                     issue_counts[issue_key] = issue_counts.get(issue_key, 0) + 1
+                
+    #             elif result.status == "AMENDED":
+    #                 amendments_applied += 1
+            
+    #         # Get top 5 most common issues
+    #         sorted_issues = sorted(issue_counts.items(), key=lambda x: x[1], reverse=True)
+    #         common_issues = [issue[0] for issue in sorted_issues[:5]]
+            
+    #         summary = {
+    #             "total_records": total_records,
+    #             "total_tests_run": len(test_results),
+    #             "validation_failures": validation_failures,
+    #             "common_issues": common_issues,
+    #             "amendments_applied": amendments_applied,
+    #         }
+            
+    #         log(
+    #             f"Generated summary: {total_records} records, {len(test_results)} tests, {len(validation_failures)} failure types
+    #         )
+    #         return summary
+            
+    #     except Exception as e:
+    #         logger.error(f"Error generating summary: {e}")
+    #         raise
     pass
 
 @app.exception_handler(Exception)
