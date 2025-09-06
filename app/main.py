@@ -60,8 +60,11 @@ async def _handle_email_processing(email_data: Dict[str, Any]):
     test_results = await bdq_api_service.run_tests_on_dataset(df, core_type)
     summary_stats = _get_summary_stats(test_results)
 
-    # Get email body
-    body = llm_service.generate_intelligent_summary(test_results, email_data, core_type, summary_stats)
+    # Get LLM analysis (without stats)
+    llm_analysis = llm_service.generate_intelligent_summary(test_results, email_data, core_type, summary_stats)
+    
+    # Combine summary stats + LLM analysis
+    body = _format_summary_stats_html(summary_stats, core_type) + llm_analysis
 
     # Send reply email
     raw_results_csv = csv_service.generate_raw_results_csv(test_results)
@@ -153,6 +156,59 @@ def _get_summary_stats(test_results_df):
     
     log(f"Generated summary: {total_records} records, {total_tests_run} tests, {len(validation_failures)} failures, {amendments_applied} amendments")
     return summary
+
+def _format_summary_stats_html(summary_stats, core_type):
+    """Format summary statistics as a nice HTML list for the top of the email"""
+    if not summary_stats:
+        return "<p><strong>No test results available</strong></p>"
+    
+    total_records = summary_stats.get('total_records', 0)
+    total_tests = summary_stats.get('total_tests_run', 0)
+    success_rate = summary_stats.get('success_rate_percent', 0)
+    validation_failures = summary_stats.get('validation_failures', 0)
+    amendments_applied = summary_stats.get('amendments_applied', 0)
+    failure_counts = summary_stats.get('failure_counts_by_test', {})
+    common_issues = summary_stats.get('common_issues', {})
+    
+    html = f"""
+    <div style="background-color: #f8f9fa; padding: 15px; border-left: 4px solid #007bff; margin-bottom: 20px;">
+        <h3 style="margin-top: 0; color: #007bff;">📊 BDQ Test Results Summary</h3>
+        <ul style="margin: 0; padding-left: 20px;">
+            <li><strong>Dataset:</strong> {core_type.title()} core with {total_records:,} records</li>
+            <li><strong>Tests Run:</strong> {total_tests:,} tests across {summary_stats.get('unique_tests', 0)} categories</li>
+            <li><strong>Success Rate:</strong> {success_rate}% compliant</li>
+    """
+    
+    if validation_failures > 0:
+        html += f"<li><strong>Issues Found:</strong> {validation_failures:,} validation problems</li>"
+        
+        # Add top 3 failure categories (truncated)
+        if failure_counts:
+            top_failures = list(failure_counts.items())[:3]
+            failure_list = ", ".join([f"{test_id} ({count})" for test_id, count in top_failures])
+            if len(failure_counts) > 3:
+                failure_list += f" and {len(failure_counts) - 3} more"
+            html += f"<li><strong>Main Issues:</strong> {failure_list}</li>"
+    else:
+        html += "<li><strong>Status:</strong> ✅ No validation issues found!</li>"
+    
+    if amendments_applied > 0:
+        html += f"<li><strong>Auto-Improvements:</strong> {amendments_applied:,} records enhanced</li>"
+    
+    # Add top 2 most common issues (truncated)
+    if common_issues:
+        top_issues = list(common_issues.items())[:2]
+        issues_list = ", ".join([f"{issue[:50]}{'...' if len(issue) > 50 else ''} ({count})" for issue, count in top_issues])
+        if len(common_issues) > 2:
+            issues_list += f" and {len(common_issues) - 2} more"
+        html += f"<li><strong>Common Issues:</strong> {issues_list}</li>"
+    
+    html += """
+        </ul>
+    </div>
+    """
+    
+    return html
         
 
 @app.exception_handler(Exception)

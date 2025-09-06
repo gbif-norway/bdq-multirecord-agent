@@ -250,5 +250,89 @@ def test_empty_summary_statistics():
     assert summary == {}
 
 
+def test_summary_statistics_common_issues():
+    """Test summary statistics with common issues extraction"""
+    from app.main import _get_summary_stats
+    
+    # Create test results with repeated comments
+    test_results = pd.DataFrame([
+        {
+            'dwc:occurrenceID': 'occ1',
+            'test_id': 'VALIDATION_COUNTRYCODE_VALID',
+            'test_type': 'Validation',
+            'status': 'RUN_HAS_RESULT',
+            'result': 'NOT_COMPLIANT',
+            'comment': 'Invalid country code format'
+        },
+        {
+            'dwc:occurrenceID': 'occ2',
+            'test_id': 'VALIDATION_COUNTRYCODE_VALID',
+            'test_type': 'Validation',
+            'status': 'RUN_HAS_RESULT',
+            'result': 'NOT_COMPLIANT',
+            'comment': 'Invalid country code format'
+        },
+        {
+            'dwc:occurrenceID': 'occ3',
+            'test_id': 'VALIDATION_COUNTRYCODE_VALID',
+            'test_type': 'Validation',
+            'status': 'RUN_HAS_RESULT',
+            'result': 'NOT_COMPLIANT',
+            'comment': 'Country code missing'
+        },
+        {
+            'dwc:occurrenceID': 'occ4',
+            'test_id': 'VALIDATION_COUNTRYCODE_VALID',
+            'test_type': 'Validation',
+            'status': 'RUN_HAS_RESULT',
+            'result': 'NOT_COMPLIANT',
+            'comment': ''  # Empty comment should be ignored
+        }
+    ])
+    
+    summary = _get_summary_stats(test_results)
+    
+    # Check common issues
+    assert 'common_issues' in summary
+    assert 'Invalid country code format' in summary['common_issues']
+    assert summary['common_issues']['Invalid country code format'] == 2
+    assert 'Country code missing' in summary['common_issues']
+    assert summary['common_issues']['Country code missing'] == 1
+    # Empty comment should not appear
+    assert '' not in summary['common_issues']
+
+
+def test_summary_statistics_no_validation_failures():
+    """Test summary statistics when no validation failures occur"""
+    from app.main import _get_summary_stats
+    
+    # Create test results with only compliant results
+    test_results = pd.DataFrame([
+        {
+            'dwc:occurrenceID': 'occ1',
+            'test_id': 'VALIDATION_COUNTRYCODE_VALID',
+            'test_type': 'Validation',
+            'status': 'RUN_HAS_RESULT',
+            'result': 'COMPLIANT',
+            'comment': 'Valid country code'
+        },
+        {
+            'dwc:occurrenceID': 'occ2',
+            'test_id': 'VALIDATION_COUNTRYCODE_VALID',
+            'test_type': 'Validation',
+            'status': 'RUN_HAS_RESULT',
+            'result': 'COMPLIANT',
+            'comment': 'Valid country code'
+        }
+    ])
+    
+    summary = _get_summary_stats(test_results)
+    
+    assert summary['validation_failures'] == 0
+    assert summary['success_rate_percent'] == 100.0
+    assert summary['failure_counts_by_test'] == {}
+    assert summary['common_issues'] == []
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
