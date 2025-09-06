@@ -62,9 +62,8 @@ class CSVService:
         
         if amendment_results.empty:
             log("No amendment results found")
-            return amended_df
-        
-        log(f"Applying {len(amendment_results)} amendments to dataset")
+        else:
+            log(f"Applying {len(amendment_results)} amendments to dataset")
         
         # Group by ID to handle multiple amendments per row
         for id_value, group in amendment_results.groupby(id_column):
@@ -82,46 +81,24 @@ class CSVService:
                     self._apply_single_amendment(amended_df, row_idx, amendment)
         
         log(f"Applied amendments to {len(amendment_results)} records")
-        return amended_df
+        
+        # Convert DataFrame to CSV string
+        csv_buffer = io.StringIO()
+        amended_df.to_csv(csv_buffer, index=False)
+        return csv_buffer.getvalue()
     
     def _apply_single_amendment(self, df, row_idx, amendment):
         """Apply a single amendment to a specific row"""
         result = amendment['result']
-        test_id = amendment['test']
-        
-        try:
-            # Check if result contains key=value pairs (like "dwc:decimalLatitude=-25.46, dwc:decimalLongitude=135.87")
-            if '=' in result and ',' in result:
-                # Multiple field amendment
-                pairs = result.split(',')
-                for pair in pairs:
-                    if '=' in pair:
-                        key, value = pair.strip().split('=', 1)
-                        key = key.strip()
-                        value = value.strip().strip('"\'')  # Remove quotes
-                        
-                        if key in df.columns:
-                            df.at[row_idx, key] = value
-                            log(f"Applied amendment to {key}={value} for test {test_id}")
-                        else:
-                            log(f"Warning: Column {key} not found for amendment in test {test_id}", "WARNING")
+        test_id = amendment['test_id']
+    
+        amendments = result.split('|')
+        for amendment_part in amendments:
+            col, amended_value = amendment_part.split('=', 1)
+            amended_value = amended_value.strip().strip('"\'')
             
-            elif '=' in result:
-                # Single field amendment
-                key, value = result.split('=', 1)
-                key = key.strip()
-                value = value.strip().strip('"\'')  # Remove quotes
-                
-                if key in df.columns:
-                    df.at[row_idx, key] = value
-                    log(f"Applied amendment to {key}={value} for test {test_id}")
-                else:
-                    log(f"Warning: Column {key} not found for amendment in test {test_id}", "WARNING")
-            
+            if col in df.columns:
+                df.at[row_idx, col] = amended_value
+                log(f"Applied amendment to {col}={amended_value} for test {test_id}")
             else:
-                # Simple value amendment - need to determine which column to update
-                # This is more complex as we need to know which column the test was acting upon
-                log(f"Warning: Cannot determine target column for simple amendment '{result}' in test {test_id}", "WARNING")
-                
-        except Exception as e:
-            log(f"Error applying amendment '{result}' for test {test_id}: {str(e)}", "ERROR")
+                log(f"ERROR: Column {col} not found for amendment in test {test_id}", "WARNING")

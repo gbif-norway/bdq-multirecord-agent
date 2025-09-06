@@ -223,7 +223,7 @@ def test_csv_output_validation():
             'test_id': 'AMENDMENT_EVENTDATE_STANDARDIZED',
             'test_type': 'Amendment',
             'status': 'AMENDED',
-            'result': '2023-01-01T00:00:00',
+            'result': 'dwc:eventDate=2023-01-01T00:00:00',
             'comment': 'Standardized date format'
         }
     ])

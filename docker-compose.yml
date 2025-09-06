@@ -9,8 +9,6 @@ services:
       - PYTHONUNBUFFERED=1
       - PORT=8080
       - PYTHONPATH=/app
-      - BDQ_PY4J_GATEWAY_JAR=/opt/bdq/bdq-py4j-gateway.jar
-      - BDQ_JAVA_OPTS=-Xms256m -Xmx1024m
       - GMAIL_SEND=test
       - HMAC_SECRET=test-secret
       - DISCORD_WEBHOOK=test
@@ -34,8 +32,6 @@ services:
     environment:
       - PYTHONPATH=/app
       - PYTHONUNBUFFERED=1
-      - BDQ_PY4J_GATEWAY_JAR=/opt/bdq/bdq-py4j-gateway.jar
-      - BDQ_JAVA_OPTS=-Xms256m -Xmx1024m
       - GMAIL_SEND=test
       - HMAC_SECRET=test-secret
       - DISCORD_WEBHOOK=test

@@ -32,7 +32,17 @@ class BDQAPIService:
         # batch_endpoint accepts an array of { id, params }, with the test name as the id, like this e.g.:
         # [{ "id": "VALIDATION_COUNTRYCODE_VALID", "params": { "dwc:countryCode": "US" } }, { "id": "AMENDMENT_EVENTDATE_STANDARDIZED", "params": { "dwc:eventDate": "8 May 1880" } }
         # It returns a list of  in the same order as the input tests like this e.g.:
-        # [{ "status": "RUN_HAS_RESULT", "result": "COMPLIANT", "comment": "..." }, { "status": "AMENDED", "result": "1880-05-08", "comment": "..." }]
+        # [{ "status": "RUN_HAS_RESULT", "result": "COMPLIANT", "comment": "..." }, { "status": "AMENDED", "result": "dwc:eventDate=1880-05-08", "comment": "..." }, { "status": "AMENDED", "result": "dwc:decimalLatitude="-25.46"|dwc:decimalLongitude="135.87"", "comment": "..." }]
+        # - Single-field amendment item:
+        #     - result: dwc:eventDate=1880-05-08
+        # - Multi-field amendment item:
+        #     - result: dwc:minimumDepthInMeters=3.048 | dwc:maximumDepthInMeters=3.048
+        # - Validation item:
+        #     - result: COMPLIANT (unchanged; still the label from the value)
+        # - Failed item:
+        #     - status: INTERNAL_PREREQUISITES_NOT_MET
+        #     - result: ""
+        #     - comment: error message (e.g., “Unknown test id or guid: …”)
     
     def _filter_applicable_tests(self, csv_columns: List[str]) -> List[BDQTest]:
         """Filter tests that can be applied to the CSV columns"""
@@ -58,9 +68,10 @@ class BDQAPIService:
                 log(f"Running test: {test.id}")
 
                 # Get a df which is a subset of the main df with unique items for testing for this particular test (e.g. just countryCode, or decimalLatitude and decimalLongitude and countryCode)
-                unique_test_candidates = df[test.actedUpon + test.consulted].drop_duplicates().reset_index(drop=True)
+                test_columns = test.actedUpon + test.consulted 
+                unique_test_candidates = df[test_columns].drop_duplicates().reset_index(drop=True)
                 
-                # Prepare batch request
+                # Prepare batch request for unique combinations
                 unique_test_candidates_batch_request = [
                     {"id": test.id, "params": row.to_dict()}
                     for _, row in unique_test_candidates.iterrows()
@@ -71,35 +82,33 @@ class BDQAPIService:
                 batch_response.raise_for_status()
                 batch_results = batch_response.json()
 
-                # Create results df and expand it out for each row id in the original dataframe
-                results_df = pd.DataFrame(batch_results).fillna("")
-                results_df['test'] = test.id
-                results_df['test_type'] = test.type
+                # Create results df for unique combinations
+                unique_results_df = pd.DataFrame(batch_results).fillna("")
+                unique_results_df['test_id'] = test.id
+                unique_results_df['test_type'] = test.type
                 
-                # Combine so we have a df of testnames + results
-                unique_with_results = pd.concat([unique_test_candidates, results_df], axis=1)
+                # Combine unique test data with results
+                unique_with_results = pd.concat([unique_test_candidates, unique_results_df], axis=1)
                 
-                # Expand out based on test.actedUpon + test.consulted columns so that we have results for every row, not just unique rows
-                # Merge the unique results back to the original dataframe 
-                test_columns = test.actedUpon + test.consulted
+                # Merge results back to original dataframe to get one row per test per original row
                 expanded_results = df.merge(
                     unique_with_results, 
                     on=test_columns, 
                     how='left'
                 )
                 
-                # Select only the required columns: occurrenceID/taxonID, test, test_type, status, result, comment
+                # Select only the required columns: occurrenceID/taxonID, test_id, test_type, status, result, comment
                 id_column = f'{core_type}ID'
-                final_results = expanded_results[[id_column, 'test', 'test_type', 'status', 'result', 'comment']]
+                final_results = expanded_results[[id_column, 'test_id', 'test_type', 'status', 'result', 'comment']]
                 
                 all_results_dfs.append(final_results)
-                log(f"Completed test {test.id}: {len(expanded_results)} results")
+                log(f"Completed test {test.id}: {len(final_results)} results")
                 
             except Exception as e:
                 log(f"Error running test {test.id}: {str(e)}")
                 continue
                 
-        # Make an all_results_df and return it after this message
+        # Combine all test results
         if all_results_dfs:
             all_results_df = pd.concat(all_results_dfs, ignore_index=True)
             log(f"Completed all tests: {len(all_results_df)} total results, with a total of {len(applicable_tests)} tests run")

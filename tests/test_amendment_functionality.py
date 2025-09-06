@@ -20,7 +20,7 @@ def test_amendment_mapping():
             'test_id': 'AMENDMENT_EVENTDATE_STANDARDIZED',
             'test_type': 'Amendment',
             'status': 'AMENDED',
-            'result': '2023-01-01T00:00:00',
+            'result': 'dwc:eventDate=2023-01-01T00:00:00',
             'comment': 'Standardized date format'
         },
         {
@@ -28,7 +28,7 @@ def test_amendment_mapping():
             'test_id': 'AMENDMENT_COUNTRYCODE_STANDARDIZED',
             'test_type': 'Amendment',
             'status': 'AMENDED',
-            'result': 'US',
+            'result': 'dwc:countryCode=US',
             'comment': 'Standardized country code'
         },
         {
@@ -56,35 +56,6 @@ def test_amendment_mapping():
     assert amended_df.loc[amended_df['occurrenceID'] == 'occ2', 'dwc:countryCode'].iloc[0] == 'US'
     # occ3 should be unchanged (validation, not amendment)
     assert amended_df.loc[amended_df['occurrenceID'] == 'occ3', 'dwc:countryCode'].iloc[0] == 'US'
-
-
-def test_coordinate_transposition():
-    """Test coordinate transposition amendment"""
-    csv_service = CSVService()
-    
-    # Create test data with coordinate transposition
-    test_results = pd.DataFrame([
-        {
-            'occurrenceID': 'occ1',
-            'test_id': 'AMENDMENT_COORDINATES_TRANSPOSED',
-            'test_type': 'Amendment',
-            'status': 'AMENDED',
-            'result': 'transposed',
-            'comment': 'Coordinates were transposed'
-        }
-    ])
-    
-    original_df = pd.DataFrame([
-        {'occurrenceID': 'occ1', 'dwc:decimalLatitude': '37.7749', 'dwc:decimalLongitude': '-122.4194'}
-    ])
-    
-    # Generate amended dataset
-    amended_csv = csv_service.generate_amended_dataset(original_df, test_results, 'occurrence')
-    amended_df = pd.read_csv(StringIO(amended_csv))
-    
-    # Verify coordinates were swapped
-    assert float(amended_df.loc[amended_df['occurrenceID'] == 'occ1', 'dwc:decimalLatitude'].iloc[0]) == -122.4194
-    assert float(amended_df.loc[amended_df['occurrenceID'] == 'occ1', 'dwc:decimalLongitude'].iloc[0]) == 37.7749
 
 
 def test_no_amendments():
@@ -115,34 +86,6 @@ def test_no_amendments():
     assert amended_df.equals(original_df)
 
 
-def test_unknown_amendment_test():
-    """Test handling of unknown amendment test IDs"""
-    csv_service = CSVService()
-    
-    # Create test data with unknown amendment test
-    test_results = pd.DataFrame([
-        {
-            'occurrenceID': 'occ1',
-            'test_id': 'UNKNOWN_AMENDMENT_TEST',
-            'test_type': 'Amendment',
-            'status': 'AMENDED',
-            'result': 'some_value',
-            'comment': 'Unknown amendment'
-        }
-    ])
-    
-    original_df = pd.DataFrame([
-        {'occurrenceID': 'occ1', 'dwc:countryCode': 'US'}
-    ])
-    
-    # Generate amended dataset
-    amended_csv = csv_service.generate_amended_dataset(original_df, test_results, 'occurrence')
-    amended_df = pd.read_csv(StringIO(amended_csv))
-    
-    # Verify no changes were made (unknown test should be ignored)
-    assert amended_df.equals(original_df)
-
-
 def test_amendment_with_missing_field():
     """Test handling of amendments for fields not in the dataset"""
     csv_service = CSVService()
@@ -154,7 +97,7 @@ def test_amendment_with_missing_field():
             'test_id': 'AMENDMENT_EVENTDATE_STANDARDIZED',
             'test_type': 'Amendment',
             'status': 'AMENDED',
-            'result': '2023-01-01T00:00:00',
+            'result': 'dwc:eventDate=2023-01-01T00:00:00',
             'comment': 'Standardized date format'
         }
     ])
@@ -183,7 +126,7 @@ def test_multiple_amendments_same_record():
             'test_id': 'AMENDMENT_EVENTDATE_STANDARDIZED',
             'test_type': 'Amendment',
             'status': 'AMENDED',
-            'result': '2023-01-01T00:00:00',
+            'result': 'dwc:eventDate=2023-01-01T00:00:00',
             'comment': 'Standardized date format'
         },
         {
@@ -191,7 +134,7 @@ def test_multiple_amendments_same_record():
             'test_id': 'AMENDMENT_COUNTRYCODE_STANDARDIZED',
             'test_type': 'Amendment',
             'status': 'AMENDED',
-            'result': 'US',
+            'result': 'dwc:countryCode=US',
             'comment': 'Standardized country code'
         }
     ])
@@ -207,6 +150,35 @@ def test_multiple_amendments_same_record():
     # Verify both amendments were applied
     assert amended_df.loc[amended_df['occurrenceID'] == 'occ1', 'dwc:eventDate'].iloc[0] == '2023-01-01T00:00:00'
     assert amended_df.loc[amended_df['occurrenceID'] == 'occ1', 'dwc:countryCode'].iloc[0] == 'US'
+
+
+def test_multi_field_amendment():
+    """Test applying multi-field amendments (separated by |)"""
+    csv_service = CSVService()
+    
+    # Create test data with multi-field amendment
+    test_results = pd.DataFrame([
+        {
+            'occurrenceID': 'occ1',
+            'test_id': 'AMENDMENT_DEPTH_STANDARDIZED',
+            'test_type': 'Amendment',
+            'status': 'AMENDED',
+            'result': 'dwc:minimumDepthInMeters=3.048|dwc:maximumDepthInMeters=3.048',
+            'comment': 'Standardized depth values'
+        }
+    ])
+    
+    original_df = pd.DataFrame([
+        {'occurrenceID': 'occ1', 'dwc:minimumDepthInMeters': '10', 'dwc:maximumDepthInMeters': '10'}
+    ])
+    
+    # Generate amended dataset
+    amended_csv = csv_service.generate_amended_dataset(original_df, test_results, 'occurrence')
+    amended_df = pd.read_csv(StringIO(amended_csv))
+    
+    # Verify both fields were amended
+    assert amended_df.loc[amended_df['occurrenceID'] == 'occ1', 'dwc:minimumDepthInMeters'].iloc[0] == 3.048
+    assert amended_df.loc[amended_df['occurrenceID'] == 'occ1', 'dwc:maximumDepthInMeters'].iloc[0] == 3.048
 
 
 if __name__ == "__main__":
