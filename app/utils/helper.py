@@ -27,7 +27,7 @@ def log(message: str, level: str = "INFO"):
     elif level.upper() == "WARNING":
         logger.warning(message)
     elif level.upper() == "ERROR":
-        logger.error(message)
+        logger.error(f"🚨 {message}")
     else:
         logger.info(message)
     
