@@ -2,7 +2,7 @@ import pandas as pd
 import io
 import base64
 from typing import Tuple, Optional, List, Dict, Any
-from app.utils.helper import BDQTestExecutionResult, log
+from app.utils.helper import log
 
 class CSVService:
     """Service for CSV processing and manipulation"""
@@ -17,11 +17,11 @@ class CSVService:
         df.columns = df.columns.str.strip().str.strip("\"'")
         df = self._ensure_dwc_prefixed_columns(df)
 
-        cols = [c.lower() for c in df.columns]]
+        cols = [c.lower() for c in df.columns]
         core_type = None
-        if 'occurrenceid' in cols:
+        if 'dwc:occurrenceid' in cols:
             core_type = 'occurrence'
-        elif 'taxonid' in cols:
+        elif 'dwc:taxonid' in cols:
             core_type = 'taxon'
         
         log(f"Parsed CSV with {len(df)} rows, {len(df.columns)} columns, core type: {core_type}")
@@ -56,39 +56,72 @@ class CSVService:
     
     def generate_amended_dataset(self, original_df, results_df, core_type):
         """Generate amended dataset with proposed changes applied"""
-        try:
-            # Create a copy of the original dataframe
-            amended_df = original_df.copy()
+        amended_df = original_df.copy()
+        id_column = f'{core_type}ID'
+        amendment_results = results_df[results_df['test_type'] == 'Amendment'].copy()
+        
+        if amendment_results.empty:
+            log("No amendment results found")
+            return amended_df
+        
+        log(f"Applying {len(amendment_results)} amendments to dataset")
+        
+        # Group by ID to handle multiple amendments per row
+        for id_value, group in amendment_results.groupby(id_column):
+            # Find the row index in the original dataframe
+            row_mask = amended_df[id_column] == id_value
+            if not row_mask.any():
+                log(f"Warning: Could not find row with {id_column}={id_value} for amendment", "WARNING")
+                continue
+                
+            row_idx = amended_df[row_mask].index[0]
             
-            # Group results by record ID for efficient processing
-            results_by_record = {}
-            for result in test_results:
-                if result.record_id not in results_by_record:
-                    results_by_record[result.record_id] = []
-                results_by_record[result.record_id].append(result)
-            
-            # Apply amendments
-            amendments_applied = 0
-            for record_id, results in results_by_record.items():
-                for result in results:
-                    if result.amendment and result.status in ("AMENDED", "FILLED_IN"):
-                        # Apply the amendment
-                        for field, new_value in result.amendment.items():
-                            if field in amended_df.columns:
-                                # Find the row with this record_id
-                                mask = amended_df[f'{core_type}ID'] == record_id
-                                if mask.any():
-                                    amended_df.loc[mask, field] = new_value
-                                    amendments_applied += 1
-            
-            log(f"Applied {amendments_applied} amendments to dataset")
-            
-            # Convert to CSV string
-            csv_buffer = io.StringIO()
-            amended_df.to_csv(csv_buffer, index=False)
-            return csv_buffer.getvalue()
-            
-        except Exception as e:
-            log(f"Error generating amended dataset: {e}", "ERROR")
-            raise
+            # Apply each amendment in the group
+            for _, amendment in group.iterrows():
+                if amendment['status'] == 'AMENDED':
+                    self._apply_single_amendment(amended_df, row_idx, amendment)
+        
+        log(f"Applied amendments to {len(amendment_results)} records")
+        return amended_df
     
+    def _apply_single_amendment(self, df, row_idx, amendment):
+        """Apply a single amendment to a specific row"""
+        result = amendment['result']
+        test_id = amendment['test']
+        
+        try:
+            # Check if result contains key=value pairs (like "dwc:decimalLatitude=-25.46, dwc:decimalLongitude=135.87")
+            if '=' in result and ',' in result:
+                # Multiple field amendment
+                pairs = result.split(',')
+                for pair in pairs:
+                    if '=' in pair:
+                        key, value = pair.strip().split('=', 1)
+                        key = key.strip()
+                        value = value.strip().strip('"\'')  # Remove quotes
+                        
+                        if key in df.columns:
+                            df.at[row_idx, key] = value
+                            log(f"Applied amendment to {key}={value} for test {test_id}")
+                        else:
+                            log(f"Warning: Column {key} not found for amendment in test {test_id}", "WARNING")
+            
+            elif '=' in result:
+                # Single field amendment
+                key, value = result.split('=', 1)
+                key = key.strip()
+                value = value.strip().strip('"\'')  # Remove quotes
+                
+                if key in df.columns:
+                    df.at[row_idx, key] = value
+                    log(f"Applied amendment to {key}={value} for test {test_id}")
+                else:
+                    log(f"Warning: Column {key} not found for amendment in test {test_id}", "WARNING")
+            
+            else:
+                # Simple value amendment - need to determine which column to update
+                # This is more complex as we need to know which column the test was acting upon
+                log(f"Warning: Cannot determine target column for simple amendment '{result}' in test {test_id}", "WARNING")
+                
+        except Exception as e:
+            log(f"Error applying amendment '{result}' for test {test_id}: {str(e)}", "ERROR")

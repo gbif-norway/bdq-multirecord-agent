@@ -1,7 +1,7 @@
 import os
 import google.generativeai as genai
 from typing import List, Dict, Any, Optional
-from app.utils.helper import BDQTestExecutionResult, log
+from app.utils.helper import log
 
 class LLMService:
     """Service for generating intelligent summaries using Google Gemini"""

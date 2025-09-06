@@ -15,8 +15,14 @@ from app.services.email_service import EmailService
 from app.services.bdq_api_service import BDQAPIService
 from app.services.csv_service import CSVService
 from app.services.llm_service import LLMService
-from app.utils.helper import get_unique_tuples, expand_single_test_results_to_all_rows, generate_summary_statistics, log
+from app.utils.helper import log
 import pandas as pd
+
+# Initialize services at module level for dependency injection
+email_service = EmailService()
+bdq_api_service = BDQAPIService()
+csv_service = CSVService()
+llm_service = LLMService()
 
 # Load environment variables
 load_dotenv()
@@ -41,31 +47,26 @@ async def root():
     return {"message": "BDQ Email Report Service is running"}
 
 async def _handle_email_processing(email_data: Dict[str, Any]):
-    email_service = EmailService()
-
     csv_data = email_service.extract_csv_attachment(email_data)
     if not csv_data:
         await email_service.send_error_reply(email_data, "No CSV attachment found. Please attach a CSV file with biodiversity data.")
         return
 
-    csv_service = CSVService()
     df, core_type = csv_service.parse_csv_and_detect_core(csv_data)
     if not core_type:
         await email_service.send_error_reply(email_data, "CSV must contain either 'occurrenceID' or 'taxonID' column to identify the core type.")
         return
 
-    bdq_api_service = BDQAPIService()
     test_results = await bdq_api_service.run_tests_on_dataset(df, core_type)
     summary_stats = _get_summary_stats(test_results)
 
     # Get email body
-    llm_service = LLMService()
-    body = llm_service.generate_intelligent_summary(test_results, email_data)
+    body = llm_service.generate_intelligent_summary(test_results, email_data, core_type, summary_stats)
 
     # Send reply email
     raw_results_csv = csv_service.generate_raw_results_csv(test_results, core_type)
     amended_dataset_csv = csv_service.generate_amended_dataset(df, test_results, core_type)
-    await email_service.send_results_reply(email_data, body, df)
+    await email_service.send_results_reply(email_data, body, raw_results_csv, amended_dataset_csv)
     
 
 @app.post("/email/incoming")
@@ -89,86 +90,70 @@ async def process_incoming_email(request: Request, background_tasks: BackgroundT
     
     return JSONResponse(status_code=200, content={"status": "accepted", "message": "Email queued for processing"})
 
-def _generate_summary_stats(df):
-    # Generate some summary stats from the results file, should be a dict
-    # Previously i had something like this, but there may be missing info now, just take and use what you can and make some stats you think are useful
-    # version 1:
-    #  """Generate summary statistics from test results DataFrame"""
-    # if test_results_df is None or test_results_df.empty:
-    #     return {}
+def _get_summary_stats(test_results_df):
+    """Generate summary statistics from test results DataFrame"""
+    if test_results_df is None or test_results_df.empty:
+        return {}
     
-    # # Calculate basic stats
-    # total_records = len(df)
-    # total_tests_run = len(test_results_df)
+    # Calculate basic stats
+    total_records = len(test_results_df)
+    unique_tests = test_results_df['test_id'].nunique()
     
-    # # Count validation failures by field
-    # validation_failures = test_results_df[
-    #     (test_results_df['result'] == 'NOT_COMPLIANT') | 
-    #     (test_results_df['result'] == 'POTENTIAL_ISSUE')
-    # ]
+    # Count validation failures
+    validation_failures = test_results_df[
+        (test_results_df['result'] == 'NOT_COMPLIANT') | 
+        (test_results_df['result'] == 'POTENTIAL_ISSUE')
+    ]
     
-    # # Count amendments applied
-    # amendments_applied = len(test_results_df[
-    #     test_results_df['status'].isin(['AMENDED', 'FILLED_IN'])
-    # ])
+    # Count amendments applied
+    amendments_applied = len(test_results_df[
+        test_results_df['status'].isin(['AMENDED', 'FILLED_IN'])
+    ])
     
-    # # Get common issues
-    # common_issues = validation_failures['comment'].value_counts().head(5).to_dict()
+    # Count compliant results
+    compliant_results = len(test_results_df[
+        test_results_df['result'] == 'COMPLIANT'
+    ])
     
-    # return {
-    #     'total_records': total_records,
-    #     'total_tests_run': total_tests_run,
-    #     'validation_failures': len(validation_failures),
-    #     'amendments_applied': amendments_applied,
-    #     'common_issues': common_issues
-    # }
-    # version 2
-    #     """Generate processing summary from test results"""
-    #     try:
-    #         # Count validation failures by field
-    #         validation_failures = {}
-    #         amendments_applied = 0
-    #         common_issues = []
-            
-    #         # Track unique issues for common issues list
-    #         issue_counts = {}
-            
-    #         for result in test_results:
-    #             if result.result == "NOT_COMPLIANT":
-    #                 # This is a validation failure
-    #                 if result.test_id not in validation_failures:
-    #                     validation_failures[result.test_id] = 0
-    #                 validation_failures[result.test_id] += 1
-                    
-    #                 # Track common issues
-    #                 if result.comment:
-    #                     issue_key = f"{result.test_id}: {result.comment}"
-    #                     issue_counts[issue_key] = issue_counts.get(issue_key, 0) + 1
-                
-    #             elif result.status == "AMENDED":
-    #                 amendments_applied += 1
-            
-    #         # Get top 5 most common issues
-    #         sorted_issues = sorted(issue_counts.items(), key=lambda x: x[1], reverse=True)
-    #         common_issues = [issue[0] for issue in sorted_issues[:5]]
-            
-    #         summary = {
-    #             "total_records": total_records,
-    #             "total_tests_run": len(test_results),
-    #             "validation_failures": validation_failures,
-    #             "common_issues": common_issues,
-    #             "amendments_applied": amendments_applied,
-    #         }
-            
-    #         log(
-    #             f"Generated summary: {total_records} records, {len(test_results)} tests, {len(validation_failures)} failure types
-    #         )
-    #         return summary
-            
-    #     except Exception as e:
-    #         logger.error(f"Error generating summary: {e}")
-    #         raise
-    pass
+    # Get failure counts by test type
+    failure_counts_by_test = {}
+    for test_id in test_results_df['test_id'].unique():
+        test_failures = test_results_df[
+            (test_results_df['test_id'] == test_id) & 
+            ((test_results_df['result'] == 'NOT_COMPLIANT') | 
+                (test_results_df['result'] == 'POTENTIAL_ISSUE'))
+        ]
+        if len(test_failures) > 0:
+            failure_counts_by_test[test_id] = len(test_failures)
+    
+    # Get common issues (most frequent comments)
+    common_issues = []
+    if not validation_failures.empty and 'comment' in validation_failures.columns:
+        # Filter out empty comments and get top 5 most common
+        non_empty_comments = validation_failures[validation_failures['comment'].notna() & 
+                                                (validation_failures['comment'] != '')]
+        if not non_empty_comments.empty:
+            common_issues = non_empty_comments['comment'].value_counts().head(5).to_dict()
+    
+    # Calculate success rate
+    total_tests_run = len(test_results_df)
+    success_rate = (compliant_results / total_tests_run * 100) if total_tests_run > 0 else 0
+    
+    summary = {
+        'total_records': total_records,
+        'total_tests_run': total_tests_run,
+        'unique_tests': unique_tests,
+        'validation_failures': len(validation_failures),
+        'amendments_applied': amendments_applied,
+        'compliant_results': compliant_results,
+        'success_rate_percent': round(success_rate, 1),
+        'failure_counts_by_test': failure_counts_by_test,
+        'common_issues': common_issues
+    }
+    
+    log(f"Generated summary: {total_records} records, {total_tests_run} tests, {len(validation_failures)} failures, {amendments_applied} amendments")
+    return summary
+        
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):

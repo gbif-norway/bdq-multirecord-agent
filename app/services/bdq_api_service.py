@@ -4,7 +4,7 @@ import asyncio
 import time
 import pandas as pd
 from typing import List, Dict, Any, Optional, Tuple
-from utils.helper import log
+from app.utils.helper import log
 
 from dataclasses import dataclass, field
 
@@ -21,16 +21,6 @@ class BDQTest:
     consulted: List[str] = field(default_factory=list)
     parameters: List[Any] = field(default_factory=list)
 
-@dataclass
-class BDQTestExecutionResult:
-    """Model for complete test execution result for a row"""
-    record_id: str
-    test_id: str
-    status: str
-    result: Optional[str] = None
-    comment: Optional[str] = None
-    amendment: Optional[Dict[str, Any]] = None
-    test_type: str
 
 class BDQAPIService:
     """Service for interacting with BDQ API"""
@@ -38,7 +28,7 @@ class BDQAPIService:
     def __init__(self):
         self.bdq_api_base = "https://bdq-api-638241344017.europe-west1.run.app"
         self.tests_endpoint = f"{self.bdq_api_base}/api/v1/tests"  # tests_endpoint returns an of dicts that look like BDQTest
-        self.batch_endpoint = f"{self.bdq_api_base}/api/v1/tests/run/batch""
+        self.batch_endpoint = f"{self.bdq_api_base}/api/v1/tests/run/batch"
         # batch_endpoint accepts an array of { id, params }, with the test name as the id, like this e.g.:
         # [{ "id": "VALIDATION_COUNTRYCODE_VALID", "params": { "dwc:countryCode": "US" } }, { "id": "AMENDMENT_EVENTDATE_STANDARDIZED", "params": { "dwc:eventDate": "8 May 1880" } }
         # It returns a list of  in the same order as the input tests like this e.g.:
@@ -66,47 +56,44 @@ class BDQAPIService:
         for test in applicable_tests:
             try:
                 log(f"Running test: {test.id}")
-                
-                # Get a df which is a subset of the main df with the id column (determined by f'{core_type}ID') and actedUpon columns and consulted columns
-                id_column = f'{core_type}ID'
-                relevant_columns = [id_column] + test.actedUpon + test.consulted
-                df_for_testing = df[relevant_columns].copy()
-                
-                # Get unique values in this df (drop f'{core_type}ID' column when you do this)
-                unique_values_for_test_df = df_for_testing.drop(columns=[id_column]).drop_duplicates().reset_index(drop=True)
 
-                # Prepare batch request
-                batch_requests = []
-                for _, row in unique_values_for_test_df.iterrows():
-                    params = {col: row[col] for col in test.actedUpon + test.consulted}
-                    batch_requests.append({
-                        "id": test.id,
-                        "params": params
-                    })
+                # Get a df which is a subset of the main df with unique items for testing for this particular test (e.g. just countryCode, or decimalLatitude and decimalLongitude and countryCode)
+                unique_test_candidates = df[test.actedUpon + test.consulted].drop_duplicates().reset_index(drop=True)
                 
+                # Prepare batch request
+                unique_test_candidates_batch_request = [
+                    {"id": test.id, "params": row.to_dict()}
+                    for _, row in unique_test_candidates.iterrows()
+                ]
+
                 # Call batch endpoint
-                batch_response = requests.post(self.batch_endpoint, json=batch_requests, timeout=60)
+                batch_response = requests.post(self.batch_endpoint, json=unique_test_candidates_batch_request, timeout=60)
                 batch_response.raise_for_status()
                 batch_results = batch_response.json()
+
+                # Create results df and expand it out for each row id in the original dataframe
+                results_df = pd.DataFrame(batch_results).fillna("")
+                results_df['test'] = test.id
+                results_df['test_type'] = test.type
                 
-                # Create results dataframe
-                results_df = pd.DataFrame(batch_results)
-                results_df = results_df.fillna('')  # Replace NAs with empty strings
+                # Combine so we have a df of testnames + results
+                unique_with_results = pd.concat([unique_test_candidates, results_df], axis=1)
                 
-                # Combine unique values with results
-                unique_with_results = pd.concat([unique_values_for_test_df, results_df], axis=1)
-                
-                # Merge back to original dataframe with extra necessary columns
-                test_results_df = df_for_testing.merge(
+                # Expand out based on test.actedUpon + test.consulted columns so that we have results for every row, not just unique rows
+                # Merge the unique results back to the original dataframe 
+                test_columns = test.actedUpon + test.consulted
+                expanded_results = df.merge(
                     unique_with_results, 
-                    on=test.actedUpon + test.consulted, 
+                    on=test_columns, 
                     how='left'
                 )
-                test_results_df['test_id'] = test.id
-                test_results_df['test_type'] = test.type
                 
-                all_results_dfs.append(test_results_df)
-                log(f"Completed test {test.id}: {len(test_results_df)} results")
+                # Select only the required columns: occurrenceID/taxonID, test, test_type, status, result, comment
+                id_column = f'{core_type}ID'
+                final_results = expanded_results[[id_column, 'test', 'test_type', 'status', 'result', 'comment']]
+                
+                all_results_dfs.append(final_results)
+                log(f"Completed test {test.id}: {len(expanded_results)} results")
                 
             except Exception as e:
                 log(f"Error running test {test.id}: {str(e)}")
