@@ -65,13 +65,14 @@ class BDQAPIService:
     
     async def run_tests_on_dataset(self, df, core_type):
         """Run BDQ tests on dataset with unique value deduplication."""
+        start_time = time.time()
         applicable_tests = self._filter_applicable_tests(df.columns.tolist())
         all_results_dfs: List[pd.DataFrame] = []
 
+        log(f"Running tests: {str(applicable_tests)})")
+
         for test in applicable_tests:
             try:
-                log(f"Running test: {test.id}")
-
                 # Get a df which is a subset of the main df with unique items for testing for this particular test (e.g. just countryCode, or decimalLatitude and decimalLongitude and countryCode)
                 test_columns = test.actedUpon + test.consulted 
                 unique_test_candidates = df[test_columns].drop_duplicates().reset_index(drop=True)
@@ -92,10 +93,15 @@ class BDQAPIService:
                     unique_test_candidates_batch_request.append({"id": test.id, "params": params})
 
                 # Call batch endpoint
-                log("Calling batch endpoint with ")
-                batch_response = requests.post(self.batch_endpoint, json=unique_test_candidates_batch_request, timeout=60)
-                batch_response.raise_for_status()
-                batch_results = batch_response.json()
+                try:
+                    api_start_time = time.time()
+                    batch_response = requests.post(self.batch_endpoint, json=unique_test_candidates_batch_request, timeout=60)
+                    batch_response.raise_for_status()
+                    batch_results = batch_response.json()
+                    api_duration = time.time() - api_start_time
+                except Exception as e:
+                    log(f"ERROR: Failed to run test {test.id}: {str(e)}", "ERROR")
+                    continue
 
                 # Create results df for unique combinations
                 unique_results_df = pd.DataFrame(batch_results).fillna("")
@@ -117,17 +123,18 @@ class BDQAPIService:
                 final_results = expanded_results[[id_column, 'test_id', 'test_type', 'status', 'result', 'comment']]
                 
                 all_results_dfs.append(final_results)
-                log(f"Completed test {test.id}: {len(final_results)} results")
+                log(f"Completed test {test.id}: {len(final_results)} results (API call took {api_duration:.2f}s)")
                 
             except Exception as e:
                 log(f"Error running test {test.id}: {str(e)}")
                 continue
                 
         # Combine all test results
+        total_duration = time.time() - start_time
         if all_results_dfs:
             all_results_df = pd.concat(all_results_dfs, ignore_index=True)
-            log(f"Completed all tests: {len(all_results_df)} total results, with a total of {len(applicable_tests)} tests run")
+            log(f"Completed all tests: {len(all_results_df)} total results, with a total of {len(applicable_tests)} tests run (total time: {total_duration:.2f}s)")
             return all_results_df
         else:
-            log("No tests were successfully completed", "ERROR")
+            log(f"No tests were successfully completed (total time: {total_duration:.2f}s)", "ERROR")
             return pd.DataFrame()
