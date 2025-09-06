@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Configuration status="WARN">
+  <Appenders>
+    <Console name="Console" target="SYSTEM_OUT">
+      <PatternLayout pattern="%d{HH:mm:ss.SSS} [%t] %-5level %logger{36} - %msg%n"/>
+    </Console>
+  </Appenders>
+  <Loggers>
+    <!-- BDQ Gateway specific logging -->
+    <Logger name="org.bdq.py4j" level="INFO" additivity="false">
+      <AppenderRef ref="Console"/>
+    </Logger>
+    
+    <!-- BDQ Libraries logging - keep at WARN to reduce noise -->
+    <Logger name="org.filteredpush.qc" level="WARN" additivity="false">
+      <AppenderRef ref="Console"/>
+    </Logger>
+    
+    <!-- Root logger -->
+    <Root level="WARN">
+      <AppenderRef ref="Console"/>
+    </Root>
+  </Loggers>
+</Configuration>

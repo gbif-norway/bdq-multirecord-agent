@@ -105,35 +105,45 @@ async def _handle_email_processing(email_data: Dict[str, Any]):
         
         for test in applicable_tests:
             log(f"Processing test: {test.label}")
-            
+
             # Get all unique value combinations in acted_upon + consulted
             unique_tuples = get_unique_tuples(df, test.acted_upon, test.consulted)
-            
+
             if not unique_tuples:
                 log(f"No unique tuples found for test {test.label}", "WARNING")
                 continue
-            
-            # Execute test for each unique tuple
-            for tuple_values in unique_tuples:
+
+            # Batch tuples for efficient gateway calls
+            import os as _os
+            try:
+                batch_size = int(_os.getenv('BDQ_TUPLE_BATCH_SIZE', '1000'))
+            except Exception:
+                batch_size = 1000
+
+            for i in range(0, len(unique_tuples), batch_size):
+                batch = unique_tuples[i:i+batch_size]
                 try:
-                    # Run test using bdq_service
-                    tuple_result = bdq_service_instance.execute_single_test(
+                    batch_results = bdq_service_instance.execute_tests(
                         test.java_class,
                         test.java_method,
                         test.acted_upon,
                         test.consulted,
-                        tuple_values
+                        batch
                     )
-                    
-                    # Expand results to all rows that match this tuple
-                    row_results = expand_single_test_results_to_all_rows(
-                        df, test, tuple_result, tuple_values, core_type
-                    )
-                    test_results.extend(row_results)
-                    
                 except Exception as e:
-                    log(f"Error executing test {test.label} for tuple {tuple_values}: {e}", "ERROR")
+                    log(f"Error executing batch for {test.label} (tuples {i}-{i+len(batch)-1}): {e}", "ERROR")
                     continue
+
+                # Align batch results with tuples and expand
+                for tuple_values, tuple_result in zip(batch, batch_results):
+                    try:
+                        row_results = expand_single_test_results_to_all_rows(
+                            df, test, tuple_result, tuple_values, core_type
+                        )
+                        test_results.extend(row_results)
+                    except Exception as e:
+                        log(f"Error expanding results for {test.label} tuple {tuple_values}: {e}", "ERROR")
+                        continue
         
         if not test_results:
             await email_service.send_error_reply(

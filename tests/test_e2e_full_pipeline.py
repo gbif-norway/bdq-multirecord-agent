@@ -86,7 +86,9 @@ class TestE2EFullPipeline:
                 'comment': 'Test passed',
                 'amendment': None
             }
-            mock_bdq_instance.execute_single_test.return_value = mock_test_result
+            def _exec_tests(java_class, java_method, acted, consulted, tuples_batch):
+                return [mock_test_result for _ in tuples_batch]
+            mock_bdq_instance.execute_tests.side_effect = _exec_tests
             
             # Now import and create the app
             from app.main import app

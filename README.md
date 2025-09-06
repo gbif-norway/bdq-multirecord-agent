@@ -75,3 +75,32 @@ Test data files in `tests/data/`:
 - `simple_taxon_dwc.csv` - Basic taxon core data  
 - `prefixed_occurrence_dwc.csv` - Occurrence data with dwc: prefixes
 - `occurrence.txt` - Large occurrence dataset for performance testing
+
+## Background Processing Plan
+
+- Recommendation: Use Cloud Tasks push to a dedicated Cloud Run worker service. It offers deterministic delivery, per‑task timeouts, automatic retries, and simple idempotency without managing consumer loops.
+
+- Rationale: Returning 200 and doing work in an in‑process background task can stall on Cloud Run when CPU throttles after the response. With Cloud Tasks, the worker request keeps CPU allocated for the lifetime of the task.
+
+- Architecture:
+  - Ingress (`bdq-app`): `/email/incoming` validates and enqueues a Cloud Task with the original JSON, then returns 200 immediately.
+  - Worker (`bdq-worker`): Cloud Run service (same image) exposes `POST /tasks/process-email` and runs the BDQ pipeline synchronously per task. Returns 2xx to ack.
+  - Auth: Cloud Tasks OIDC token with audience `WORKER_URL`; worker validates token. No HMAC needed for internal tasks.
+  - Idempotency: Use Gmail `messageId` as the task name (`email-<messageId>`). If it exists, treat as duplicate and return 200.
+  - Concurrency/limits: Worker concurrency 1 (or low), timeout up to 900s, memory ≥ 1GiB.
+  - Retries/DLQ: Configure retry policy and optional dead‑letter queue.
+
+- Implementation Steps:
+  - Add endpoint: Implement `POST /tasks/process-email` that executes the existing email processing flow synchronously (no `asyncio.create_task`).
+  - Add enqueuer: In `/email/incoming`, create a Cloud Task using queue `CLOUD_TASKS_QUEUE` in `CLOUD_TASKS_LOCATION`, target `WORKER_URL`, OIDC `SERVICE_ACCOUNT_EMAIL`, name `email-<messageId>`, body as JSON.
+  - Config: Add env vars `CLOUD_TASKS_QUEUE`, `CLOUD_TASKS_LOCATION`, `WORKER_URL`, `SERVICE_ACCOUNT_EMAIL`.
+  - Infra: In `cloudbuild.yaml`, add a step to create/update the Cloud Tasks queue via `gcloud tasks queues create|update` (or manage via Terraform).
+  - Deploy: Deploy two Cloud Run services from the same image: `bdq-app` (ingress) and `bdq-worker` (tasks). Set worker `--timeout`, `--concurrency`, `--memory` appropriately.
+  - Tests: Unit test the enqueuer (validate task payload/target). Integration test calls `/tasks/process-email` directly with a small CSV and asserts non‑ERROR statuses and two CSV attachments.
+
+- Pub/Sub Alternative:
+  - Use topic `bdq-incoming-email` with a push subscription to `bdq-worker`. Publish from `/email/incoming`.
+  - Worker validates Pub/Sub push token, processes synchronously, and handles duplicates via `messageId` lock.
+  - Tradeoffs: Suited for fan‑out; requires managing ack deadlines and at‑least‑once delivery. Not needed for single‑consumer, HTTP‑push workflow.
+
+- Decision: Start with Cloud Tasks for simplicity and deterministic push semantics. Revisit Pub/Sub if we need multi‑consumer patterns or higher throughput.

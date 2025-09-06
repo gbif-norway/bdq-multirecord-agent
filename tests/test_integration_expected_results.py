@@ -30,7 +30,9 @@ def test_validation_countrycode_standard_compliant(bdq_service: BDQPy4JService):
     m = _get_mapping(bdq_service, label)
     # Expect COMPLIANT for a valid ISO code
     tuple_values = ["US"]  # acted_upon: [dwc:countryCode]
-    res = bdq_service.execute_single_test(m['class_name'], m['method_name'], ["dwc:countryCode"], [], tuple_values)
+    results = bdq_service.execute_tests(m['class_name'], m['method_name'], ["dwc:countryCode"], [], [tuple_values])
+    assert results and isinstance(results, list)
+    res = results[0]
     assert res.get('status') in ("RUN_HAS_RESULT", "COMPLIANT", "PASSED"), res
     assert (res.get('result') or '').upper() == 'COMPLIANT', res
 
@@ -39,7 +41,9 @@ def test_validation_country_found_compliant(bdq_service: BDQPy4JService):
     label = "VALIDATION_COUNTRY_FOUND"
     m = _get_mapping(bdq_service, label)
     tuple_values = ["United States"]  # acted_upon: [dwc:country]
-    res = bdq_service.execute_single_test(m['class_name'], m['method_name'], ["dwc:country"], [], tuple_values)
+    results = bdq_service.execute_tests(m['class_name'], m['method_name'], ["dwc:country"], [], [tuple_values])
+    assert results and isinstance(results, list)
+    res = results[0]
     assert res.get('status') in ("RUN_HAS_RESULT", "COMPLIANT", "PASSED"), res
     assert (res.get('result') or '').upper() == 'COMPLIANT', res
 
@@ -69,7 +73,9 @@ def test_amendment_coordinates_from_verbatim_amended(bdq_service: BDQPy4JService
         "decimal degrees",
         "EPSG:4326",
     ]
-    res = bdq_service.execute_single_test(m['class_name'], m['method_name'], acted_upon, consulted, tuple_values)
+    results = bdq_service.execute_tests(m['class_name'], m['method_name'], acted_upon, consulted, [tuple_values])
+    assert results and isinstance(results, list)
+    res = results[0]
     # Expect an amendment status; some implementations use FILLED_IN for similar outcome
     assert res.get('status') in ("AMENDED", "FILLED_IN", "RUN_HAS_RESULT", "NOT_AMENDED"), res
     # When amendment occurs, result may be a label or empty; ensure not an outright error

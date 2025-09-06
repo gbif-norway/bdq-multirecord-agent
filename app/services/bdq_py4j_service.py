@@ -193,13 +193,23 @@ class BDQPy4JService:
         log(f"Found {len(applicable_tests)} applicable tests out of {len(self.tests)} total tests")
         return applicable_tests
     
-    def execute_single_test(self, java_class: str, java_method: str, acted_upon: List[str], consulted: List[str], tuple_values: List[str]) -> Dict[str, Any]:
-        """Execute a single BDQ test for a specific tuple of values"""
+    def execute_tests(self, java_class: str, java_method: str, acted_upon: List[str], consulted: List[str], tuples_batch: List[List[str]]) -> List[Dict[str, Any]]:
+        """Execute a BDQ test for a batch of tuples and return per-tuple results.
+
+        Args:
+            java_class: Fully-qualified Java class name
+            java_method: Method name on the Java class
+            acted_upon: List of acted-upon column names (dwc:...)
+            consulted: List of consulted column names (dwc:...)
+            tuples_batch: List of tuples (each tuple is a list of strings)
+
+        Returns:
+            A list of result dicts aligned to tuples_batch order.
+        """
         try:
-            # Get BDQ gateway
             bdq_gateway = self.gateway.entry_point
             jvm = self.gateway.jvm
-            # Convert Python lists/dicts to explicit Java collections to avoid Py4J marshalling issues
+
             def to_java_list(py_list: List[str]):
                 j_list = jvm.java.util.ArrayList()
                 for v in py_list:
@@ -209,54 +219,73 @@ class BDQPy4JService:
             j_acted = to_java_list(acted_upon)
             j_consulted = to_java_list(consulted)
             j_tuples = jvm.java.util.ArrayList()
-            inner = to_java_list(tuple_values)
-            j_tuples.add(inner)
-            j_params = jvm.java.util.HashMap()  # empty parameters
+            for tup in tuples_batch:
+                j_tuples.add(to_java_list(tup))
+            j_params = jvm.java.util.HashMap()
 
-            # Execute test via Py4J gateway
             result = bdq_gateway.executeTest(
-                f"{java_class}.{java_method}",  # test_id
+                f"{java_class}.{java_method}",
                 java_class,
                 java_method,
                 j_acted,
                 j_consulted,
-                j_params,  # parameters, using defaults
-                j_tuples  # single tuple as Java list
+                j_params,
+                j_tuples
             )
-            
-            # Convert Java Map to Python dict
+
             tuple_results = list(result.get("tuple_results", []))
             errors = list(result.get("errors", []))
-            
+
             if errors:
                 log(f"Test {java_class}.{java_method} had errors: {errors}", "WARNING")
-                return {
+                # Propagate an error result for each tuple to preserve alignment
+                return [
+                    {
+                        'status': 'ERROR',
+                        'result': None,
+                        'comment': f"Test execution error: {', '.join(errors)}",
+                        'amendment': None
+                    }
+                    for _ in tuples_batch
+                ]
+
+            # Ensure alignment with input batch length
+            if not tuple_results:
+                return [
+                    {
+                        'status': 'NO_RESULT',
+                        'result': None,
+                        'comment': 'Test returned no results',
+                        'amendment': None
+                    }
+                    for _ in tuples_batch
+                ]
+
+            # Some gateways may return fewer items; pad to match input length
+            if len(tuple_results) < len(tuples_batch):
+                pad = len(tuples_batch) - len(tuple_results)
+                tuple_results.extend([
+                    {
+                        'status': 'NO_RESULT',
+                        'result': None,
+                        'comment': 'Test returned no result for tuple',
+                        'amendment': None
+                    }
+                ] * pad)
+
+            return tuple_results[: len(tuples_batch)]
+
+        except Exception as e:
+            log(f"Error executing tests {java_class}.{java_method}: {e}", "ERROR")
+            return [
+                {
                     'status': 'ERROR',
                     'result': None,
-                    'comment': f"Test execution error: {', '.join(errors)}",
+                    'comment': f"Test execution error: {str(e)}",
                     'amendment': None
                 }
-            
-            if tuple_results and len(tuple_results) > 0:
-                # Return the first (and only) result
-                return tuple_results[0]
-            else:
-                log(f"Test {java_class}.{java_method} returned no results", "WARNING")
-                return {
-                    'status': 'NO_RESULT',
-                    'result': None,
-                    'comment': 'Test returned no results',
-                    'amendment': None
-                }
-                
-        except Exception as e:
-            log(f"Error executing test {java_class}.{java_method}: {e}", "ERROR")
-            return {
-                'status': 'ERROR',
-                'result': None,
-                'comment': f"Test execution error: {str(e)}",
-                'amendment': None
-            }
+                for _ in tuples_batch
+            ]
     
     def shutdown(self):
         """Shutdown Py4J gateway"""
