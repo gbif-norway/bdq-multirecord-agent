@@ -32,17 +32,21 @@ class BDQAPIService:
         # batch_endpoint accepts an array of { id, params }, with the test name as the id, like this e.g.:
         # [{ "id": "VALIDATION_COUNTRYCODE_VALID", "params": { "dwc:countryCode": "US" } }, { "id": "AMENDMENT_EVENTDATE_STANDARDIZED", "params": { "dwc:eventDate": "8 May 1880" } }
         # It returns a list of  in the same order as the input tests like this e.g.:
-        # [{ "status": "RUN_HAS_RESULT", "result": "COMPLIANT", "comment": "..." }, { "status": "AMENDED", "result": "dwc:eventDate=1880-05-08", "comment": "..." }, { "status": "AMENDED", "result": "dwc:decimalLatitude="-25.46"|dwc:decimalLongitude="135.87"", "comment": "..." }]
+        # [{ "status": "RUN_HAS_RESULT", "result": "COMPLIANT", "comment": "..." }, { "status": "AMENDED", "result": "dwc:eventDate=1880-05-08", "comment": "..." }, { "status": "NOT_AMENDED", "result": "", "comment": "..." }, { "status": "AMENDED", "result": "dwc:decimalLatitude="-25.46"|dwc:decimalLongitude="135.87"", "comment": "..." }]
         # - Single-field amendment item:
         #     - result: dwc:eventDate=1880-05-08
         # - Multi-field amendment item:
         #     - result: dwc:minimumDepthInMeters=3.048 | dwc:maximumDepthInMeters=3.048
         # - Validation item:
         #     - result: COMPLIANT (unchanged; still the label from the value)
+        # - Amendment test that didn't make changes:
+        #     - status: NOT_AMENDED
+        #     - result: ""
+        #     - comment: explanation of why no amendment was needed
         # - Failed item:
         #     - status: INTERNAL_PREREQUISITES_NOT_MET
         #     - result: ""
-        #     - comment: error message (e.g., “Unknown test id or guid: …”)
+        #     - comment: error message (e.g., "Unknown test id or guid: …")
     
     def _filter_applicable_tests(self, csv_columns: List[str]) -> List[BDQTest]:
         """Filter tests that can be applied to the CSV columns"""
