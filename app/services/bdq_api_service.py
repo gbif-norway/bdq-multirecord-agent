@@ -124,7 +124,7 @@ class BDQAPIService:
                 
                 all_results_dfs.append(final_results)
                 log(f"Completed test {test.id}: {len(final_results)} results (API call took {api_duration:.2f}s)")
-                
+
             except Exception as e:
                 log(f"Error running test {test.id}: {str(e)}")
                 continue
