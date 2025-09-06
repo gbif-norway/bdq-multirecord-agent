@@ -3,6 +3,7 @@ import logging
 import asyncio
 import time
 import pandas as pd
+import numpy as np
 from typing import List, Dict, Any, Optional, Tuple
 from app.utils.helper import log
 
@@ -76,10 +77,19 @@ class BDQAPIService:
                 unique_test_candidates = df[test_columns].drop_duplicates().reset_index(drop=True)
                 
                 # Prepare batch request for unique combinations
-                unique_test_candidates_batch_request = [
-                    {"id": test.id, "params": row.to_dict()}
-                    for _, row in unique_test_candidates.iterrows()
-                ]
+                # Ensure all values are JSON-serializable by converting to strings
+                unique_test_candidates_batch_request = []
+                for _, row in unique_test_candidates.iterrows():
+                    params = {}
+                    for key, value in row.to_dict().items():
+                        # Convert problematic float values to strings to avoid JSON serialization errors
+                        if pd.isna(value):
+                            params[key] = ""
+                        elif isinstance(value, float) and (np.isinf(value) or np.isnan(value)):
+                            params[key] = ""
+                        else:
+                            params[key] = str(value)
+                    unique_test_candidates_batch_request.append({"id": test.id, "params": params})
 
                 # Call batch endpoint
                 batch_response = requests.post(self.batch_endpoint, json=unique_test_candidates_batch_request, timeout=60)
