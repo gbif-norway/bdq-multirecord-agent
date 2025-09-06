@@ -12,28 +12,20 @@ import asyncio
 import json
 
 from app.services.email_service import EmailService
-from app.services.bdq_py4j_service import BDQPy4JService
+from app.services.bdq_api_service import BDQAPIService
 from app.services.csv_service import CSVService
 from app.services.llm_service import LLMService
-from app.utils.helper import get_unique_tuples, expand_single_test_results_to_all_rows, generate_summary_statistics, log
+from app.utils.helper import log
 import pandas as pd
 
-# Load environment variables
-load_dotenv()
-
+# Initialize services at module level for dependency injection
 email_service = EmailService()
-bdq_service = None  # Will be initialized at startup
+bdq_api_service = BDQAPIService()
 csv_service = CSVService()
 llm_service = LLMService()
 
-
-def get_bdq_service():
-    """Get BDQ service instance, initializing it lazily if needed"""
-    global bdq_service
-    if bdq_service is None:
-        bdq_service = BDQPy4JService()
-    return bdq_service
-
+# Load environment variables
+load_dotenv()
 
 app = FastAPI(
     title="BDQ Email Report Service",
@@ -43,24 +35,11 @@ app = FastAPI(
 
 @app.on_event("startup")
 async def startup_event():
-    """Initialize BDQ gateway at service startup (before handling traffic)."""
-    global bdq_service
-    if bdq_service is None:
-        log("Initializing BDQ service at startup...")
-        bdq_service = BDQPy4JService()
-        log("BDQ service initialized")
+    log("BDQ Email Report service initialized")
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    """Clean up resources on shutdown"""
     log("Shutting down BDQ Email Report Service...")
-    try:
-        if bdq_service is not None:
-            bdq_service.shutdown()
-            log("BDQ service shutdown completed")
-    except Exception as e:
-        log(f"Error during BDQ service shutdown: {e}", "ERROR")
-    log("Service shutdown completed")
 
 @app.get("/")
 async def root():
@@ -68,104 +47,27 @@ async def root():
     return {"message": "BDQ Email Report Service is running"}
 
 async def _handle_email_processing(email_data: Dict[str, Any]):
-    try:
-        # Extract and validate CSV attachment
-        csv_data = email_service.extract_csv_attachment(email_data)
-        if not csv_data:
-            await email_service.send_error_reply(
-                email_data,
-                "No CSV attachment found. Please attach a CSV file with biodiversity data."
-            )
-            return
+    csv_data = email_service.extract_csv_attachment(email_data)
+    if not csv_data:
+        await email_service.send_error_reply(email_data, "No CSV attachment found. Please attach a CSV file with biodiversity data.")
+        return
 
-        # Parse CSV and detect core type
-        df, core_type = csv_service.parse_csv_and_detect_core(csv_data)
-        if not core_type:
-            await email_service.send_error_reply(
-                email_data,
-                "CSV must contain either 'occurrenceID' or 'taxonID' column to identify the core type."
-            )
-            return
+    df, core_type = csv_service.parse_csv_and_detect_core(csv_data)
+    if not core_type:
+        await email_service.send_error_reply(email_data, "CSV must contain either 'occurrenceID' or 'taxonID' column to identify the core type.")
+        return
 
-        # Get applicable BDQ tests
-        bdq_service_instance = get_bdq_service()
-        applicable_tests = bdq_service_instance.get_applicable_tests_for_dataset(df.columns.tolist())
-        log(f"Applicable BDQ tests: {len(applicable_tests)} of {len(bdq_service_instance.tests)} total")
+    test_results = await bdq_api_service.run_tests_on_dataset(df, core_type)
+    summary_stats = _get_summary_stats(test_results)
 
-        if not applicable_tests:
-            log(f"No applicable BDQ tests found for provided CSV columns: {df.columns.tolist()}", "WARNING")
-            await email_service.send_error_reply(
-                email_data,
-                "No applicable BDQ tests found for the provided CSV columns."
-            )
-            return
+    # Get email body
+    body = llm_service.generate_intelligent_summary(test_results, email_data, core_type, summary_stats)
 
-        # Execute BDQ tests and collect results
-        test_results = []
-        
-        for test in applicable_tests:
-            log(f"Processing test: {test.label}")
-            
-            # Get all unique value combinations in acted_upon + consulted
-            unique_tuples = get_unique_tuples(df, test.acted_upon, test.consulted)
-            
-            if not unique_tuples:
-                log(f"No unique tuples found for test {test.label}", "WARNING")
-                continue
-            
-            # Execute test for each unique tuple
-            for tuple_values in unique_tuples:
-                try:
-                    # Run test using bdq_service
-                    tuple_result = bdq_service_instance.execute_single_test(
-                        test.java_class,
-                        test.java_method,
-                        test.acted_upon,
-                        test.consulted,
-                        tuple_values
-                    )
-                    
-                    # Expand results to all rows that match this tuple
-                    row_results = expand_single_test_results_to_all_rows(
-                        df, test, tuple_result, tuple_values, core_type
-                    )
-                    test_results.extend(row_results)
-                    
-                except Exception as e:
-                    log(f"Error executing test {test.label} for tuple {tuple_values}: {e}", "ERROR")
-                    continue
-        
-        if not test_results:
-            await email_service.send_error_reply(
-                email_data,
-                "No test results were generated. Please check your data format."
-            )
-            return
-        
-        # Generate LLM summary
-        body = llm_service.generate_intelligent_summary(test_results, email_data, core_type, generate_summary_statistics(test_results, df, core_type))
-        
-        log(f"Generating result files with {len(test_results)} test results...")
-        raw_results_csv = csv_service.generate_raw_results_csv(test_results, core_type)
-        amended_dataset_csv = csv_service.generate_amended_dataset(df, test_results, core_type)
-
-        log("Sending reply email...")
-        await email_service.send_results_reply(
-            email_data,
-            body,
-            raw_results_csv,
-            amended_dataset_csv
-        )
-    except Exception as e:
-        log(f"Error processing email in background: {str(e)}", "ERROR")
-        try:
-            await email_service.send_error_reply(
-                email_data,
-                f"An error occurred while processing your request: {str(e)}"
-            )
-        except Exception as reply_error:
-            log(f"Failed to send error reply: {str(reply_error)}", "ERROR")
-
+    # Send reply email
+    raw_results_csv = csv_service.generate_raw_results_csv(test_results, core_type)
+    amended_dataset_csv = csv_service.generate_amended_dataset(df, test_results, core_type)
+    await email_service.send_results_reply(email_data, body, raw_results_csv, amended_dataset_csv)
+    
 
 @app.post("/email/incoming")
 async def process_incoming_email(request: Request, background_tasks: BackgroundTasks):
@@ -188,6 +90,70 @@ async def process_incoming_email(request: Request, background_tasks: BackgroundT
     
     return JSONResponse(status_code=200, content={"status": "accepted", "message": "Email queued for processing"})
 
+def _get_summary_stats(test_results_df):
+    """Generate summary statistics from test results DataFrame"""
+    if test_results_df is None or test_results_df.empty:
+        return {}
+    
+    # Calculate basic stats
+    total_records = len(test_results_df)
+    unique_tests = test_results_df['test_id'].nunique()
+    
+    # Count validation failures
+    validation_failures = test_results_df[
+        (test_results_df['result'] == 'NOT_COMPLIANT') | 
+        (test_results_df['result'] == 'POTENTIAL_ISSUE')
+    ]
+    
+    # Count amendments applied
+    amendments_applied = len(test_results_df[
+        test_results_df['status'].isin(['AMENDED', 'FILLED_IN'])
+    ])
+    
+    # Count compliant results
+    compliant_results = len(test_results_df[
+        test_results_df['result'] == 'COMPLIANT'
+    ])
+    
+    # Get failure counts by test type
+    failure_counts_by_test = {}
+    for test_id in test_results_df['test_id'].unique():
+        test_failures = test_results_df[
+            (test_results_df['test_id'] == test_id) & 
+            ((test_results_df['result'] == 'NOT_COMPLIANT') | 
+                (test_results_df['result'] == 'POTENTIAL_ISSUE'))
+        ]
+        if len(test_failures) > 0:
+            failure_counts_by_test[test_id] = len(test_failures)
+    
+    # Get common issues (most frequent comments)
+    common_issues = []
+    if not validation_failures.empty and 'comment' in validation_failures.columns:
+        # Filter out empty comments and get top 5 most common
+        non_empty_comments = validation_failures[validation_failures['comment'].notna() & 
+                                                (validation_failures['comment'] != '')]
+        if not non_empty_comments.empty:
+            common_issues = non_empty_comments['comment'].value_counts().head(5).to_dict()
+    
+    # Calculate success rate
+    total_tests_run = len(test_results_df)
+    success_rate = (compliant_results / total_tests_run * 100) if total_tests_run > 0 else 0
+    
+    summary = {
+        'total_records': total_records,
+        'total_tests_run': total_tests_run,
+        'unique_tests': unique_tests,
+        'validation_failures': len(validation_failures),
+        'amendments_applied': amendments_applied,
+        'compliant_results': compliant_results,
+        'success_rate_percent': round(success_rate, 1),
+        'failure_counts_by_test': failure_counts_by_test,
+        'common_issues': common_issues
+    }
+    
+    log(f"Generated summary: {total_records} records, {total_tests_run} tests, {len(validation_failures)} failures, {amendments_applied} amendments")
+    return summary
+        
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):

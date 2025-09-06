@@ -8,16 +8,18 @@ All local development should be done in Docker containers.
 
 ## Service Flow
 
-1. **Email Reception**: FastAPI receives JSON payload to from Google Apps Script
+1. **Email Reception**: FastAPI receives JSON payload from Google Apps Script
 2. **Immediate Response**: Returns 200 status immediately for Apps Script acknowledgment
-3. **CSV Extraction**: Extracts and validates CSV attachments
-4. **Core Detection**: Identifies occurrence vs taxon core based on column presence
-5. **Test Discovery**: Finds applicable BDQ tests from TG2_tests.csv
-   - If multiple Java methods share the same annotation label, the service prefers the method whose name does not end with `String` (for stability across libraries)
-6. **Test candidate deduplication**: Extract unique tuples for running on each test
-7. **Test Execution**: Runs tests on unique tuples via Py4J integration with Java BDQ libraries
-   - Local JVM process bdq-py4j-gateway (in the same Docker container) with resident FilteredPush BDQ libraries git submodules (geo_ref_qc, event_date_qc, sci_name_qc, rec_occur_qc)
-   - Py4J executes BDQ tests via direct Java method calls
+3. **Background Processing**: Email processing runs asynchronously in the background
+4. **CSV Extraction**: Extracts and validates CSV attachments
+5. **Core Detection**: Identifies occurrence vs taxon core based on column presence
+6. **Test Discovery**: Finds applicable BDQ tests from external BDQ API
+   - Queries `/api/v1/tests` endpoint to get available tests
+   - Filters tests based on CSV column availability
+7. **Test Execution**: Runs tests on unique data combinations via external BDQ API
+   - Deduplicates test candidates to avoid redundant API calls
+   - Calls `/api/v1/tests/run/batch` endpoint with unique parameter combinations
+   - External API handles all BDQ test execution logic
 8. **Result Processing**: Expands test results to all matching rows
 9. **Summary Generation**: Creates intelligent summaries using LLM
 10. **Email Reply**: Sends results with summary and attachments via Google Apps Script
@@ -63,15 +65,45 @@ All local development should be done in Docker containers.
    ```
 ### Running Tests
 
-All tests must be run in Docker containers as per development rules:
+All tests must be run in Docker containers as per development rules [[memory:7740249]]:
 
 ```bash
 # Run all tests
 docker compose --profile test run --rm test-runner
 ```
 
+### BDQ API Integration Tests
+
+The project includes comprehensive integration tests that verify the actual BDQ API is working correctly:
+
+```bash
+# Run the full integration test suite
+docker compose --profile test run --rm test-runner python -m pytest tests/test_bdq_api_integration.py -v -s
+```
+
+The integration tests verify:
+- API connectivity and health
+- Test endpoint structure and data format
+- Batch endpoint functionality
+- Validation vs amendment result formats
+- Error handling with invalid requests
+- Performance with reasonable load
+- Processing of both occurrence and taxon data
+
+These tests use the live BDQ API at `https://bdq-api-638241344017.europe-west1.run.app` to ensure the service is working as expected.
+
 Test data files in `tests/data/`:
 - `simple_occurrence_dwc.csv` - Basic occurrence core data
 - `simple_taxon_dwc.csv` - Basic taxon core data  
 - `prefixed_occurrence_dwc.csv` - Occurrence data with dwc: prefixes
 - `occurrence.txt` - Large occurrence dataset for performance testing
+
+## Background Processing
+
+The service currently uses in-process background tasks for email processing:
+
+- **Current Implementation**: The `/email/incoming` endpoint returns 200 immediately and processes emails asynchronously using `asyncio.create_task()`
+- **Processing Flow**: Email processing runs in the background without blocking the HTTP response
+- **Error Handling**: Errors during background processing are logged but don't affect the immediate HTTP response
+
+**Future Considerations**: For production at scale, consider migrating to Cloud Tasks or Pub/Sub for more robust background processing with guaranteed delivery and retry mechanisms.

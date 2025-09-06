@@ -42,7 +42,7 @@ No local development. Docker only.
 
 ## **RULE 2: THIS IS A NEW PROJECT, DO NOT KEEP LEGACY CODE AND DO NOT PROVISION FOR BACKWARDS COMPATIBILITY! NO GRACEFUL DEGRADATION!**
 
-Delete and clean up anything which is no longer relevant. We have the code history in git, we do not need to keep anything irrelevant. Do NOT reduce functionality and make the app "degrade gracefully".
+Delete and clean up anything which is no longer relevant. We have the code history in git, we do not need to keep anything irrelevant. Do NOT make the app "degrade gracefully", fix things at their fundamentals.
 
 ## **RULE 3: DO NOT SUGGEST JUST RUNNING FEWER TESTS, ALL TESTS MUST BE RUN**
 

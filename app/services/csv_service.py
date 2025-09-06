@@ -2,7 +2,7 @@ import pandas as pd
 import io
 import base64
 from typing import Tuple, Optional, List, Dict, Any
-from app.utils.helper import BDQTestExecutionResult, log
+from app.utils.helper import log
 
 class CSVService:
     """Service for CSV processing and manipulation"""
@@ -12,54 +12,21 @@ class CSVService:
         Parse CSV data and detect core type (occurrence or taxon)
         Returns (dataframe, core_type)
         """
-        try:
-            # Try to detect delimiter
-            sample = csv_data[:1024]  # First 1KB to detect delimiter
-            delimiter = self._detect_delimiter(sample)
-            
-            # Parse CSV
-            df = pd.read_csv(io.StringIO(csv_data), delimiter=delimiter, dtype=str)
-            
-            # Clean column names (remove surrounding quotes, whitespace)
-            df.columns = df.columns.str.strip().str.strip("\"'")
+        # Parse CSV with automatic delimiter detection
+        df = pd.read_csv(io.StringIO(csv_data), sep=None, engine='python', dtype=str)
+        df.columns = df.columns.str.strip().str.strip("\"'")
+        df = self._ensure_dwc_prefixed_columns(df)
 
-            # Ensure Darwin Core prefixes exist (e.g., convert 'country' to 'dwc:country')
-            df = self._ensure_dwc_prefixed_columns(df)
-            
-            # Detect core type
-            core_type = self._detect_core_type(df.columns.tolist())
-            
-            log(f"Parsed CSV with {len(df)} rows, {len(df.columns)} columns, core type: {core_type}")
-            return df, core_type
-            
-        except Exception as e:
-            log(f"Error parsing CSV: {e}", "ERROR")
-            raise
-    
-    def _detect_delimiter(self, sample: str) -> str:
-        """Detect CSV delimiter from sample"""
-        delimiters = [',', ';', '\t', '|']
-        delimiter_counts = {}
+        cols = [c.lower() for c in df.columns]
+        core_type = None
+        if 'dwc:occurrenceid' in cols:
+            core_type = 'occurrence'
+        elif 'dwc:taxonid' in cols:
+            core_type = 'taxon'
         
-        for delimiter in delimiters:
-            delimiter_counts[delimiter] = sample.count(delimiter)
-        
-        # Return delimiter with highest count
-        return max(delimiter_counts, key=delimiter_counts.get)
-    
-    def _detect_core_type(self, columns: List[str]) -> Optional[str]:
-        """Detect core type based on column presence"""
-        columns_lower = [col.lower() for col in columns]
-        
-        # Check for occurrenceID (with or without dwc: prefix)
-        if any('occurrenceid' in col for col in columns_lower):
-            return 'occurrence'
-        # Check for taxonID (with or without dwc: prefix)
-        elif any('taxonid' in col for col in columns_lower):
-            return 'taxon'
-        else:
-            return None
-
+        log(f"Parsed CSV with {len(df)} rows, {len(df.columns)} columns, core type: {core_type}")
+        return df, core_type
+ 
     def _ensure_dwc_prefixed_columns(self, df: pd.DataFrame) -> pd.DataFrame:
         """For each column that does not start with 'dwc:', convert to a 'dwc:' alias if missing.
 
@@ -81,68 +48,57 @@ class CSVService:
             log(f"Error ensuring dwc-prefixed columns: {e}", "WARNING")
             return df
     
-    def generate_raw_results_csv(self, test_results: List[BDQTestExecutionResult], core_type: str) -> str:
+    def generate_raw_results_csv(self, results_df):
         """Generate CSV with raw BDQ test results"""
-        try:
-            # Convert results to DataFrame
-            data = []
-            for result in test_results:
-                data.append({
-                    f'{core_type}ID': result.record_id,
-                    'test_id': result.test_id,
-                    'status': result.status,
-                    'result': result.result or '',
-                    'comment': result.comment or '',
-                    'amendment': str(result.amendment) if result.amendment else '',
-                    'test_type': result.test_type
-                })
-            
-            df = pd.DataFrame(data)
-            
-            # Convert to CSV string
-            csv_buffer = io.StringIO()
-            df.to_csv(csv_buffer, index=False)
-            return csv_buffer.getvalue()
-            
-        except Exception as e:
-            log(f"Error generating raw results CSV: {e}", "ERROR")
-            raise
+        csv_buffer = io.StringIO()
+        results_df.to_csv(csv_buffer, index=False)
+        return csv_buffer.getvalue()
     
-    def generate_amended_dataset(self, original_df: pd.DataFrame, test_results: List[BDQTestExecutionResult], core_type: str) -> str:
+    def generate_amended_dataset(self, original_df, results_df, core_type):
         """Generate amended dataset with proposed changes applied"""
-        try:
-            # Create a copy of the original dataframe
-            amended_df = original_df.copy()
+        amended_df = original_df.copy()
+        id_column = f'{core_type}ID'
+        amendment_results = results_df[results_df['test_type'] == 'Amendment'].copy()
+        
+        if amendment_results.empty:
+            log("No amendment results found")
+        else:
+            log(f"Applying {len(amendment_results)} amendments to dataset")
+        
+        # Group by ID to handle multiple amendments per row
+        for id_value, group in amendment_results.groupby(id_column):
+            # Find the row index in the original dataframe
+            row_mask = amended_df[id_column] == id_value
+            if not row_mask.any():
+                log(f"Warning: Could not find row with {id_column}={id_value} for amendment", "WARNING")
+                continue
+                
+            row_idx = amended_df[row_mask].index[0]
             
-            # Group results by record ID for efficient processing
-            results_by_record = {}
-            for result in test_results:
-                if result.record_id not in results_by_record:
-                    results_by_record[result.record_id] = []
-                results_by_record[result.record_id].append(result)
-            
-            # Apply amendments
-            amendments_applied = 0
-            for record_id, results in results_by_record.items():
-                for result in results:
-                    if result.amendment and result.status in ("AMENDED", "FILLED_IN"):
-                        # Apply the amendment
-                        for field, new_value in result.amendment.items():
-                            if field in amended_df.columns:
-                                # Find the row with this record_id
-                                mask = amended_df[f'{core_type}ID'] == record_id
-                                if mask.any():
-                                    amended_df.loc[mask, field] = new_value
-                                    amendments_applied += 1
-            
-            log(f"Applied {amendments_applied} amendments to dataset")
-            
-            # Convert to CSV string
-            csv_buffer = io.StringIO()
-            amended_df.to_csv(csv_buffer, index=False)
-            return csv_buffer.getvalue()
-            
-        except Exception as e:
-            log(f"Error generating amended dataset: {e}", "ERROR")
-            raise
+            # Apply each amendment in the group
+            for _, amendment in group.iterrows():
+                if amendment['status'] == 'AMENDED':
+                    self._apply_single_amendment(amended_df, row_idx, amendment)
+        
+        log(f"Applied amendments to {len(amendment_results)} records")
+        
+        # Convert DataFrame to CSV string
+        csv_buffer = io.StringIO()
+        amended_df.to_csv(csv_buffer, index=False)
+        return csv_buffer.getvalue()
     
+    def _apply_single_amendment(self, df, row_idx, amendment):
+        """Apply a single amendment to a specific row"""
+        result = amendment['result']
+        test_id = amendment['test_id']
+    
+        amendments = result.split('|')
+        for amendment_part in amendments:
+            col, amended_value = amendment_part.split('=', 1)
+            amended_value = amended_value.strip().strip('"\'')
+            
+            if col in df.columns:
+                df.at[row_idx, col] = amended_value
+                log(f"Applied amendment to {col}={amended_value} for test {test_id}")
+            else:
+                log(f"ERROR: Column {col} not found for amendment in test {test_id}", "WARNING")

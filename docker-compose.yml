@@ -9,15 +9,13 @@ services:
       - PYTHONUNBUFFERED=1
       - PORT=8080
       - PYTHONPATH=/app
-      - BDQ_PY4J_GATEWAY_JAR=/opt/bdq/bdq-py4j-gateway.jar
-      - BDQ_JAVA_OPTS=-Xms256m -Xmx1024m
       - GMAIL_SEND=test
       - HMAC_SECRET=test-secret
       - DISCORD_WEBHOOK=test
       - GOOGLE_API_KEY=test
     volumes:
-      # Mount the TG2 tests CSV for testing
-      - ./TG2_tests.csv:/app/TG2_tests.csv:ro
+      # Mount test data for testing
+      - ./tests:/app/tests:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/"]
       interval: 30s
@@ -34,8 +32,6 @@ services:
     environment:
       - PYTHONPATH=/app
       - PYTHONUNBUFFERED=1
-      - BDQ_PY4J_GATEWAY_JAR=/opt/bdq/bdq-py4j-gateway.jar
-      - BDQ_JAVA_OPTS=-Xms256m -Xmx1024m
       - GMAIL_SEND=test
       - HMAC_SECRET=test-secret
       - DISCORD_WEBHOOK=test
@@ -43,9 +39,7 @@ services:
     volumes:
       - ./tests:/app/tests:ro
       - ./app:/app/app:ro
-      - ./TG2_tests.csv:/app/TG2_tests.csv:ro
       - ./requirements.txt:/app/requirements.txt:ro
-      - ./pytest.ini:/app/pytest.ini:ro
     working_dir: /app
     command: ["python", "-m", "pytest", "tests/", "-v", "--tb=short"]
     profiles:
