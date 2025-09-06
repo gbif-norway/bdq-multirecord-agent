@@ -32,7 +32,7 @@ class TestFloatJSONCompliance:
         # Create data with actual inf values
         df = pd.DataFrame([
             {
-                'occurrenceID': 'test-occ-1',
+                'dwc:occurrenceID': 'test-occ-1',
                 'dwc:decimalLatitude': float('inf'),
                 'dwc:decimalLongitude': float('-inf'),
                 'dwc:minimumElevationInMeters': float('nan'),
@@ -40,7 +40,7 @@ class TestFloatJSONCompliance:
                 'dwc:coordinateUncertaintyInMeters': -1.7976931348623157e+308,  # Min float64
             },
             {
-                'occurrenceID': 'test-occ-2',
+                'dwc:occurrenceID': 'test-occ-2',
                 'dwc:decimalLatitude': 37.7749,
                 'dwc:decimalLongitude': -122.4194,
                 'dwc:minimumElevationInMeters': 100.0,
@@ -94,7 +94,7 @@ class TestFloatJSONCompliance:
         # Create data with problematic float values
         df = pd.DataFrame([
             {
-                'occurrenceID': 'test-occ-1',
+                'dwc:occurrenceID': 'test-occ-1',
                 'dwc:decimalLatitude': float('inf'),
                 'dwc:decimalLongitude': float('-inf'),
                 'dwc:minimumElevationInMeters': float('nan'),
@@ -105,7 +105,7 @@ class TestFloatJSONCompliance:
                 'dwc:verbatimLongitude': float('-inf'),
             },
             {
-                'occurrenceID': 'test-occ-2',
+                'dwc:occurrenceID': 'test-occ-2',
                 'dwc:decimalLatitude': 37.7749,
                 'dwc:decimalLongitude': -122.4194,
                 'dwc:minimumElevationInMeters': 100.0,

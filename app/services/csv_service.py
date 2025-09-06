@@ -59,7 +59,7 @@ class CSVService:
     def generate_amended_dataset(self, original_df, results_df, core_type):
         """Generate amended dataset with proposed changes applied"""
         amended_df = original_df.copy()
-        id_column = f'{core_type}ID'
+        id_column = f'dwc:{core_type}ID'
         amendment_results = results_df[results_df['test_type'] == 'Amendment'].copy()
         
         if amendment_results.empty:

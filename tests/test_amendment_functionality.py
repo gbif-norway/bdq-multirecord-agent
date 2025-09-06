@@ -16,7 +16,7 @@ def test_amendment_mapping():
     # Create test data with amendments
     test_results = pd.DataFrame([
         {
-            'occurrenceID': 'occ1',
+            'dwc:occurrenceID': 'occ1',
             'test_id': 'AMENDMENT_EVENTDATE_STANDARDIZED',
             'test_type': 'Amendment',
             'status': 'AMENDED',
@@ -24,7 +24,7 @@ def test_amendment_mapping():
             'comment': 'Standardized date format'
         },
         {
-            'occurrenceID': 'occ2',
+            'dwc:occurrenceID': 'occ2',
             'test_id': 'AMENDMENT_COUNTRYCODE_STANDARDIZED',
             'test_type': 'Amendment',
             'status': 'AMENDED',
@@ -32,7 +32,7 @@ def test_amendment_mapping():
             'comment': 'Standardized country code'
         },
         {
-            'occurrenceID': 'occ3',
+            'dwc:occurrenceID': 'occ3',
             'test_id': 'VALIDATION_COUNTRYCODE_VALID',
             'test_type': 'Validation',
             'status': 'RUN_HAS_RESULT',
@@ -42,9 +42,9 @@ def test_amendment_mapping():
     ])
     
     original_df = pd.DataFrame([
-        {'occurrenceID': 'occ1', 'dwc:eventDate': 'Jan 1, 2023', 'dwc:countryCode': 'USA'},
-        {'occurrenceID': 'occ2', 'dwc:eventDate': '2023-01-02', 'dwc:countryCode': 'United States'},
-        {'occurrenceID': 'occ3', 'dwc:eventDate': '2023-01-03', 'dwc:countryCode': 'US'}
+        {'dwc:occurrenceID': 'occ1', 'dwc:eventDate': 'Jan 1, 2023', 'dwc:countryCode': 'USA'},
+        {'dwc:occurrenceID': 'occ2', 'dwc:eventDate': '2023-01-02', 'dwc:countryCode': 'United States'},
+        {'dwc:occurrenceID': 'occ3', 'dwc:eventDate': '2023-01-03', 'dwc:countryCode': 'US'}
     ])
     
     # Generate amended dataset
@@ -52,10 +52,10 @@ def test_amendment_mapping():
     amended_df = pd.read_csv(StringIO(amended_csv))
     
     # Verify amendments were applied
-    assert amended_df.loc[amended_df['occurrenceID'] == 'occ1', 'dwc:eventDate'].iloc[0] == '2023-01-01T00:00:00'
-    assert amended_df.loc[amended_df['occurrenceID'] == 'occ2', 'dwc:countryCode'].iloc[0] == 'US'
+    assert amended_df.loc[amended_df['dwc:occurrenceID'] == 'occ1', 'dwc:eventDate'].iloc[0] == '2023-01-01T00:00:00'
+    assert amended_df.loc[amended_df['dwc:occurrenceID'] == 'occ2', 'dwc:countryCode'].iloc[0] == 'US'
     # occ3 should be unchanged (validation, not amendment)
-    assert amended_df.loc[amended_df['occurrenceID'] == 'occ3', 'dwc:countryCode'].iloc[0] == 'US'
+    assert amended_df.loc[amended_df['dwc:occurrenceID'] == 'occ3', 'dwc:countryCode'].iloc[0] == 'US'
 
 
 def test_no_amendments():
@@ -65,7 +65,7 @@ def test_no_amendments():
     # Create test data with only validation results
     test_results = pd.DataFrame([
         {
-            'occurrenceID': 'occ1',
+            'dwc:occurrenceID': 'occ1',
             'test_id': 'VALIDATION_COUNTRYCODE_VALID',
             'test_type': 'Validation',
             'status': 'RUN_HAS_RESULT',
@@ -75,7 +75,7 @@ def test_no_amendments():
     ])
     
     original_df = pd.DataFrame([
-        {'occurrenceID': 'occ1', 'dwc:countryCode': 'US'}
+        {'dwc:occurrenceID': 'occ1', 'dwc:countryCode': 'US'}
     ])
     
     # Generate amended dataset
@@ -93,7 +93,7 @@ def test_amendment_with_missing_field():
     # Create test data with amendment for field not in dataset
     test_results = pd.DataFrame([
         {
-            'occurrenceID': 'occ1',
+            'dwc:occurrenceID': 'occ1',
             'test_id': 'AMENDMENT_EVENTDATE_STANDARDIZED',
             'test_type': 'Amendment',
             'status': 'AMENDED',
@@ -104,7 +104,7 @@ def test_amendment_with_missing_field():
     
     # Original dataset without the eventDate field
     original_df = pd.DataFrame([
-        {'occurrenceID': 'occ1', 'dwc:countryCode': 'US'}
+        {'dwc:occurrenceID': 'occ1', 'dwc:countryCode': 'US'}
     ])
     
     # Generate amended dataset
@@ -122,7 +122,7 @@ def test_multiple_amendments_same_record():
     # Create test data with multiple amendments for same record
     test_results = pd.DataFrame([
         {
-            'occurrenceID': 'occ1',
+            'dwc:occurrenceID': 'occ1',
             'test_id': 'AMENDMENT_EVENTDATE_STANDARDIZED',
             'test_type': 'Amendment',
             'status': 'AMENDED',
@@ -130,7 +130,7 @@ def test_multiple_amendments_same_record():
             'comment': 'Standardized date format'
         },
         {
-            'occurrenceID': 'occ1',
+            'dwc:occurrenceID': 'occ1',
             'test_id': 'AMENDMENT_COUNTRYCODE_STANDARDIZED',
             'test_type': 'Amendment',
             'status': 'AMENDED',
@@ -140,7 +140,7 @@ def test_multiple_amendments_same_record():
     ])
     
     original_df = pd.DataFrame([
-        {'occurrenceID': 'occ1', 'dwc:eventDate': 'Jan 1, 2023', 'dwc:countryCode': 'USA'}
+        {'dwc:occurrenceID': 'occ1', 'dwc:eventDate': 'Jan 1, 2023', 'dwc:countryCode': 'USA'}
     ])
     
     # Generate amended dataset
@@ -148,8 +148,8 @@ def test_multiple_amendments_same_record():
     amended_df = pd.read_csv(StringIO(amended_csv))
     
     # Verify both amendments were applied
-    assert amended_df.loc[amended_df['occurrenceID'] == 'occ1', 'dwc:eventDate'].iloc[0] == '2023-01-01T00:00:00'
-    assert amended_df.loc[amended_df['occurrenceID'] == 'occ1', 'dwc:countryCode'].iloc[0] == 'US'
+    assert amended_df.loc[amended_df['dwc:occurrenceID'] == 'occ1', 'dwc:eventDate'].iloc[0] == '2023-01-01T00:00:00'
+    assert amended_df.loc[amended_df['dwc:occurrenceID'] == 'occ1', 'dwc:countryCode'].iloc[0] == 'US'
 
 
 def test_multi_field_amendment():
@@ -159,7 +159,7 @@ def test_multi_field_amendment():
     # Create test data with multi-field amendment
     test_results = pd.DataFrame([
         {
-            'occurrenceID': 'occ1',
+            'dwc:occurrenceID': 'occ1',
             'test_id': 'AMENDMENT_DEPTH_STANDARDIZED',
             'test_type': 'Amendment',
             'status': 'AMENDED',
@@ -169,7 +169,7 @@ def test_multi_field_amendment():
     ])
     
     original_df = pd.DataFrame([
-        {'occurrenceID': 'occ1', 'dwc:minimumDepthInMeters': '10', 'dwc:maximumDepthInMeters': '10'}
+        {'dwc:occurrenceID': 'occ1', 'dwc:minimumDepthInMeters': '10', 'dwc:maximumDepthInMeters': '10'}
     ])
     
     # Generate amended dataset
@@ -177,8 +177,8 @@ def test_multi_field_amendment():
     amended_df = pd.read_csv(StringIO(amended_csv))
     
     # Verify both fields were amended
-    assert amended_df.loc[amended_df['occurrenceID'] == 'occ1', 'dwc:minimumDepthInMeters'].iloc[0] == 3.048
-    assert amended_df.loc[amended_df['occurrenceID'] == 'occ1', 'dwc:maximumDepthInMeters'].iloc[0] == 3.048
+    assert amended_df.loc[amended_df['dwc:occurrenceID'] == 'occ1', 'dwc:minimumDepthInMeters'].iloc[0] == 3.048
+    assert amended_df.loc[amended_df['dwc:occurrenceID'] == 'occ1', 'dwc:maximumDepthInMeters'].iloc[0] == 3.048
 
 
 def test_not_amended_status():
@@ -188,7 +188,7 @@ def test_not_amended_status():
     # Create test data with NOT_AMENDED status
     test_results = pd.DataFrame([
         {
-            'occurrenceID': 'occ1',
+            'dwc:occurrenceID': 'occ1',
             'test_id': 'AMENDMENT_BASISOFRECORD_STANDARDIZED',
             'test_type': 'Amendment',
             'status': 'NOT_AMENDED',
@@ -196,7 +196,7 @@ def test_not_amended_status():
             'comment': 'Value already in correct format'
         },
         {
-            'occurrenceID': 'occ2',
+            'dwc:occurrenceID': 'occ2',
             'test_id': 'AMENDMENT_BASISOFRECORD_STANDARDIZED',
             'test_type': 'Amendment',
             'status': 'AMENDED',
@@ -206,8 +206,8 @@ def test_not_amended_status():
     ])
     
     original_df = pd.DataFrame([
-        {'occurrenceID': 'occ1', 'dwc:basisOfRecord': 'HumanObservation'},
-        {'occurrenceID': 'occ2', 'dwc:basisOfRecord': 'human observation'}
+        {'dwc:occurrenceID': 'occ1', 'dwc:basisOfRecord': 'HumanObservation'},
+        {'dwc:occurrenceID': 'occ2', 'dwc:basisOfRecord': 'human observation'}
     ])
     
     # Generate amended dataset
@@ -215,10 +215,10 @@ def test_not_amended_status():
     amended_df = pd.read_csv(StringIO(amended_csv))
     
     # Verify NOT_AMENDED record is unchanged
-    assert amended_df.loc[amended_df['occurrenceID'] == 'occ1', 'dwc:basisOfRecord'].iloc[0] == 'HumanObservation'
+    assert amended_df.loc[amended_df['dwc:occurrenceID'] == 'occ1', 'dwc:basisOfRecord'].iloc[0] == 'HumanObservation'
     
     # Verify AMENDED record is changed
-    assert amended_df.loc[amended_df['occurrenceID'] == 'occ2', 'dwc:basisOfRecord'].iloc[0] == 'HumanObservation'
+    assert amended_df.loc[amended_df['dwc:occurrenceID'] == 'occ2', 'dwc:basisOfRecord'].iloc[0] == 'HumanObservation'
 
 
 def test_mixed_amendment_statuses():
@@ -228,7 +228,7 @@ def test_mixed_amendment_statuses():
     # Create test data with mixed statuses
     test_results = pd.DataFrame([
         {
-            'occurrenceID': 'occ1',
+            'dwc:occurrenceID': 'occ1',
             'test_id': 'AMENDMENT_EVENTDATE_STANDARDIZED',
             'test_type': 'Amendment',
             'status': 'AMENDED',
@@ -236,7 +236,7 @@ def test_mixed_amendment_statuses():
             'comment': 'Standardized date format'
         },
         {
-            'occurrenceID': 'occ1',
+            'dwc:occurrenceID': 'occ1',
             'test_id': 'AMENDMENT_COUNTRYCODE_STANDARDIZED',
             'test_type': 'Amendment',
             'status': 'NOT_AMENDED',
@@ -244,7 +244,7 @@ def test_mixed_amendment_statuses():
             'comment': 'Country code already standardized'
         },
         {
-            'occurrenceID': 'occ2',
+            'dwc:occurrenceID': 'occ2',
             'test_id': 'AMENDMENT_EVENTDATE_STANDARDIZED',
             'test_type': 'Amendment',
             'status': 'NOT_AMENDED',
@@ -254,8 +254,8 @@ def test_mixed_amendment_statuses():
     ])
     
     original_df = pd.DataFrame([
-        {'occurrenceID': 'occ1', 'dwc:eventDate': 'Jan 1, 2023', 'dwc:countryCode': 'US'},
-        {'occurrenceID': 'occ2', 'dwc:eventDate': '2023-01-02', 'dwc:countryCode': 'CA'}
+        {'dwc:occurrenceID': 'occ1', 'dwc:eventDate': 'Jan 1, 2023', 'dwc:countryCode': 'US'},
+        {'dwc:occurrenceID': 'occ2', 'dwc:eventDate': '2023-01-02', 'dwc:countryCode': 'CA'}
     ])
     
     # Generate amended dataset
@@ -263,12 +263,12 @@ def test_mixed_amendment_statuses():
     amended_df = pd.read_csv(StringIO(amended_csv))
     
     # Verify occ1: eventDate amended, countryCode unchanged
-    assert amended_df.loc[amended_df['occurrenceID'] == 'occ1', 'dwc:eventDate'].iloc[0] == '2023-01-01T00:00:00'
-    assert amended_df.loc[amended_df['occurrenceID'] == 'occ1', 'dwc:countryCode'].iloc[0] == 'US'
+    assert amended_df.loc[amended_df['dwc:occurrenceID'] == 'occ1', 'dwc:eventDate'].iloc[0] == '2023-01-01T00:00:00'
+    assert amended_df.loc[amended_df['dwc:occurrenceID'] == 'occ1', 'dwc:countryCode'].iloc[0] == 'US'
     
     # Verify occ2: both fields unchanged
-    assert amended_df.loc[amended_df['occurrenceID'] == 'occ2', 'dwc:eventDate'].iloc[0] == '2023-01-02'
-    assert amended_df.loc[amended_df['occurrenceID'] == 'occ2', 'dwc:countryCode'].iloc[0] == 'CA'
+    assert amended_df.loc[amended_df['dwc:occurrenceID'] == 'occ2', 'dwc:eventDate'].iloc[0] == '2023-01-02'
+    assert amended_df.loc[amended_df['dwc:occurrenceID'] == 'occ2', 'dwc:countryCode'].iloc[0] == 'CA'
 
 
 if __name__ == "__main__":

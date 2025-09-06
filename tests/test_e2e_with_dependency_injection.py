@@ -72,7 +72,7 @@ occ5,2023-01-05,BadCountry,ZZ,91.0,181.0,InvalidName,BadBasis"""
     mock_bdq_service = Mock()
     mock_test_results = pd.DataFrame([
         {
-            'occurrenceID': 'occ1',
+            'dwc:occurrenceID': 'occ1',
             'test_id': 'VALIDATION_COUNTRYCODE_VALID',
             'test_type': 'Validation',
             'status': 'RUN_HAS_RESULT',
@@ -80,7 +80,7 @@ occ5,2023-01-05,BadCountry,ZZ,91.0,181.0,InvalidName,BadBasis"""
             'comment': 'Valid country code'
         },
         {
-            'occurrenceID': 'occ5',
+            'dwc:occurrenceID': 'occ5',
             'test_id': 'VALIDATION_COUNTRYCODE_VALID',
             'test_type': 'Validation',
             'status': 'RUN_HAS_RESULT',
@@ -88,7 +88,7 @@ occ5,2023-01-05,BadCountry,ZZ,91.0,181.0,InvalidName,BadBasis"""
             'comment': 'Invalid country code: ZZ'
         },
         {
-            'occurrenceID': 'occ5',
+            'dwc:occurrenceID': 'occ5',
             'test_id': 'VALIDATION_COORDINATES_VALID',
             'test_type': 'Validation',
             'status': 'RUN_HAS_RESULT',
@@ -194,7 +194,7 @@ def test_csv_output_validation():
     # Create realistic test data
     test_results = pd.DataFrame([
         {
-            'occurrenceID': 'occ1',
+            'dwc:occurrenceID': 'occ1',
             'test_id': 'VALIDATION_COUNTRYCODE_VALID',
             'test_type': 'Validation',
             'status': 'RUN_HAS_RESULT',
@@ -202,7 +202,7 @@ def test_csv_output_validation():
             'comment': 'Valid country code'
         },
         {
-            'occurrenceID': 'occ2',
+            'dwc:occurrenceID': 'occ2',
             'test_id': 'VALIDATION_COORDINATES_VALID',
             'test_type': 'Validation',
             'status': 'RUN_HAS_RESULT',
@@ -210,7 +210,7 @@ def test_csv_output_validation():
             'comment': 'Invalid coordinates'
         },
         {
-            'occurrenceID': 'occ3',
+            'dwc:occurrenceID': 'occ3',
             'test_id': 'AMENDMENT_EVENTDATE_STANDARDIZED',
             'test_type': 'Amendment',
             'status': 'AMENDED',
@@ -220,9 +220,9 @@ def test_csv_output_validation():
     ])
     
     original_df = pd.DataFrame([
-        {'occurrenceID': 'occ1', 'countryCode': 'US', 'eventDate': '2023-01-01'},
-        {'occurrenceID': 'occ2', 'countryCode': 'CA', 'eventDate': '2023-01-02'},
-        {'occurrenceID': 'occ3', 'countryCode': 'MX', 'eventDate': '2023-01-03'}
+        {'dwc:occurrenceID': 'occ1', 'dwc:countryCode': 'US', 'dwc:eventDate': '2023-01-01'},
+        {'dwc:occurrenceID': 'occ2', 'dwc:countryCode': 'CA', 'dwc:eventDate': '2023-01-02'},
+        {'dwc:occurrenceID': 'occ3', 'dwc:countryCode': 'MX', 'dwc:eventDate': '2023-01-03'}
     ])
     
     from app.services.csv_service import CSVService
@@ -233,7 +233,7 @@ def test_csv_output_validation():
     raw_df = pd.read_csv(StringIO(raw_csv))
     
     # Verify structure
-    expected_columns = ['occurrenceID', 'test_id', 'test_type', 'status', 'result', 'comment']
+    expected_columns = ['dwc:occurrenceID', 'test_id', 'test_type', 'status', 'result', 'comment']
     for col in expected_columns:
         assert col in raw_df.columns, f"Missing column: {col}"
     
@@ -259,9 +259,9 @@ def test_csv_output_validation():
     
     # Verify structure
     assert len(amended_df) == 3  # Same number of rows as original
-    assert 'occurrenceID' in amended_df.columns
-    assert 'countryCode' in amended_df.columns
-    assert 'eventDate' in amended_df.columns
+    assert 'dwc:occurrenceID' in amended_df.columns
+    assert 'dwc:countryCode' in amended_df.columns
+    assert 'dwc:eventDate' in amended_df.columns
 
 
 def test_summary_statistics():
@@ -270,7 +270,7 @@ def test_summary_statistics():
     
     test_results = pd.DataFrame([
         {
-            'occurrenceID': 'occ1',
+            'dwc:occurrenceID': 'occ1',
             'test_id': 'VALIDATION_COUNTRYCODE_VALID',
             'test_type': 'Validation',
             'status': 'RUN_HAS_RESULT',
@@ -278,7 +278,7 @@ def test_summary_statistics():
             'comment': 'Valid country code'
         },
         {
-            'occurrenceID': 'occ2',
+            'dwc:occurrenceID': 'occ2',
             'test_id': 'VALIDATION_COUNTRYCODE_VALID',
             'test_type': 'Validation',
             'status': 'RUN_HAS_RESULT',
@@ -286,7 +286,7 @@ def test_summary_statistics():
             'comment': 'Invalid country code'
         },
         {
-            'occurrenceID': 'occ3',
+            'dwc:occurrenceID': 'occ3',
             'test_id': 'AMENDMENT_EVENTDATE_STANDARDIZED',
             'test_type': 'Amendment',
             'status': 'AMENDED',

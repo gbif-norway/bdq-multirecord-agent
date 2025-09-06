@@ -26,7 +26,7 @@ class TestBDQAPIIntegration:
         """Sample occurrence data for testing"""
         return pd.DataFrame([
             {
-                'occurrenceID': 'test-occ-1',
+                'dwc:occurrenceID': 'test-occ-1',
                 'dwc:eventDate': '2023-01-01',
                 'dwc:countryCode': 'US',
                 'dwc:decimalLatitude': '37.7749',
@@ -35,7 +35,7 @@ class TestBDQAPIIntegration:
                 'dwc:basisOfRecord': 'HumanObservation'
             },
             {
-                'occurrenceID': 'test-occ-2', 
+                'dwc:occurrenceID': 'test-occ-2', 
                 'dwc:eventDate': '2023-01-02',
                 'dwc:countryCode': 'CA',
                 'dwc:decimalLatitude': '43.6532',
@@ -44,7 +44,7 @@ class TestBDQAPIIntegration:
                 'dwc:basisOfRecord': 'HumanObservation'
             },
             {
-                'occurrenceID': 'test-occ-3',
+                'dwc:occurrenceID': 'test-occ-3',
                 'dwc:eventDate': 'invalid-date',
                 'dwc:countryCode': 'ZZ',  # Invalid country code
                 'dwc:decimalLatitude': '91.0',  # Invalid latitude
@@ -59,7 +59,7 @@ class TestBDQAPIIntegration:
         """Sample taxon data for testing"""
         return pd.DataFrame([
             {
-                'taxonID': 'test-tax-1',
+                'dwc:taxonID': 'test-tax-1',
                 'dwc:scientificName': 'Homo sapiens',
                 'dwc:kingdom': 'Animalia',
                 'dwc:phylum': 'Chordata',
@@ -72,7 +72,7 @@ class TestBDQAPIIntegration:
                 'dwc:scientificNameAuthorship': 'Linnaeus 1758'
             },
             {
-                'taxonID': 'test-tax-2',
+                'dwc:taxonID': 'test-tax-2',
                 'dwc:scientificName': 'InvalidTaxon',
                 'dwc:kingdom': 'BadKingdom',
                 'dwc:phylum': '',
@@ -199,7 +199,7 @@ class TestBDQAPIIntegration:
                 
                 results = response.json()
                 assert len(results) == len(batch_request), f"Result count mismatch for {test.id}"
-                
+
                 # Validate result structure
                 for i, result in enumerate(results):
                     assert 'status' in result, f"Result {i} missing status"
@@ -367,6 +367,97 @@ class TestBDQAPIIntegration:
         # Basic performance expectations
         assert duration < 30, f"API should respond within 30 seconds, took {duration:.2f}s"
         assert len(results) == len(batch_request), "Should return all results"
+
+    def test_column_name_consistency_with_dwc_prefixes(self, bdq_service):
+        """Test that the integration properly handles dwc: prefixed column names"""
+        
+        # Test with data that has dwc: prefixes (realistic scenario)
+        df_with_prefixes = pd.DataFrame([
+            {
+                'dwc:occurrenceID': 'test-occ-1',
+                'dwc:eventDate': '2023-01-01',
+                'dwc:countryCode': 'US',
+                'dwc:decimalLatitude': '37.7749',
+                'dwc:decimalLongitude': '-122.4194',
+                'dwc:scientificName': 'Homo sapiens',
+                'dwc:basisOfRecord': 'HumanObservation'
+            },
+            {
+                'dwc:occurrenceID': 'test-occ-2', 
+                'dwc:eventDate': '2023-01-02',
+                'dwc:countryCode': 'CA',
+                'dwc:decimalLatitude': '43.6532',
+                'dwc:decimalLongitude': '-79.3832',
+                'dwc:scientificName': 'Canis lupus',
+                'dwc:basisOfRecord': 'HumanObservation'
+            }
+        ])
+        
+        # Test that the service can handle dwc: prefixed columns
+        applicable_tests = bdq_service._filter_applicable_tests(df_with_prefixes.columns.tolist())
+        
+        # Should find applicable tests since we have proper dwc: prefixed columns
+        assert len(applicable_tests) > 0, "Should find applicable tests for dwc: prefixed columns"
+        
+        print(f"✓ Found {len(applicable_tests)} applicable tests for dwc: prefixed columns")
+        
+        # Test a simple validation test
+        if applicable_tests:
+            test = applicable_tests[0]
+            test_columns = test.actedUpon + test.consulted
+            
+            # Verify all required columns exist
+            missing_columns = [col for col in test_columns if col not in df_with_prefixes.columns]
+            assert len(missing_columns) == 0, f"Missing required columns: {missing_columns}"
+            
+            # Get unique combinations for this test
+            unique_combinations = df_with_prefixes[test_columns].drop_duplicates().reset_index(drop=True)
+            
+            # Prepare batch request
+            batch_request = [
+                {"id": test.id, "params": row.to_dict()}
+                for _, row in unique_combinations.iterrows()
+            ]
+            
+            # Make API call
+            response = requests.post(bdq_service.batch_endpoint, json=batch_request, timeout=30)
+            response.raise_for_status()
+            
+            results = response.json()
+            assert len(results) == len(batch_request), f"Result count mismatch for {test.id}"
+            
+            # Verify result structure
+            for result in results:
+                assert 'status' in result, "Result missing status"
+                assert 'result' in result, "Result missing result"
+                assert 'comment' in result, "Result missing comment"
+            
+            print(f"✓ Successfully processed {test.id} with dwc: prefixed columns")
+
+    def test_column_name_consistency_without_dwc_prefixes(self, bdq_service):
+        """Test that the integration fails gracefully with non-dwc: prefixed columns"""
+        
+        # Test with data that does NOT have dwc: prefixes (should fail to find applicable tests)
+        df_without_prefixes = pd.DataFrame([
+            {
+                'occurrenceID': 'test-occ-1',  # No dwc: prefix
+                'eventDate': '2023-01-01',     # No dwc: prefix
+                'countryCode': 'US',           # No dwc: prefix
+                'decimalLatitude': '37.7749',  # No dwc: prefix
+                'decimalLongitude': '-122.4194', # No dwc: prefix
+                'scientificName': 'Homo sapiens', # No dwc: prefix
+                'basisOfRecord': 'HumanObservation' # No dwc: prefix
+            }
+        ])
+        
+        # Test that the service finds NO applicable tests for non-dwc: prefixed columns
+        applicable_tests = bdq_service._filter_applicable_tests(df_without_prefixes.columns.tolist())
+        
+        # Should find NO applicable tests since BDQ API expects dwc: prefixed columns
+        assert len(applicable_tests) == 0, "Should find NO applicable tests for non-dwc: prefixed columns"
+        
+        print("✓ Correctly found NO applicable tests for non-dwc: prefixed columns")
+        print("  This demonstrates that the integration test would catch column name issues")
 
 
 if __name__ == "__main__":

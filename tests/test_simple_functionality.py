@@ -95,7 +95,7 @@ def test_csv_service_generation():
     # Create test data
     test_results = pd.DataFrame([
         {
-            'occurrenceID': 'occ1',
+            'dwc:occurrenceID': 'occ1',
             'test_id': 'VALIDATION_COUNTRYCODE_VALID',
             'test_type': 'Validation',
             'status': 'RUN_HAS_RESULT',
@@ -103,7 +103,7 @@ def test_csv_service_generation():
             'comment': 'Valid country code'
         },
         {
-            'occurrenceID': 'occ2',
+            'dwc:occurrenceID': 'occ2',
             'test_id': 'VALIDATION_COORDINATES_VALID',
             'test_type': 'Validation',
             'status': 'RUN_HAS_RESULT',
@@ -117,7 +117,7 @@ def test_csv_service_generation():
     raw_df = pd.read_csv(StringIO(raw_csv))
     
     assert len(raw_df) == 2
-    assert 'occurrenceID' in raw_df.columns
+    assert 'dwc:occurrenceID' in raw_df.columns
     assert 'test_id' in raw_df.columns
     assert 'test_type' in raw_df.columns
     assert 'status' in raw_df.columns
@@ -126,16 +126,16 @@ def test_csv_service_generation():
     
     # Test amended dataset generation
     original_df = pd.DataFrame([
-        {'occurrenceID': 'occ1', 'countryCode': 'US'},
-        {'occurrenceID': 'occ2', 'countryCode': 'CA'}
+        {'dwc:occurrenceID': 'occ1', 'dwc:countryCode': 'US'},
+        {'dwc:occurrenceID': 'occ2', 'dwc:countryCode': 'CA'}
     ])
     
     amended_csv = csv_service.generate_amended_dataset(original_df, test_results, 'occurrence')
     amended_df = pd.read_csv(StringIO(amended_csv))
     
     assert len(amended_df) == 2
-    assert 'occurrenceID' in amended_df.columns
-    assert 'countryCode' in amended_df.columns
+    assert 'dwc:occurrenceID' in amended_df.columns
+    assert 'dwc:countryCode' in amended_df.columns
 
 
 def test_csv_service_with_prefixed_columns():
@@ -198,7 +198,7 @@ def test_summary_statistics_generation():
     # Create test results
     test_results = pd.DataFrame([
         {
-            'occurrenceID': 'occ1',
+            'dwc:occurrenceID': 'occ1',
             'test_id': 'VALIDATION_COUNTRYCODE_VALID',
             'test_type': 'Validation',
             'status': 'RUN_HAS_RESULT',
@@ -206,7 +206,7 @@ def test_summary_statistics_generation():
             'comment': 'Valid country code'
         },
         {
-            'occurrenceID': 'occ2',
+            'dwc:occurrenceID': 'occ2',
             'test_id': 'VALIDATION_COUNTRYCODE_VALID',
             'test_type': 'Validation',
             'status': 'RUN_HAS_RESULT',
@@ -214,7 +214,7 @@ def test_summary_statistics_generation():
             'comment': 'Invalid country code'
         },
         {
-            'occurrenceID': 'occ3',
+            'dwc:occurrenceID': 'occ3',
             'test_id': 'AMENDMENT_EVENTDATE_STANDARDIZED',
             'test_type': 'Amendment',
             'status': 'AMENDED',

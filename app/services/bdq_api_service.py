@@ -92,6 +92,7 @@ class BDQAPIService:
                     unique_test_candidates_batch_request.append({"id": test.id, "params": params})
 
                 # Call batch endpoint
+                log("Calling batch endpoint with ")
                 batch_response = requests.post(self.batch_endpoint, json=unique_test_candidates_batch_request, timeout=60)
                 batch_response.raise_for_status()
                 batch_results = batch_response.json()
@@ -112,7 +113,7 @@ class BDQAPIService:
                 )
                 
                 # Select only the required columns: occurrenceID/taxonID, test_id, test_type, status, result, comment
-                id_column = f'{core_type}ID'
+                id_column = f'dwc:{core_type}ID'
                 final_results = expanded_results[[id_column, 'test_id', 'test_type', 'status', 'result', 'comment']]
                 
                 all_results_dfs.append(final_results)
