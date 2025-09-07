@@ -8,18 +8,27 @@ from typing import List, Dict, Any, Optional, Tuple
 from app.utils.helper import log
 
 from dataclasses import dataclass, field
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+    before_sleep_log,
+)
+import logging as _logging
 
 
 # HTTP status codes that are considered transient and safe to retry
 _RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 
 
+# Add retry with a visible log before each sleep so Cloud logs show retries
 @retry(
     reraise=True,
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=1, min=1, max=8),
     retry=retry_if_exception_type((requests.exceptions.Timeout, requests.exceptions.ConnectionError, requests.exceptions.HTTPError)),
+    before_sleep=before_sleep_log(_logging.getLogger(__name__), _logging.WARNING),
 )
 def _post_with_retry(url: str, payload: Any, timeout: int) -> requests.Response:
     """POST with bounded retries for transient errors/timeouts.
@@ -107,6 +116,7 @@ class BDQAPIService:
 
                 bulk_attempted = False
                 try:
+                    log(f"{test.id}: attempting BULK request with {total_candidates} candidates (timeout {self.initial_bulk_timeout_sec}s)")
                     bulk_attempted = True
                     api_start_time = time.time()
                     bulk_request = [
@@ -135,7 +145,7 @@ class BDQAPIService:
                     continue  # next test
                 except Exception as e:
                     if bulk_attempted:
-                        log(f"{test.id}: bulk request failed, falling back to chunking: {str(e)}", "ERROR")
+                        log(f"{test.id}: BULK request failed, falling back to chunking: {str(e)}", "WARNING")
 
                 # Process in chunks to avoid long single requests/timeouts
                 chunked_unique_results: List[pd.DataFrame] = []
@@ -145,6 +155,11 @@ class BDQAPIService:
                 start_idx = 0
                 chunk_index = 0
                 consecutive_failures = 0
+
+                est_chunks = (total_candidates + chunk_size - 1) // chunk_size
+                log(
+                    f"{test.id}: starting CHUNKED processing of {total_candidates} candidates in ~{est_chunks} chunks (chunk_size={chunk_size}, timeout={self.batch_chunk_timeout_sec}s)"
+                )
 
                 while start_idx < total_candidates:
                     end_idx = min(start_idx + chunk_size, total_candidates)
@@ -156,6 +171,7 @@ class BDQAPIService:
                     chunk_index += 1
 
                     try:
+                        log(f"{test.id}: chunk {chunk_index} START {start_idx}-{end_idx} (size={len(chunk_df)})")
                         api_start_time = time.time()
                         batch_response = _post_with_retry(
                             self.batch_endpoint,
@@ -207,7 +223,7 @@ class BDQAPIService:
                     chunked_unique_results.append(unique_with_results_chunk)
 
                     processed = end_idx
-                    log(f"{test.id}: chunk {chunk_index} processed {processed}/{total_candidates} (API {api_duration:.2f}s)")
+                    log(f"{test.id}: chunk {chunk_index} DONE {processed}/{total_candidates} (API {api_duration:.2f}s)")
                     start_idx = end_idx
 
                 if not chunked_unique_results:
