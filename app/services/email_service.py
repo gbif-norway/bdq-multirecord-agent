@@ -27,8 +27,10 @@ class EmailService:
         
         return f"sha256={signature}"
     
-    def extract_csv_attachment(self, email_data: dict) -> Optional[str]:
-        """Extract CSV attachment from email data"""
+    def extract_csv_attachment(self, email_data: dict) -> tuple[Optional[str], Optional[str]]:
+        """Extract CSV attachment from email data
+        Returns (csv_content, original_filename)
+        """
         try:
             csv_attachments = []
 
@@ -47,9 +49,10 @@ class EmailService:
             for csv_attachment in csv_attachments:
                 b64_raw = csv_attachment['contentBase64']
                 b64 = b64_raw.strip()
+                original_filename = csv_attachment.get('filename', 'unknown_file')
 
                 log(
-                    f"CSV attachment candidate: filename={csv_attachment.get('filename')}, "
+                    f"CSV attachment candidate: filename={original_filename}, "
                     f"mime={csv_attachment.get('mimeType')}, size={csv_attachment.get('size')}, b64_len={len(b64)}"
                 )
 
@@ -64,7 +67,7 @@ class EmailService:
                         decoded_bytes = base64.b64decode(b64.encode('utf-8'))
                     except Exception as decode_err:
                         log(
-                            f"Failed to decode base64 for {csv_attachment.get('filename')}: {decode_err}"
+                            f"Failed to decode base64 for {original_filename}: {decode_err}"
                         )
                         continue
 
@@ -72,21 +75,21 @@ class EmailService:
                     csv_content = decoded_bytes.decode('utf-8', errors='replace')
                 except Exception as enc_err:
                     log(
-                        f"Failed to decode bytes to UTF-8 for {csv_attachment.get('filename')}: {enc_err}"
+                        f"Failed to decode bytes to UTF-8 for {original_filename}: {enc_err}"
                     )
                     continue
 
                 log(
-                    f"Extracted CSV attachment: {csv_attachment.get('filename')} ({len(csv_content)} chars)"
+                    f"Extracted CSV attachment: {original_filename} ({len(csv_content)} chars)"
                 )
-                return csv_content
+                return csv_content, original_filename
 
             log("All CSV-like attachments were empty or undecodable", "WARNING")
-            return None
+            return None, None
 
         except Exception as e:
             log(f"Error extracting CSV attachment: {e}", "ERROR")
-            return None
+            return None, None
     
     async def send_reply(self, email_data: dict, body: str, attachments: Optional[List[dict]] = None):
         """Send reply email with optional attachments"""

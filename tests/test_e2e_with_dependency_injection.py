@@ -67,12 +67,12 @@ async def test_complete_email_processing_flow(sample_email):
     
     # Create mock services
     mock_email_service = Mock()
-    mock_email_service.extract_csv_attachment.return_value = """occurrenceID,eventDate,country,countryCode,decimalLatitude,decimalLongitude,scientificName,basisOfRecord
+    mock_email_service.extract_csv_attachment.return_value = ("""occurrenceID,eventDate,country,countryCode,decimalLatitude,decimalLongitude,scientificName,basisOfRecord
 occ1,2023-01-01,United States,US,37.7749,-122.4194,Homo sapiens,HumanObservation
 occ2,2023-01-02,Canada,CA,43.6532,-79.3832,Canis lupus,HumanObservation
 occ3,2023-01-03,Mexico,MX,19.4326,-99.1332,Felis catus,HumanObservation
 occ4,2023-01-04,France,FR,48.8566,2.3522,Ursus americanus,HumanObservation
-occ5,2023-01-05,BadCountry,ZZ,91.0,181.0,InvalidName,BadBasis"""
+occ5,2023-01-05,BadCountry,ZZ,91.0,181.0,InvalidName,BadBasis""", "test_dataset.csv")
     mock_email_service.send_error_reply = AsyncMock()
     mock_email_service.send_results_reply = AsyncMock()
     
@@ -139,7 +139,7 @@ async def test_no_csv_attachment_error():
     """Test error handling for emails without CSV"""
     
     mock_email_service = Mock()
-    mock_email_service.extract_csv_attachment.return_value = None
+    mock_email_service.extract_csv_attachment.return_value = (None, None)
     mock_email_service.send_error_reply = AsyncMock()
     
     with patch('app.main.email_service', mock_email_service):
@@ -166,7 +166,7 @@ async def test_invalid_csv_structure_error():
     """Test error handling for CSV without occurrenceID/taxonID"""
     
     mock_email_service = Mock()
-    mock_email_service.extract_csv_attachment.return_value = "name,value\nJohn,25"
+    mock_email_service.extract_csv_attachment.return_value = ("name,value\nJohn,25", "test.csv")
     mock_email_service.send_error_reply = AsyncMock()
     
     # Use real CSV service - no mocking needed

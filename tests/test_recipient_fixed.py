@@ -148,7 +148,7 @@ class TestRecipientHandlingFinal:
         """Test CSV attachment extraction (should return None for empty attachments)"""
         
         # Test with empty attachments
-        csv_data = email_service.extract_csv_attachment(test_email_data)
+        csv_data, filename = email_service.extract_csv_attachment(test_email_data)
         assert csv_data is None  # No CSV attachments in test data
 
     def test_csv_attachment_with_data(self, email_service):
@@ -174,7 +174,7 @@ class TestRecipientHandlingFinal:
             }]
         }
         
-        extracted_csv = email_service.extract_csv_attachment(email_with_csv)
+        extracted_csv, filename = email_service.extract_csv_attachment(email_with_csv)
         assert extracted_csv == csv_content
 
     @patch.dict('os.environ', {
@@ -204,7 +204,7 @@ class TestRecipientHandlingFinal:
              patch('app.main.llm_service') as mock_llm_service:
 
             # Setup mocks
-            mock_email_service.extract_csv_attachment.return_value = "test,csv\ndata,here"
+            mock_email_service.extract_csv_attachment.return_value = ("test,csv\ndata,here", "test.csv")
             mock_csv_service.parse_csv_and_detect_core.return_value = (Mock(), "occurrence")
             mock_bdq_service.run_tests_on_dataset = AsyncMock(return_value=Mock())
             mock_llm_service.generate_intelligent_summary.return_value = "<p>LLM analysis</p>"

@@ -171,12 +171,12 @@ def test_email_service_csv_extraction():
         }]
     }
     
-    extracted = email_service.extract_csv_attachment(email_data)
+    extracted, filename = email_service.extract_csv_attachment(email_data)
     assert extracted == csv_content
     
     # Test no CSV attachment
     email_data_no_csv = {"attachments": []}
-    extracted = email_service.extract_csv_attachment(email_data_no_csv)
+    extracted, filename = email_service.extract_csv_attachment(email_data_no_csv)
     assert extracted is None
     
     # Test non-CSV attachment (text/plain is treated as CSV-like by the service)
@@ -187,7 +187,7 @@ def test_email_service_csv_extraction():
             "contentBase64": base64.b64encode("not csv".encode('utf-8')).decode('utf-8')
         }]
     }
-    extracted = email_service.extract_csv_attachment(email_data_no_csv)
+    extracted, filename = email_service.extract_csv_attachment(email_data_no_csv)
     assert extracted is None
 
 

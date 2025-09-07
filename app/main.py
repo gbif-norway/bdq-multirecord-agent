@@ -15,6 +15,7 @@ from app.services.email_service import EmailService
 from app.services.bdq_api_service import BDQAPIService
 from app.services.csv_service import CSVService
 from app.services.llm_service import LLMService
+from app.services.minio_service import MinIOService
 from app.utils.helper import log
 import pandas as pd
 
@@ -23,6 +24,7 @@ email_service = EmailService()
 bdq_api_service = BDQAPIService()
 csv_service = CSVService()
 llm_service = LLMService()
+minio_service = MinIOService()
 
 # Load environment variables
 load_dotenv()
@@ -48,10 +50,13 @@ async def root():
 
 async def _handle_email_processing(email_data: Dict[str, Any]):
     log(str(email_data))
-    csv_data = email_service.extract_csv_attachment(email_data)
+    csv_data, original_filename = email_service.extract_csv_attachment(email_data)
     if not csv_data:
         await email_service.send_error_reply(email_data, "No CSV attachment found. Please attach a CSV file with biodiversity data.")
         return
+
+    # Upload original file to MinIO
+    minio_service.upload_original_file(csv_data, original_filename or "unknown_file")
 
     df, core_type = csv_service.parse_csv_and_detect_core(csv_data)
     if not core_type:
@@ -71,9 +76,15 @@ async def _handle_email_processing(email_data: Dict[str, Any]):
     # Combine summary stats + LLM analysis
     body = _format_summary_stats_html(summary_stats, core_type) + llm_analysis
 
-    # Send reply email
+    # Generate and upload result files
     raw_results_csv = csv_service.generate_raw_results_csv(test_results)
     amended_dataset_csv = csv_service.generate_amended_dataset(df, test_results, core_type)
+    
+    # Upload result files to MinIO
+    minio_service.upload_results_file(raw_results_csv, original_filename or "unknown_file", "raw_results")
+    minio_service.upload_results_file(amended_dataset_csv, original_filename or "unknown_file", "amended")
+    
+    # Send reply email
     await email_service.send_results_reply(email_data, body, raw_results_csv, amended_dataset_csv)
     
 

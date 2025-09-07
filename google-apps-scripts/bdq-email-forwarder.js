@@ -48,8 +48,10 @@ function poll() {
 function replyNoAttachment_(message, headers) {
   const thread = GmailApp.getThreadById(message.threadId);
   const note =
-    "Hi — no attachment was found.\n\n" +
-    "Please send a NEW email with your data file attached (CSV/TSV or ZIP/DwC-A).\n" +
+    "Hi, thanks for emailing in!\n\n" +
+    "This service is for running BDQ tests (see https://github.com/tdwg/bdq) against Darwin Core datasets." +
+    "\nThis is an automated message as no attachment was found in your previous email. " +
+    "\nPlease send a NEW email with your data file attached (a Darwin Core occurrence or taxon TXT/CSV/TSV).\n" +
     "Replies without an attachment won’t be processed.\n";
   thread.reply(note);
 }
