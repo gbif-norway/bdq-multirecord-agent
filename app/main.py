@@ -63,7 +63,7 @@ async def _handle_email_processing(email_data: Dict[str, Any]):
 
     # Extract email content (prefer HTML, fallback to text)
     email_body = email_data['body']['html'] if email_data['body']['html'] else email_data['body']['text']
-    email_content = f"SUBJECT: {email_data['headers']['subject']}\n{email_body}"
+    email_content = f"FROM: {email_data['headers']['from']}\nSUBJECT: {email_data['headers']['subject']}\n{email_body}"
 
     # Get LLM analysis (without stats)
     llm_analysis = llm_service.generate_intelligent_summary(test_results, email_content, core_type, summary_stats)
@@ -177,7 +177,7 @@ def _format_summary_stats_html(summary_stats, core_type):
     
     html = f"""
     <div style="background-color: #f8f9fa; padding: 15px; border-left: 4px solid #007bff; margin-bottom: 20px;">
-        <h3 style="margin-top: 0; color: #007bff;">📊 BDQ Test Results Summary</h3>
+        <h3 style="margin-top: 0; color: #007bff;">&#x1F4CA; BDQ Test Results Summary</h3>
         <ul style="margin: 0; padding-left: 20px;">
             <li><strong>Dataset:</strong> {core_type.title()} core with {total_records:,} records</li>
             <li><strong>Tests Run:</strong> {total_tests:,} tests across {summary_stats.get('unique_tests', 0)} categories</li>
@@ -195,7 +195,7 @@ def _format_summary_stats_html(summary_stats, core_type):
                 failure_list += f" and {len(failure_counts) - 3} more"
             html += f"<li><strong>Main Issues:</strong> {failure_list}</li>"
     else:
-        html += "<li><strong>Status:</strong> ✅ No validation issues found!</li>"
+        html += "<li><strong>Status:</strong> &#x2705; No validation issues found!</li>"
     
     if amendments_applied > 0:
         html += f"<li><strong>Auto-Improvements:</strong> {amendments_applied:,} records enhanced</li>"

@@ -51,7 +51,7 @@ class TestLLMService:
         }
         
         # Sample email content string (preferring HTML, fallback to text)
-        self.email_content = "SUBJECT: BDQ Test Request\n<p>Please test my biodiversity dataset</p>"
+        self.email_content = "FROM: researcher@example.com\nSUBJECT: BDQ Test Request\n<p>Please test my biodiversity dataset</p>"
     
     @patch('app.services.llm_service.genai.GenerativeModel')
     def test_generate_intelligent_summary_success(self, mock_model_class):
@@ -127,6 +127,7 @@ class TestLLMService:
         assert '**VALIDATION_COUNTRYCODE_VALID**: 1 issues' in prompt
         assert 'Invalid country code format (1 occurrences)' in prompt
         assert 'Please test my biodiversity dataset' in prompt
+        assert 'FROM: researcher@example.com' in prompt
         
         # Verify new prompt structure
         assert '## CONTEXT' in prompt
@@ -174,7 +175,7 @@ class TestLLMService:
     
     def test_create_summary_prompt_empty_email_body(self):
         """Test prompt creation with empty email body"""
-        empty_email_content = "SUBJECT: Test\n"
+        empty_email_content = "FROM: test@example.com\nSUBJECT: Test\n"
         
         prompt = self.llm_service._create_summary_prompt(
             self.test_results_df, 
@@ -185,6 +186,7 @@ class TestLLMService:
         
         # Should include user message section even with just subject
         assert "User's Original Message" in prompt
+        assert "FROM: test@example.com" in prompt
         assert "SUBJECT: Test" in prompt
     
     def test_create_empty_results_prompt(self):
@@ -198,10 +200,11 @@ class TestLLMService:
         assert 'no applicable BDQ tests could be run' in prompt
         assert 'Missing required columns' in prompt
         assert 'Please test my biodiversity dataset' in prompt
+        assert 'FROM: researcher@example.com' in prompt
     
     def test_create_empty_results_prompt_no_email_body(self):
         """Test empty results prompt with no email body"""
-        empty_email_content = "SUBJECT: Test\n"
+        empty_email_content = "FROM: test@example.com\nSUBJECT: Test\n"
         
         prompt = self.llm_service._create_empty_results_prompt(
             empty_email_content, 
@@ -210,6 +213,7 @@ class TestLLMService:
         
         assert 'taxon core dataset' in prompt
         assert "User's Message" in prompt
+        assert "FROM: test@example.com" in prompt
         assert "SUBJECT: Test" in prompt
     
     def test_convert_to_html(self):

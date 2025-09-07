@@ -28,7 +28,14 @@ occ5,2023-01-05,BadCountry,ZZ,91.0,181.0,InvalidName,BadBasis"""
     return {
         "messageId": "test-123",
         "threadId": "thread-456",
-        "headers": {"from": "test@example.com"},
+        "headers": {
+            "from": "test@example.com",
+            "subject": "BDQ Test Request"
+        },
+        "body": {
+            "text": "Please test my biodiversity dataset",
+            "html": "<p>Please test my biodiversity dataset</p>"
+        },
         "attachments": [{
             "filename": "data.csv",
             "mimeType": "text/csv", 
