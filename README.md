@@ -19,7 +19,7 @@ All local development should be done in Docker containers.
 7. Test Execution: Runs tests on unique data combinations via external BDQ API
    - Deduplicates test candidates to avoid redundant API calls
    - Calls `/api/v1/tests/run/batch` endpoint with unique parameter combinations
-   - Tries a single bulk request first; on failure falls back to chunked requests (1000 items per chunk, 300s per-chunk timeout) with progress logging
+   - Tries a single bulk request first with a total watchdog deadline (420s) and 30s heartbeat logs; on failure or timeout falls back to chunked requests (up to 3000 items per chunk, 300s per-chunk timeout) with progress logging
    - External API handles all BDQ test execution logic
 8. Result Processing: Expands test results to all matching rows
 9. Summary Generation: Creates intelligent summaries using LLM

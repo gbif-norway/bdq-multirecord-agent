@@ -10,7 +10,7 @@ class LLMService:
     def __init__(self):
         self.api_key = os.getenv("GOOGLE_API_KEY")
         genai.configure(api_key=self.api_key)
-        self.model = genai.GenerativeModel('gemini-1.5-flash')
+        self.model = genai.GenerativeModel('gemini-2.5-pro')
         self.bdq_tests_df = self._load_bdq_tests()
     
     def _load_bdq_tests(self) -> pd.DataFrame:
@@ -161,8 +161,8 @@ The researcher has already received a summary of their test results (total recor
 ## YOUR TASK
 Write a professional, encouraging email analysis that:
 
-1. **Acknowledge** their submission and thank them for using BDQ
-2. **Analyze** what the test results mean for their research (focus on interpretation, not repeating numbers)
+1. **Acknowledge** their submission and thank them for using BDQ. Reply to any queries in the original email. 
+2. **Analyze** what the test results mean for their research, again using their email content if there is any (focus on interpretation, not repeating numbers)
 3. **Explain** the significance of any issues found and their impact on data quality, using the BDQ test context above to provide specific insights about what each test checks
 4. **Provide** specific, actionable advice for improving data quality based on the test descriptions and examples
 5. **Describe** what the attached files contain and how to use them effectively
