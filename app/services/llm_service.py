@@ -45,13 +45,28 @@ class LLMService:
         test_context += "The following tests were run on the dataset. Here's what each test checks:\n\n"
         
         for _, test in test_info.iterrows():
-            label = test.get('Label', 'Unknown Test')
-            description = test.get('Description', 'No description available')
-            acted_upon = test.get('InformationElement:ActedUpon', 'N/A')
-            consulted = test.get('InformationElement:Consulted', 'N/A')
-            expected_response = test.get('ExpectedResponse', 'N/A')
-            examples = test.get('Examples', 'No examples available')
-            notes = test.get('Notes', '')
+            # Safely extract and convert values to strings, handling NaN/float values
+            label = str(test.get('Label', 'Unknown Test'))
+            description = str(test.get('Description', 'No description available'))
+            acted_upon = str(test.get('InformationElement:ActedUpon', 'N/A'))
+            consulted = str(test.get('InformationElement:Consulted', 'N/A'))
+            expected_response = str(test.get('ExpectedResponse', 'N/A'))
+            examples = str(test.get('Examples', 'No examples available'))
+            notes = str(test.get('Notes', ''))
+            
+            # Handle NaN values that might be converted to 'nan' string
+            if notes == 'nan' or notes == 'None':
+                notes = ''
+            if description == 'nan' or description == 'None':
+                description = 'No description available'
+            if acted_upon == 'nan' or acted_upon == 'None':
+                acted_upon = 'N/A'
+            if consulted == 'nan' or consulted == 'None':
+                consulted = 'N/A'
+            if expected_response == 'nan' or expected_response == 'None':
+                expected_response = 'N/A'
+            if examples == 'nan' or examples == 'None':
+                examples = 'No examples available'
             
             test_context += f"**{label}**:\n"
             test_context += f"- **Purpose**: {description}\n"
