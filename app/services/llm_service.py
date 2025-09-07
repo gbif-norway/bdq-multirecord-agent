@@ -1,4 +1,5 @@
 import os
+import pandas as pd
 import google.generativeai as genai
 from typing import List, Dict, Any, Optional
 from app.utils.helper import log
@@ -10,6 +11,62 @@ class LLMService:
         self.api_key = os.getenv("GOOGLE_API_KEY")
         genai.configure(api_key=self.api_key)
         self.model = genai.GenerativeModel('gemini-1.5-flash')
+        self.bdq_tests_df = self._load_bdq_tests()
+    
+    def _load_bdq_tests(self) -> pd.DataFrame:
+        """Load BDQ tests information from CSV file"""
+        csv_path = os.path.join(os.path.dirname(__file__), '..', 'TG2_tests.csv')
+        df = pd.read_csv(csv_path, dtype=str)  # Load all as strings to avoid float conversions
+        log(f"Loaded {len(df)} BDQ tests from CSV")
+        return df
+    
+    def _get_relevant_test_info(self, test_ids: List[str]) -> str:
+        """Get relevant BDQ test information for the given test IDs"""
+        if not test_ids:
+            return ""
+        
+        # Filter tests that are in our results
+        relevant_tests = self.bdq_tests_df[
+            self.bdq_tests_df['Label'].isin(test_ids)
+        ]
+        
+        # Select only the columns we need
+        columns_needed = [
+            'Label', 'InformationElement:ActedUpon', 'InformationElement:Consulted',
+            'ExpectedResponse', 'Description', 'Examples', 'Notes'
+        ]
+        
+        # Filter to only existing columns
+        available_columns = [col for col in columns_needed if col in relevant_tests.columns]
+        test_info = relevant_tests[available_columns].copy()
+        
+        # Build informative text about the tests
+        test_context = "\n## BDQ TEST CONTEXT\n"
+        test_context += "The following tests were run on the dataset. Here's what each test checks:\n\n"
+        
+        for _, test in test_info.iterrows():
+            label = test.get('Label', 'Unknown Test')
+            description = test.get('Description', 'No description available')
+            acted_upon = test.get('InformationElement:ActedUpon', 'N/A')
+            consulted = test.get('InformationElement:Consulted', 'N/A')
+            expected_response = test.get('ExpectedResponse', 'N/A')
+            examples = test.get('Examples', 'No examples available')
+            notes = test.get('Notes', '')
+            
+            test_context += f"**{label}**:\n"
+            test_context += f"- **Purpose**: {description}\n"
+            test_context += f"- **Checks**: {acted_upon}\n"
+            if consulted and consulted != 'N/A':
+                test_context += f"- **References**: {consulted}\n"
+            if expected_response and expected_response != 'N/A':
+                test_context += f"- **Expected Results**: {expected_response[:200]}{'...' if len(expected_response) > 200 else ''}\n"
+            if examples and examples != 'No examples available':
+                test_context += f"- **Examples**: {examples[:150]}{'...' if len(examples) > 150 else ''}\n"
+            if notes:
+                test_context += f"- **Notes**: {notes[:100]}{'...' if len(notes) > 100 else ''}\n"
+            test_context += "\n"
+        
+        return test_context
     
     def generate_intelligent_summary(self, test_results_df, email_content, core_type, summary_stats):
         """Generate intelligent summary from DataFrame-based test results"""
@@ -42,6 +99,16 @@ class LLMService:
         failure_counts_by_test = summary_stats.get('failure_counts_by_test', {})
         common_issues = summary_stats.get('common_issues', {})
         
+        # Extract unique test IDs from the results for BDQ context
+        unique_test_ids = []
+        if 'test_id' in test_results_df.columns:
+            unique_test_ids = test_results_df['test_id'].unique().tolist()
+        elif 'test' in test_results_df.columns:
+            unique_test_ids = test_results_df['test'].unique().tolist()
+        
+        # Get BDQ test context information
+        bdq_test_context = self._get_relevant_test_info(unique_test_ids)
+        
         prompt = f"""You are a biodiversity data quality expert writing a helpful email analysis for a researcher who submitted a {core_type.title()} core dataset for BDQ (Biodiversity Data Quality) testing.
 
 ## CONTEXT
@@ -70,6 +137,10 @@ The researcher has already received a summary of their test results (total recor
         # Add user context
         prompt += f"\n**User's Original Message**: {email_content[:200]}{'...' if len(email_content) > 200 else ''}\n"
         
+        # Add BDQ test context if available
+        if bdq_test_context:
+            prompt += bdq_test_context
+        
         prompt += """
 
 ## YOUR TASK
@@ -77,8 +148,8 @@ Write a professional, encouraging email analysis that:
 
 1. **Acknowledge** their submission and thank them for using BDQ
 2. **Analyze** what the test results mean for their research (focus on interpretation, not repeating numbers)
-3. **Explain** the significance of any issues found and their impact on data quality
-4. **Provide** specific, actionable advice for improving data quality
+3. **Explain** the significance of any issues found and their impact on data quality, using the BDQ test context above to provide specific insights about what each test checks
+4. **Provide** specific, actionable advice for improving data quality based on the test descriptions and examples
 5. **Describe** what the attached files contain and how to use them effectively
 6. **Encourage** them to resubmit after making improvements
 

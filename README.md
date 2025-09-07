@@ -13,12 +13,13 @@ All local development should be done in Docker containers.
 3. Background Processing: Email processing runs asynchronously in the background using asyncio.create_task(). Errors are logged but response to Apps Script is always 200.
 4. CSV Extraction: Extracts and validates CSV attachments
 5. Core Detection: Identifies occurrence vs taxon core based on column presence
-6. Test Discovery: Finds applicable BDQ tests from external BDQ API  (also hosted in cloudrun in same region)
+6. Test Discovery: Finds applicable BDQ tests from external BDQ API (also hosted in cloudrun in same region)
    - Queries `/api/v1/tests` endpoint to get available tests
    - Filters tests based on CSV column availability
 7. Test Execution: Runs tests on unique data combinations via external BDQ API
    - Deduplicates test candidates to avoid redundant API calls
    - Calls `/api/v1/tests/run/batch` endpoint with unique parameter combinations
+   - Tries a single bulk request first; on failure falls back to chunked requests (1000 items per chunk, 300s per-chunk timeout) with progress logging
    - External API handles all BDQ test execution logic
 8. Result Processing: Expands test results to all matching rows
 9. Summary Generation: Creates intelligent summaries using LLM
@@ -26,7 +27,11 @@ All local development should be done in Docker containers.
    - CSV of Raw results: per row × per applicable test → `occurrenceID or taxonID`, `status`, `result`, `comment`, `amendment` (if any)
    - CSV of Amended dataset: applies proposed changes from Amendment results
 
-## BDQ API endpoints
+## BDQ API 
+
+A separate app, a REST API wrapper for [FilteredPush](https://github.com/FilteredPush) biodiversity data quality validation libraries. FilteredPush provides implementations of BDQ (Biodiversity Data Quality) Tests via the FFDQ API. This API uses those libraries directly as github submodules (although it is possible to fork these and make custom implementations if needed by this project), mapping their responses into a simple JSON shape. The BDQ standard defines a library of Tests documented in the TDWG BDQ repository in the `TG2_tests.csv` file. 
+
+The BDQ API is built by the same developer as this project and is able to be adjusted as needed based on the requirements of this project - no project uses it or depends on it.
 
 ### Tests List Endpoint 
 
