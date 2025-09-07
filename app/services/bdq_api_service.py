@@ -39,7 +39,8 @@ class BDQAPIService:
         
         applicable_tests = [
             test for test in all_tests
-            if all(col in csv_columns for col in test.actedUpon)
+            if (all(col in csv_columns for col in test.actedUpon) and
+                all(col in csv_columns for col in test.consulted))
         ]
         
         log(f"Found {len(applicable_tests)} applicable tests out of {len(all_tests)} total tests")
@@ -56,28 +57,23 @@ class BDQAPIService:
         for test in applicable_tests:
             try:
                 # Get a df which is a subset of the main df with unique items for testing for this particular test (e.g. just countryCode, or decimalLatitude and decimalLongitude and countryCode)
-                test_columns = test.actedUpon + test.consulted 
-                unique_test_candidates = df[test_columns].drop_duplicates().reset_index(drop=True)
+                test_columns = test.actedUpon + test.consulted
+                unique_test_candidates = (
+                    df[test_columns]
+                    .drop_duplicates()
+                    .reset_index(drop=True)
+                    .replace([np.nan, np.inf, -np.inf], "")
+                    .astype(str)
+                )
+                unique_test_candidates_batch_request = [
+                    {"id": test.id, "params": row}
+                    for row in unique_test_candidates.to_dict(orient="records")
+                ]
                 
-                # Prepare batch request for unique combinations
-                # Ensure all values are JSON-serializable by converting to strings
-                unique_test_candidates_batch_request = []
-                for _, row in unique_test_candidates.iterrows():
-                    params = {}
-                    for key, value in row.to_dict().items():
-                        # Convert problematic float values to strings to avoid JSON serialization errors
-                        if pd.isna(value):
-                            params[key] = ""
-                        elif isinstance(value, float) and (np.isinf(value) or np.isnan(value)):
-                            params[key] = ""
-                        else:
-                            params[key] = str(value)
-                    unique_test_candidates_batch_request.append({"id": test.id, "params": params})
-
                 # Call batch endpoint
                 try:
                     api_start_time = time.time()
-                    batch_response = requests.post(self.batch_endpoint, json=unique_test_candidates_batch_request, timeout=60)
+                    batch_response = requests.post(self.batch_endpoint, json=unique_test_candidates_batch_request, timeout=1800)
                     batch_response.raise_for_status()
                     batch_results = batch_response.json()
                     api_duration = time.time() - api_start_time
