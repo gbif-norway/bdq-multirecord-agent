@@ -15,9 +15,11 @@ class LLMService:
         """Generate intelligent summary from DataFrame-based test results"""
         log("Generating the prompt for gemini...") 
         prompt = self._create_summary_prompt(test_results_df, original_email_data, core_type, summary_stats)
-        
+        log("Prompt generated!")
+        log(prompt)
         # Call Gemini API
         response = self.model.generate_content(prompt)
+        log(response.text[:1000])
         
         if response.text:
             # Parse the response and generate both text and HTML versions

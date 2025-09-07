@@ -52,7 +52,10 @@ class BDQAPIService:
         applicable_tests = self._filter_applicable_tests(df.columns.tolist())
         all_results_dfs: List[pd.DataFrame] = []
 
-        log(f"Running {len(applicable_tests)} tests: {[test.id for test in applicable_tests]}")
+        def _shorten_test_id(test_id):
+            return test_id.replace("VALIDATION_", "V").replace("AMENDMENT_", "A")
+
+        log(f"Running {len(applicable_tests)} tests: [{', '.join(_shorten_test_id(test.id) for test in applicable_tests)}]")
 
         for test in applicable_tests:
             try:
