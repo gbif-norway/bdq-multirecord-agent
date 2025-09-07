@@ -42,56 +42,22 @@ class MinIOService:
         clean_name = clean_name.replace(' ', '_')
         return f"{prefix}_{clean_name}_{timestamp}{extension}"
     
-    def upload_original_file(self, csv_data: str, original_filename: str) -> Optional[str]:
-        """Upload original CSV file after pandas preprocessing"""
+    def upload_dataframe(self, df, original_filename: str, file_type: str) -> Optional[str]:
+        """Upload a pandas DataFrame as CSV to MinIO"""
         if not self.client:
-            log("MinIO client not available - skipping original file upload", "WARNING")
+            log("MinIO client not available - skipping DataFrame upload", "WARNING")
             return None
             
         try:
-            # Process with pandas to ensure str dtype and utf8 encoding
-            import pandas as pd
-            
-            # Parse CSV with str dtype
-            df = pd.read_csv(io.StringIO(csv_data), dtype=str)
-            
-            # Ensure dwc: prefixed columns
-            df = self._ensure_dwc_prefixed_columns(df)
-            
-            # Convert back to CSV with utf8 encoding
+            # Convert DataFrame to CSV with utf8 encoding
             csv_buffer = io.StringIO()
             df.to_csv(csv_buffer, index=False, encoding='utf-8')
-            processed_csv = csv_buffer.getvalue()
+            csv_content = csv_buffer.getvalue()
             
-            # Generate filename
-            filename = self._generate_filename("original", original_filename)
-            object_path = f"{self.base_path}/{filename}"
-            
-            # Upload to MinIO
-            self.client.put_object(
-                bucket_name=self.bucket_name,
-                object_name=object_path,
-                data=io.BytesIO(processed_csv.encode('utf-8')),
-                length=len(processed_csv.encode('utf-8')),
-                content_type='text/csv'
-            )
-            
-            log(f"Uploaded original file to: {object_path}")
-            return object_path
-            
-        except Exception as e:
-            log(f"Failed to upload original file: {e}", "ERROR")
-            return None
-    
-    def upload_results_file(self, csv_data: str, original_filename: str, file_type: str) -> Optional[str]:
-        """Upload results CSV (raw_results or amended_dataset)"""
-        if not self.client:
-            log("MinIO client not available - skipping results file upload", "WARNING")
-            return None
-            
-        try:
             # Generate filename based on type
-            if file_type == "raw_results":
+            if file_type == "original":
+                filename = self._generate_filename("original", original_filename)
+            elif file_type == "raw_results":
                 filename = self._generate_filename("results", original_filename)
             elif file_type == "amended":
                 filename = self._generate_filename("amended", original_filename)
@@ -105,8 +71,8 @@ class MinIOService:
             self.client.put_object(
                 bucket_name=self.bucket_name,
                 object_name=object_path,
-                data=io.BytesIO(csv_data.encode('utf-8')),
-                length=len(csv_data.encode('utf-8')),
+                data=io.BytesIO(csv_content.encode('utf-8')),
+                length=len(csv_content.encode('utf-8')),
                 content_type='text/csv'
             )
             
@@ -117,22 +83,3 @@ class MinIOService:
             log(f"Failed to upload {file_type} file: {e}", "ERROR")
             return None
     
-    def _ensure_dwc_prefixed_columns(self, df):
-        """Rename columns to have 'dwc:' prefix if they don't already have it"""
-        try:
-            renamed = 0
-            new_columns = []
-            for col in df.columns:
-                if not col.startswith('dwc:'):
-                    new_columns.append(f'dwc:{col}')
-                    renamed += 1
-                else:
-                    new_columns.append(col)
-            
-            if renamed:
-                df.columns = new_columns
-                log(f"Renamed {renamed} columns to have 'dwc:' prefix")
-            return df
-        except Exception as e:
-            log(f"Error ensuring dwc-prefixed columns: {e}", "WARNING")
-            return df

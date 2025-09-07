@@ -1,4 +1,5 @@
 import os
+import io
 from typing import Dict, Any
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
@@ -55,13 +56,13 @@ async def _handle_email_processing(email_data: Dict[str, Any]):
         await email_service.send_error_reply(email_data, "No CSV attachment found. Please attach a CSV file with biodiversity data.")
         return
 
-    # Upload original file to MinIO
-    minio_service.upload_original_file(csv_data, original_filename or "unknown_file")
-
     df, core_type = csv_service.parse_csv_and_detect_core(csv_data)
     if not core_type:
         await email_service.send_error_reply(email_data, "CSV must contain either 'occurrenceID' or 'taxonID' column to identify the core type.")
         return
+
+    # Upload original processed DataFrame to MinIO
+    minio_service.upload_dataframe(df, original_filename or "unknown_file", "original")
 
     test_results = await bdq_api_service.run_tests_on_dataset(df, core_type)
     summary_stats = _get_summary_stats(test_results)
@@ -76,13 +77,18 @@ async def _handle_email_processing(email_data: Dict[str, Any]):
     # Combine summary stats + LLM analysis
     body = _format_summary_stats_html(summary_stats, core_type) + llm_analysis
 
-    # Generate and upload result files
+    # Generate result files and upload to MinIO
     raw_results_csv = csv_service.generate_raw_results_csv(test_results)
     amended_dataset_csv = csv_service.generate_amended_dataset(df, test_results, core_type)
     
-    # Upload result files to MinIO
-    minio_service.upload_results_file(raw_results_csv, original_filename or "unknown_file", "raw_results")
-    minio_service.upload_results_file(amended_dataset_csv, original_filename or "unknown_file", "amended")
+    # Convert CSV strings back to DataFrames for upload
+    import pandas as pd
+    raw_results_df = pd.read_csv(io.StringIO(raw_results_csv), dtype=str)
+    amended_df = pd.read_csv(io.StringIO(amended_dataset_csv), dtype=str)
+    
+    # Upload result DataFrames to MinIO
+    minio_service.upload_dataframe(raw_results_df, original_filename or "unknown_file", "raw_results")
+    minio_service.upload_dataframe(amended_df, original_filename or "unknown_file", "amended")
     
     # Send reply email
     await email_service.send_results_reply(email_data, body, raw_results_csv, amended_dataset_csv)
