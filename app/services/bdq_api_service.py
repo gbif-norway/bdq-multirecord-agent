@@ -16,6 +16,7 @@ from tenacity import (
     before_sleep_log,
 )
 import logging as _logging
+import httpx
 
 
 # HTTP status codes that are considered transient and safe to retry
@@ -44,6 +45,47 @@ def _post_with_retry(url: str, payload: Any, timeout: int) -> requests.Response:
     return resp
 
 
+@retry(
+    reraise=True,
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=1, max=8),
+    retry=retry_if_exception_type((httpx.ReadTimeout, httpx.ConnectError, httpx.HTTPStatusError)),
+    before_sleep=before_sleep_log(_logging.getLogger(__name__), _logging.WARNING),
+)
+async def _apost_with_retry(client: httpx.AsyncClient, url: str, payload: Any) -> httpx.Response:
+    resp = await client.post(url, json=payload)
+    if resp.status_code in _RETRYABLE_STATUS:
+        raise httpx.HTTPStatusError(f"Retryable status: {resp.status_code}", request=resp.request, response=resp)
+    resp.raise_for_status()
+    return resp
+
+
+async def _bulk_with_watchdog_and_heartbeat(
+    url: str,
+    payload: Any,
+    per_attempt_timeout: int,
+    total_deadline_sec: int,
+    heartbeat_interval_sec: int,
+    test_id: str,
+) -> httpx.Response:
+    start = time.time()
+    timeout = httpx.Timeout(per_attempt_timeout)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        task = asyncio.create_task(_apost_with_retry(client, url, payload))
+        while True:
+            try:
+                # Wait in heartbeat intervals without cancelling the underlying task
+                return await asyncio.wait_for(asyncio.shield(task), timeout=heartbeat_interval_sec)
+            except asyncio.TimeoutError:
+                elapsed = int(time.time() - start)
+                log(f"{test_id}: BULK still running, elapsed={elapsed}s")
+                if elapsed >= total_deadline_sec:
+                    task.cancel()
+                    raise asyncio.TimeoutError(
+                        f"Bulk total deadline exceeded after {elapsed}s for {test_id}"
+                    )
+
+
 @dataclass
 class BDQTest:
     """Model for BDQ test definition"""
@@ -67,9 +109,12 @@ class BDQAPIService:
         # Chunking configuration for batch requests. Keep requests bounded to avoid long API hangs/timeouts.
         self.batch_chunk_size = 3000
         # Per-chunk timeout in seconds. Keep comfortably under Cloud Run’s max request timeout.
-        self.batch_chunk_timeout_sec = 300
+        self.batch_chunk_timeout_sec = 1800
         # Try a single bulk request first for speed; fallback to chunking if it fails.
         self.initial_bulk_timeout_sec = 300
+        # Overall bulk watchdog deadline (end-to-end) and heartbeat interval (seconds)
+        self.initial_bulk_total_deadline_sec = 420
+        self.bulk_heartbeat_interval_sec = 60
     
     def _filter_applicable_tests(self, csv_columns: List[str]) -> List[BDQTest]:
         """Filter tests that can be applied to the CSV columns"""
@@ -123,10 +168,13 @@ class BDQAPIService:
                         {"id": test.id, "params": row}
                         for row in unique_test_candidates.to_dict(orient="records")
                     ]
-                    bulk_response = _post_with_retry(
-                        self.batch_endpoint,
+                    bulk_response = await _bulk_with_watchdog_and_heartbeat(
+                        url=self.batch_endpoint,
                         payload=bulk_request,
-                        timeout=self.initial_bulk_timeout_sec,
+                        per_attempt_timeout=self.initial_bulk_timeout_sec,
+                        total_deadline_sec=self.initial_bulk_total_deadline_sec,
+                        heartbeat_interval_sec=self.bulk_heartbeat_interval_sec,
+                        test_id=test.id,
                     )
                     bulk_results = bulk_response.json()
                     api_duration = time.time() - api_start_time
