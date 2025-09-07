@@ -123,8 +123,7 @@ class TestFloatJSONCompliance:
         # Try to run tests on this data using the actual service method
         try:
             # Use the actual service method which should now handle the float values correctly
-            import asyncio
-            results_df = asyncio.run(bdq_service.run_tests_on_dataset(df, 'occurrence'))
+            results_df = bdq_service.run_tests_on_dataset(df, 'occurrence')
             
             if not results_df.empty:
                 print(f"Service method successful: {len(results_df)} results")

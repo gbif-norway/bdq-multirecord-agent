@@ -1,8 +1,10 @@
 import requests
+import logging
+import asyncio
 import time
 import pandas as pd
 import numpy as np
-from typing import List, Any
+from typing import List, Dict, Any, Optional, Tuple
 from app.utils.helper import log
 
 from dataclasses import dataclass, field
@@ -39,20 +41,24 @@ class BDQAPIService:
         
         applicable_tests = [
             test for test in all_tests
-            if (all(col in csv_columns for col in test.actedUpon) and
+            if (test.type != "Measure" and  # Skip measure testsl
+                all(col in csv_columns for col in test.actedUpon) and
                 all(col in csv_columns for col in test.consulted))
         ]
         
-        log(f"Found {len(applicable_tests)} applicable tests out of {len(all_tests)} total tests")
+        log(f"Found {len(applicable_tests)} applicable tests out of {len(all_tests)} total tests (excluding measure tests)")
         return applicable_tests
     
-    def run_tests_on_dataset(self, df, core_type):
+    async def run_tests_on_dataset(self, df, core_type):
         """Run BDQ tests on dataset with unique value deduplication."""
         start_time = time.time()
         applicable_tests = self._filter_applicable_tests(df.columns.tolist())
         all_results_dfs: List[pd.DataFrame] = []
 
-        log(f"Running {len(applicable_tests)} tests: {[test.id for test in applicable_tests]}")
+        def _shorten_test_id(test_id):
+            return test_id.replace("VALIDATION_", "V").replace("AMENDMENT_", "A")
+
+        log(f"Running {len(applicable_tests)} tests: [{', '.join(_shorten_test_id(test.id) for test in applicable_tests)}]")
 
         for test in applicable_tests:
             try:

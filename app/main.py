@@ -64,7 +64,7 @@ async def _handle_email_processing(email_data: Dict[str, Any]):
     # Upload original processed DataFrame to MinIO
     original_csv_name = minio_service.upload_dataframe(df, original_filename or "unknown_file", "original")
 
-    test_results = bdq_api_service.run_tests_on_dataset(df, core_type)
+    test_results = await bdq_api_service.run_tests_on_dataset(df, core_type)
     summary_stats = _get_summary_stats(test_results)
 
     # Extract email content (prefer HTML, fallback to text)

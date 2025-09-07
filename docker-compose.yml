@@ -16,6 +16,8 @@ services:
     volumes:
       # Mount test data for testing
       - ./tests:/app/tests:ro
+      # Mount app directory for development
+      - ./app:/app/app
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/"]
       interval: 30s
