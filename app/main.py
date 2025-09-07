@@ -62,7 +62,7 @@ async def _handle_email_processing(email_data: Dict[str, Any]):
         return
 
     # Upload original processed DataFrame to MinIO
-    minio_service.upload_dataframe(df, original_filename or "unknown_file", "original")
+    original_csv_name = minio_service.upload_dataframe(df, original_filename or "unknown_file", "original")
 
     test_results = await bdq_api_service.run_tests_on_dataset(df, core_type)
     summary_stats = _get_summary_stats(test_results)
@@ -74,16 +74,23 @@ async def _handle_email_processing(email_data: Dict[str, Any]):
     # Get LLM analysis (without stats)
     llm_analysis = llm_service.generate_intelligent_summary(test_results, email_content, core_type, summary_stats)
     
-    # Combine summary stats + LLM analysis
-    body = _format_summary_stats_html(summary_stats, core_type) + llm_analysis
-
     # Generate result files and upload to MinIO
     raw_results_csv = csv_service.generate_raw_results_csv(test_results)
     amended_dataset_csv = csv_service.generate_amended_dataset(df, test_results, core_type)
     
     # Upload result CSV strings directly to MinIO (no need to convert back to DataFrames)
-    minio_service.upload_csv_string(raw_results_csv, original_filename or "unknown_file", "raw_results")
-    minio_service.upload_csv_string(amended_dataset_csv, original_filename or "unknown_file", "amended")
+    results_csv_name = minio_service.upload_csv_string(raw_results_csv, original_filename or "unknown_file", "raw_results")
+    amended_csv_name = minio_service.upload_csv_string(amended_dataset_csv, original_filename or "unknown_file", "amended")
+    
+    # Generate dashboard URL if both files were uploaded successfully
+    dashboard_url = None
+    if results_csv_name and original_csv_name:
+        dashboard_url = minio_service.generate_dashboard_url(results_csv_name, original_csv_name)
+    
+    # Combine summary stats + LLM analysis + breakdown button
+    body = _format_summary_stats_html(summary_stats, core_type) + llm_analysis
+    if dashboard_url:
+        body += _format_breakdown_button_html(dashboard_url)
     
     # Send reply email
     await email_service.send_results_reply(email_data, body, raw_results_csv, amended_dataset_csv)
@@ -222,10 +229,30 @@ def _format_summary_stats_html(summary_stats, core_type):
     
     html += """
         </ul>
+        
     </div>
     """
     
     return html
+
+def _format_breakdown_button_html(dashboard_url: str) -> str:
+    """Format breakdown button HTML for the email"""
+    return f"""
+    <div style="text-align: center; margin: 20px 0;">
+        <a href="{dashboard_url}" 
+           style="display: inline-block; 
+                  background-color: #007bff; 
+                  color: white; 
+                  padding: 12px 24px; 
+                  text-decoration: none; 
+                  border-radius: 6px; 
+                  font-weight: bold; 
+                  font-size: 16px;
+                  box-shadow: 0 2px 4px rgba(0,123,255,0.3);">
+            📊 View a Breakdown
+        </a>
+    </div>
+    """
         
 
 @app.exception_handler(Exception)

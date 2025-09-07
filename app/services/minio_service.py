@@ -43,7 +43,9 @@ class MinIOService:
         return f"{prefix}_{clean_name}_{timestamp}{extension}"
     
     def upload_dataframe(self, df, original_filename: str, file_type: str) -> Optional[str]:
-        """Upload a pandas DataFrame as CSV to MinIO"""
+        """Upload a pandas DataFrame as CSV to MinIO
+        Returns the filename (not full path) for URL construction
+        """
         if not self.client:
             log("MinIO client not available - skipping DataFrame upload", "WARNING")
             return None
@@ -77,14 +79,16 @@ class MinIOService:
             )
             
             log(f"Uploaded {file_type} file to: {object_path}")
-            return object_path
+            return filename  # Return just the filename for URL construction
             
         except Exception as e:
             log(f"Failed to upload {file_type} file: {e}", "ERROR")
             return None
     
     def upload_csv_string(self, csv_content: str, original_filename: str, file_type: str) -> Optional[str]:
-        """Upload a CSV string directly to MinIO"""
+        """Upload a CSV string directly to MinIO
+        Returns the filename (not full path) for URL construction
+        """
         if not self.client:
             log("MinIO client not available - skipping CSV string upload", "WARNING")
             return None
@@ -111,9 +115,14 @@ class MinIOService:
             )
             
             log(f"Uploaded {file_type} file to: {object_path}")
-            return object_path
+            return filename  # Return just the filename for URL construction
             
         except Exception as e:
             log(f"Failed to upload {file_type} file: {e}", "ERROR")
             return None
+    
+    def generate_dashboard_url(self, results_csv_name: str, original_csv_name: str) -> str:
+        """Generate dashboard URL for viewing breakdown report"""
+        base_url = "https://storage.gbif-no.sigma2.no/misc/bdqreport/bdq-report.html"
+        return f"{base_url}?csv={results_csv_name}&data={original_csv_name}"
     
