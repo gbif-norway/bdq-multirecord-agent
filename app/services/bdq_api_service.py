@@ -51,7 +51,7 @@ class BDQAPIService:
         applicable_tests = self._filter_applicable_tests(df.columns.tolist())
         all_results_dfs: List[pd.DataFrame] = []
 
-        log(f"Running tests: {str(applicable_tests)}")
+        log(f"Running {len(applicable_tests)} tests: {[test.id for test in applicable_tests]}")
 
         for test in applicable_tests:
             try:
