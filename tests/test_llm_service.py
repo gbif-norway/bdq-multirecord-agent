@@ -50,12 +50,8 @@ class TestLLMService:
             }
         }
         
-        # Sample email data
-        self.email_data = {
-            'body': 'Please test my biodiversity dataset',
-            'from': 'researcher@example.com',
-            'subject': 'BDQ Test Request'
-        }
+        # Sample email content string (preferring HTML, fallback to text)
+        self.email_content = "SUBJECT: BDQ Test Request\n<p>Please test my biodiversity dataset</p>"
     
     @patch('app.services.llm_service.genai.GenerativeModel')
     def test_generate_intelligent_summary_success(self, mock_model_class):
@@ -73,7 +69,7 @@ class TestLLMService:
         
         result = llm_service.generate_intelligent_summary(
             self.test_results_df, 
-            self.email_data, 
+            self.email_content, 
             'occurrence', 
             self.summary_stats
         )
@@ -105,7 +101,7 @@ class TestLLMService:
         
         result = llm_service.generate_intelligent_summary(
             self.test_results_df, 
-            self.email_data, 
+            self.email_content, 
             'occurrence', 
             self.summary_stats
         )
@@ -116,7 +112,7 @@ class TestLLMService:
         """Test prompt creation with test results"""
         prompt = self.llm_service._create_summary_prompt(
             self.test_results_df, 
-            self.email_data, 
+            self.email_content, 
             'occurrence', 
             self.summary_stats
         )
@@ -152,7 +148,7 @@ class TestLLMService:
         
         prompt = self.llm_service._create_summary_prompt(
             self.test_results_df, 
-            self.email_data, 
+            self.email_content, 
             'taxon', 
             no_failures_stats
         )
@@ -168,7 +164,7 @@ class TestLLMService:
         
         prompt = self.llm_service._create_summary_prompt(
             self.test_results_df, 
-            self.email_data, 
+            self.email_content, 
             'occurrence', 
             no_amendments_stats
         )
@@ -178,22 +174,23 @@ class TestLLMService:
     
     def test_create_summary_prompt_empty_email_body(self):
         """Test prompt creation with empty email body"""
-        empty_email = {'from': 'test@example.com'}
+        empty_email_content = "SUBJECT: Test\n"
         
         prompt = self.llm_service._create_summary_prompt(
             self.test_results_df, 
-            empty_email, 
+            empty_email_content, 
             'occurrence', 
             self.summary_stats
         )
         
-        # Should not include user message section
-        assert "User's Original Message" not in prompt
+        # Should include user message section even with just subject
+        assert "User's Original Message" in prompt
+        assert "SUBJECT: Test" in prompt
     
     def test_create_empty_results_prompt(self):
         """Test prompt creation for empty results"""
         prompt = self.llm_service._create_empty_results_prompt(
-            self.email_data, 
+            self.email_content, 
             'occurrence'
         )
         
@@ -204,15 +201,16 @@ class TestLLMService:
     
     def test_create_empty_results_prompt_no_email_body(self):
         """Test empty results prompt with no email body"""
-        empty_email = {'from': 'test@example.com'}
+        empty_email_content = "SUBJECT: Test\n"
         
         prompt = self.llm_service._create_empty_results_prompt(
-            empty_email, 
+            empty_email_content, 
             'taxon'
         )
         
         assert 'taxon core dataset' in prompt
-        assert "User's Message" not in prompt
+        assert "User's Message" in prompt
+        assert "SUBJECT: Test" in prompt
     
     def test_convert_to_html(self):
         """Test HTML conversion"""
@@ -233,7 +231,7 @@ class TestLLMService:
         """Test handling of None test results"""
         prompt = self.llm_service._create_summary_prompt(
             None, 
-            self.email_data, 
+            self.email_content, 
             'occurrence', 
             self.summary_stats
         )
@@ -247,10 +245,11 @@ class TestLLMService:
         
         prompt = self.llm_service._create_summary_prompt(
             empty_df, 
-            self.email_data, 
+            self.email_content, 
             'occurrence', 
             self.summary_stats
         )
         
         # Should create empty results prompt
         assert 'no applicable BDQ tests could be run' in prompt
+    

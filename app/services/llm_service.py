@@ -11,17 +11,17 @@ class LLMService:
         genai.configure(api_key=self.api_key)
         self.model = genai.GenerativeModel('gemini-1.5-flash')
     
-    def generate_intelligent_summary(self, test_results_df, original_email_data, core_type, summary_stats):
+    def generate_intelligent_summary(self, test_results_df, email_content, core_type, summary_stats):
         """Generate intelligent summary from DataFrame-based test results"""
         log("Generating the prompt for gemini...") 
-        prompt = self._create_summary_prompt(test_results_df, original_email_data, core_type, summary_stats)
+        prompt = self._create_summary_prompt(test_results_df, email_content, core_type, summary_stats)
         log("Prompt generated!")
         log(prompt)
         # Call Gemini API
         response = self.model.generate_content(prompt)
-        log(response.text[:1000])
         
         if response.text:
+            log(response.text[:1000])
             # Parse the response and generate both text and HTML versions
             return self._convert_to_html(response.text.strip())
         else:
@@ -29,19 +29,12 @@ class LLMService:
             return "<p>Unable to generate summary at this time.</p>"
                 
     
-    def _create_summary_prompt(self, test_results_df, original_email_data, core_type, summary_stats):
+    def _create_summary_prompt(self, test_results_df, email_content, core_type, summary_stats):
         """Create the prompt for the LLM using pre-computed summary statistics"""
         
         # Handle empty results
         if test_results_df is None or test_results_df.empty:
-            return self._create_empty_results_prompt(original_email_data, core_type)
-        
-        # Extract user's original message if available
-        user_message = ""
-        if isinstance(original_email_data, dict):
-            user_message = original_email_data.get('body', '')
-            if not user_message:
-                user_message = original_email_data.get('text', '')
+            return self._create_empty_results_prompt(email_content, core_type)
         
         # Get data from summary stats (no need to re-analyze DataFrame)
         validation_failures_count = summary_stats.get('validation_failures', 0)
@@ -74,9 +67,8 @@ The researcher has already received a summary of their test results (total recor
             for issue, count in list(common_issues.items())[:3]:
                 prompt += f"- {issue} ({count} occurrences)\n"
         
-        # Add user context if available
-        if user_message and user_message.strip():
-            prompt += f"\n**User's Original Message**: {user_message[:200]}{'...' if len(user_message) > 200 else ''}\n"
+        # Add user context
+        prompt += f"\n**User's Original Message**: {email_content[:200]}{'...' if len(email_content) > 200 else ''}\n"
         
         prompt += """
 
@@ -102,14 +94,8 @@ Write as a complete email body that will appear below the summary stats box. Use
 
         return prompt
     
-    def _create_empty_results_prompt(self, original_email_data, core_type):
+    def _create_empty_results_prompt(self, email_content, core_type):
         """Create prompt for when no test results are available"""
-        user_message = ""
-        if isinstance(original_email_data, dict):
-            user_message = original_email_data.get('body', '')
-            if not user_message:
-                user_message = original_email_data.get('text', '')
-        
         prompt = f"""You are a biodiversity data quality expert writing an email for a researcher who submitted a {core_type} core dataset for BDQ testing.
 
 ## CONTEXT
@@ -123,8 +109,7 @@ The dataset was submitted but no applicable BDQ tests could be run. This could b
 
 ## USER CONTEXT
 """
-        if user_message:
-            prompt += f"**User's Message**: {user_message[:200]}{'...' if len(user_message) > 200 else ''}\n"
+        prompt += f"**User's Message**: {email_content[:200]}{'...' if len(email_content) > 200 else ''}\n"
         
         prompt += """
 

@@ -47,6 +47,7 @@ async def root():
     return {"message": "BDQ Email Report Service is running"}
 
 async def _handle_email_processing(email_data: Dict[str, Any]):
+    log(str(email_data))
     csv_data = email_service.extract_csv_attachment(email_data)
     if not csv_data:
         await email_service.send_error_reply(email_data, "No CSV attachment found. Please attach a CSV file with biodiversity data.")
@@ -60,8 +61,12 @@ async def _handle_email_processing(email_data: Dict[str, Any]):
     test_results = await bdq_api_service.run_tests_on_dataset(df, core_type)
     summary_stats = _get_summary_stats(test_results)
 
+    # Extract email content (prefer HTML, fallback to text)
+    email_body = email_data['body']['html'] if email_data['body']['html'] else email_data['body']['text']
+    email_content = f"SUBJECT: {email_data['headers']['subject']}\n{email_body}"
+
     # Get LLM analysis (without stats)
-    llm_analysis = llm_service.generate_intelligent_summary(test_results, email_data, core_type, summary_stats)
+    llm_analysis = llm_service.generate_intelligent_summary(test_results, email_content, core_type, summary_stats)
     
     # Combine summary stats + LLM analysis
     body = _format_summary_stats_html(summary_stats, core_type) + llm_analysis
