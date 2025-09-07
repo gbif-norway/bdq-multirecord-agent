@@ -83,3 +83,37 @@ class MinIOService:
             log(f"Failed to upload {file_type} file: {e}", "ERROR")
             return None
     
+    def upload_csv_string(self, csv_content: str, original_filename: str, file_type: str) -> Optional[str]:
+        """Upload a CSV string directly to MinIO"""
+        if not self.client:
+            log("MinIO client not available - skipping CSV string upload", "WARNING")
+            return None
+            
+        try:
+            # Generate filename based on type
+            if file_type == "raw_results":
+                filename = self._generate_filename("results", original_filename)
+            elif file_type == "amended":
+                filename = self._generate_filename("amended", original_filename)
+            else:
+                log(f"Unknown file type: {file_type}", "ERROR")
+                return None
+            
+            object_path = f"{self.base_path}/{filename}"
+            
+            # Upload to MinIO
+            self.client.put_object(
+                bucket_name=self.bucket_name,
+                object_name=object_path,
+                data=io.BytesIO(csv_content.encode('utf-8')),
+                length=len(csv_content.encode('utf-8')),
+                content_type='text/csv'
+            )
+            
+            log(f"Uploaded {file_type} file to: {object_path}")
+            return object_path
+            
+        except Exception as e:
+            log(f"Failed to upload {file_type} file: {e}", "ERROR")
+            return None
+    

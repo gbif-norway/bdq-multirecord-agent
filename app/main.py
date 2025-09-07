@@ -81,14 +81,9 @@ async def _handle_email_processing(email_data: Dict[str, Any]):
     raw_results_csv = csv_service.generate_raw_results_csv(test_results)
     amended_dataset_csv = csv_service.generate_amended_dataset(df, test_results, core_type)
     
-    # Convert CSV strings back to DataFrames for upload
-    import pandas as pd
-    raw_results_df = pd.read_csv(io.StringIO(raw_results_csv), dtype=str)
-    amended_df = pd.read_csv(io.StringIO(amended_dataset_csv), dtype=str)
-    
-    # Upload result DataFrames to MinIO
-    minio_service.upload_dataframe(raw_results_df, original_filename or "unknown_file", "raw_results")
-    minio_service.upload_dataframe(amended_df, original_filename or "unknown_file", "amended")
+    # Upload result CSV strings directly to MinIO (no need to convert back to DataFrames)
+    minio_service.upload_csv_string(raw_results_csv, original_filename or "unknown_file", "raw_results")
+    minio_service.upload_csv_string(amended_dataset_csv, original_filename or "unknown_file", "amended")
     
     # Send reply email
     await email_service.send_results_reply(email_data, body, raw_results_csv, amended_dataset_csv)
