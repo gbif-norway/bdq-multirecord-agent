@@ -1,0 +1,92 @@
+Hello,
+
+Thank you for sending your biodiversity dataset for data quality testing using the BDQEmail service. We've run a set of tests on your data, and the results are now ready for you to review.
+
+You'll find two files attached to this email: the detailed test results and an amendments file (which will be empty this time). We've also included a link below to an interactive dashboard where you can explore these results visually.
+
+Here's an analysis of your test results:
+
+<h3>Quick Wins and What to Look For</h3>
+
+<p>
+    The good news is that no changes were automatically made (no "amendments" or "filled-in" values), and no "issues" were flagged in your dataset. This means the tests didn't find any obvious problems that could be automatically fixed or clear red flags needing immediate attention, which is a great start!
+</p>
+
+<p>
+    Most of the things highlighted in your results fall under "non-compliant validations." These are areas where your data doesn't quite meet a specific standard. Let's go through the key points, focusing on what you can easily improve:
+</p>
+
+<ul>
+    <li>
+        <strong>Record 'occ5' has several data entry errors:</strong>
+        <ul>
+            <li>
+                <strong>`dwc:basisOfRecord` ("BadBasis"):</strong> This value isn't a standard term. You should change "BadBasis" to a recognized Darwin Core `basisOfRecord` like "HumanObservation," "PreservedSpecimen," or "LivingSpecimen."
+            </li>
+            <li>
+                <strong>`dwc:country` ("BadCountry"):</strong> "BadCountry" is not a known country. Please correct this to a real country name.
+            </li>
+            <li>
+                <strong>`dwc:decimalLatitude` (91.0) and `dwc:decimalLongitude` (181.0):</strong> These coordinates are outside the possible range for Earth's surface (latitude must be between -90 and 90, longitude between -180 and 180). You'll need to check and correct these location values.
+            </li>
+            <li>
+                <strong>`dwc:scientificName` ("InvalidName"):</strong> This name did not match anything in the GBIF backbone taxonomy. It's important to use correct scientific names for species, so please fix this entry.
+            </li>
+        </ul>
+        <p>
+            Correcting these values for 'occ5' will greatly improve the quality and usability of this record, especially for mapping and taxonomic searches.
+        </p>
+    </li>
+    <li>
+        <strong>`dwc:occurrenceID` is not a standard URI for any of your records:</strong>
+        <p>
+            The test checks if your `occurrenceID` values look like standard web addresses (URIs). While your current IDs (`occ1`, `occ2`, etc.) are unique, making them full URIs (e.g., `http://yourdomain.org/occurrence/occ1`) helps make your data more linkable and easier for others to use when it's shared online. This isn't a critical error, but it's a good practice for data sharing.
+        </p>
+    </li>
+    <li>
+        <strong>`dwc:scientificName` for most records didn't find an "exact match" in GBIF:</strong>
+        <p>
+            For species like "Homo sapiens," "Canis lupus," "Felis catus," and "Ursus americanus," the test found the correct scientific name but couldn't make an "exact match" in the GBIF Backbone Taxonomy. This often happens if the author and year (e.g., "Linnaeus, 1758") are missing from your `scientificName` field. Adding the full scientific name with authorship can help achieve an exact match, which improves data integration.
+        </p>
+    </li>
+    <li>
+        <strong>Inconsistent `dwc:country` and `dwc:countryCode` for some records:</strong>
+        <ul>
+            <li>
+                For "United States" and "US" (`occ1`), the test flagged these as inconsistent. This seems like a false alarm, as "US" is the correct code for "United States." We've noted this and will check our test's reference data.
+            </li>
+            <li>
+                Similarly, for "France" and "FR" (`occ4`), the test also reported an issue, stating "FR" is not a known ISO code. This is incorrect, as "FR" is the standard ISO 3166-1-alpha-2 code for France. Again, we'll look into our test's reference data for this.
+            </li>
+            <li>
+                For "BadCountry" and "ZZ" (`occ5`), the test correctly identified that "ZZ" is not a valid country code. This needs to be corrected once you fix "BadCountry."
+            </li>
+        </ul>
+        <p>
+            You might not need to do anything for `occ1` and `occ4` if you're sure your country codes are correct. However, getting your country and country codes consistent is important for global mapping and analysis.
+        </p>
+    </li>
+</ul>
+
+<h3>Key Takeaways</h3>
+
+<p>
+    You have a good base for your dataset! Most of the issues found are minor and can be fixed with straightforward corrections. The biggest impact will come from reviewing the errors in record 'occ5' and correcting the geographical and taxonomic data there. Addressing the scientific name completeness (adding authorship) will also make your data more robust.
+</p>
+
+<p>
+    Data quality is a journey, and every step you take makes your valuable biodiversity information more useful for research and conservation. Keep up the great work!
+</p>
+
+<p>
+    You can explore all the detailed test results and proposed amendments (if any) using the attached CSV files and on the interactive dashboard here: [LINK_TO_DASHBOARD]
+</p>
+
+<p>
+    If you have any questions, feel free to reach out.
+</p>
+
+<p>
+    Best,
+    <br>The BDQEmail Team
+</p>

@@ -37,11 +37,12 @@ services:
       - GMAIL_SEND=test
       - HMAC_SECRET=test-secret
       - DISCORD_WEBHOOK=test
-      - GOOGLE_API_KEY=test
+    env_file:
+      - .env.test
     volumes:
-      - ./tests:/app/tests:ro
-      - ./app:/app/app:ro
-      - ./requirements.txt:/app/requirements.txt:ro
+      - ./tests:/app/tests
+      - ./app:/app/app
+      - ./requirements.txt:/app/requirements.txt
     working_dir: /app
     command: ["python", "-m", "pytest", "tests/", "-v", "--tb=short"]
     profiles:

@@ -76,7 +76,11 @@ async def _handle_email_processing(email_data: Dict[str, Any]):
     
     # Get LLM analysis
     prompt = llm_service.create_prompt(email_data, core_type, summary_stats, str_snapshot(test_results), str_snapshot(df), get_relevant_test_contexts(test_results['test_id'].unique().tolist()))
-    llm_analysis = llm_service.generate_openai_intelligent_summary(prompt, test_results_csv, original_csv)
+    
+    # Convert DataFrames to CSV strings for LLM
+    test_results_csv_content = csv_service.dataframe_to_csv_string(test_results)
+    original_csv_content = csv_service.dataframe_to_csv_string(df)
+    llm_analysis = llm_service.generate_openai_intelligent_summary(prompt, test_results_csv_content, original_csv_content)
     
     # Generate dashboard URL
     dashboard_url = minio_service.generate_dashboard_url(test_results_csv, original_csv)

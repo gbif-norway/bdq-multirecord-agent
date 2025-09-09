@@ -57,5 +57,6 @@ docker-compose*.yml
 # Environment files (will be mounted separately)
 .env
 .env.*
+.env.test
 
 # Note: bdq-spec/ submodule is intentionally included (needed for BDQ test mappings)

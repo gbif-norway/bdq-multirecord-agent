@@ -72,3 +72,4 @@ target/
 
 # Docker
 .dockerignore
+.env.test

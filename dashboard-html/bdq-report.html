@@ -1,0 +1,922 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Biodiversity Data Quality Report</title>
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <!-- Tabulator (for searchable test catalogue) -->
+  <link href="https://unpkg.com/tabulator-tables@5.5.2/dist/css/tabulator.min.css" rel="stylesheet">
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <!-- PapaParse -->
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <!-- Font Awesome for icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.1/css/all.min.css" integrity="sha512-2SwdPD6INVrV/lHTZbO2nodKhrnDdJK9/kg2XD1r9uGqPo1cUbujc+IYdlYdEErWNu69gVcYgdxlmVmzTWnetw==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <style>
+    :root {
+      /* Pastel palette */
+      --p-rose: #FBCFE8;    /* rose-200 */
+      --p-amber: #FDE68A;   /* amber-200 */
+      --p-sky: #BAE6FD;     /* sky-200 */
+      --p-emerald: #A7F3D0; /* emerald-200 */
+      --p-indigo: #C7D2FE;  /* indigo-200 */
+
+      /* UI colors */
+      --bg: #f8fafb;
+      --card: #ffffff;
+      --muted: #6b7280;
+      --text: #0f172a;
+      --accent: var(--p-indigo);
+      --accent-2: var(--p-amber);
+      --border: #e5e7eb;
+
+      /* Chips */
+      --chip-bg: #eef2ff;
+      --chip-text: #0f172a;
+    }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      background: var(--bg);
+      color: var(--text);
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+    .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+    header {
+      position: sticky; top: 0; z-index: 5;
+      background: linear-gradient(180deg, rgba(255,255,255,0.95), rgba(255,255,255,0.85));
+      backdrop-filter: saturate(160%) blur(6px);
+      border-bottom: 1px solid var(--border);
+    }
+    .header-inner { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 20px; }
+    .brand {
+      display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+    }
+    .brand h1 { font-size: 20px; font-weight: 700; margin: 0; }
+    .brand .file-name { font-size: 16px; font-weight: 500; color: var(--muted); }
+    .source-input { display: none; }
+    .icons { display: flex; gap: 12px; align-items: center; }
+    .icons i { font-size: 18px; padding: 8px; border-radius: 10px; border: 1px solid var(--border); }
+    .icon-bio { color: #0ea5e9; background: var(--p-sky); border-color: #93c5fd; }
+    .icon-chart { color: #f59e0b; background: var(--p-amber); border-color: #fde68a; }
+    .icon-table { color: #22c55e; background: var(--p-emerald); border-color: #a7f3d0; }
+    .source-input input {
+      padding: 8px 10px; min-width: 280px; max-width: 520px; border: 1px solid var(--border); border-radius: 8px;
+      background: var(--card);
+    }
+    .source-input button { background: var(--accent); color: white; border: 0; padding: 8px 12px; border-radius: 8px; font-weight: 600; cursor: pointer; }
+    .source-input button:disabled { opacity: 0.6; cursor: not-allowed; }
+    .note { color: var(--muted); font-size: 12px; }
+    .kpis { display: grid; grid-template-columns: repeat(6, 1fr); gap: 16px; margin: 22px 0; }
+    .kpi { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 16px; transition: box-shadow .12s ease, transform .12s ease, border-color .12s ease, background-color .12s ease; }
+    .kpi:hover { border-color: #cbd5e1; box-shadow: 0 6px 14px rgba(2,6,23,0.08); transform: translateY(-2px); background: #ffffff; }
+    .kpi .label { color: var(--muted); font-size: 12px; }
+    .kpi .value { font-size: 24px; font-weight: 700; margin-top: 6px; }
+    .kpi .sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
+    .section { margin: 26px 0; }
+    .section h2 { font-size: 18px; margin: 0 0 12px 0; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 16px; }
+    .flex { display: flex; gap: 16px; align-items: stretch; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+    .list { display: grid; gap: 10px; }
+    .list-item { border: 1px solid var(--border); border-radius: 12px; padding: 12px; background: #fff; cursor: pointer; }
+    .list-item:hover { background: #fafafa; }
+    .list-item.color-left { border-left-width: 6px; border-left-style: solid; }
+    .item-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .badge { font-size: 11px; background: #eef2f1; color: var(--brand-deep); padding: 2px 8px; border-radius: 999px; border: 1px solid #e2e8f0; }
+    .pill { font-size: 12px; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--border); background: #f8fafc; color: #334155; }
+    .muted { color: var(--muted); }
+    .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+    .chips span { background: var(--chip-bg); color: var(--chip-text); border-radius: 999px; padding: 3px 8px; border: 1px solid var(--border); font-size: 12px; }
+    .details { margin-top: 10px; color: #334155; }
+    .tops { margin-top: 8px; font-size: 12px; color: var(--brand-deep); }
+    .tops .field { font-weight: 600; margin-right: 6px; }
+    .tops .val { background: #f1f5f9; border: 1px solid var(--border); border-radius: 999px; padding: 2px 8px; margin-right: 6px; display: inline-block; }
+    .chart-wrap { height: 360px; }
+    .footer-note { color: var(--muted); font-size: 12px; margin-top: 8px; }
+    .hidden { display: none !important; }
+    .sr { position: absolute; left: -10000px; top: auto; width: 1px; height: 1px; overflow: hidden; }
+    .toast { position: fixed; bottom: 16px; right: 16px; background: #111827; color: white; padding: 10px 12px; border-radius: 10px; font-size: 13px; opacity: 0.95; }
+    .danger { color: var(--danger); }
+    /* Modal */
+    .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.4); display: none; align-items: center; justify-content: center; z-index: 20; }
+    .modal-overlay.show { display: flex; }
+    .modal { background: var(--card); border: 1px solid var(--border); border-radius: 16px; max-width: 960px; width: calc(100% - 32px); max-height: calc(100% - 32px); overflow: auto; box-shadow: 0 16px 36px rgba(15,23,42,0.15); }
+    .modal header { position: sticky; top: 0; background: #fff; color: var(--text); border-bottom: 1px solid var(--border); padding: 14px 18px; display: flex; justify-content: space-between; align-items: center; border-top-left-radius: 16px; border-top-right-radius: 16px; }
+    .modal header h3 { margin: 0; font-size: 18px; font-weight: 700; }
+    .modal .content { padding: 18px; display: block; }
+    @media (max-width: 900px) { .modal .content { display: block; } }
+    .modal .close { background: transparent; border: none; font-size: 20px; cursor: pointer; line-height: 1; }
+    .modal .section-block { background: #fafafa; border: 1px solid #e5e7eb; border-radius: 12px; padding: 12px; }
+    .modal .section-title { font-weight: 600; color: var(--text); margin-bottom: 6px; font-size: 14px; }
+    .modal .counts { display: flex; flex-wrap: wrap; gap: 6px; }
+    .modal .count-pill { background: #fff; border: 1px solid #e5e7eb; color: var(--text); border-radius: 999px; padding: 3px 10px; font-size: 12px; }
+    .modal .kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; align-items: baseline; }
+    .modal .kv .k { color: var(--muted); font-size: 12px; }
+    .modal .kv .v { color: var(--text); font-weight: 500; font-size: 13px; }
+    .modal .desc { font-size: 16px; line-height: 1.5; color: var(--text); }
+    .modal .pill-soft { display: inline-block; padding: 4px 10px; border-radius: 999px; background: var(--p-indigo); color: #111827; border: 1px solid #e5e7eb; font-size: 12px; }
+    .legend-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; border: 1px solid #e5e7eb; background: #fff; color: #0f172a; font-size: 12px; margin-right: 6px; margin-bottom: 6px; }
+    .legend-dot { width: 10px; height: 10px; border-radius: 999px; display: inline-block; }
+    /* Tooltip */
+    .tip { position: relative; display: inline-flex; align-items: center; justify-content: center; margin-left: 8px; cursor: help; }
+    .tip .tiptext { position: absolute; left: 0; top: 26px; min-width: 260px; max-width: 420px; background: #0f172a; color: #fff; padding: 10px 12px; border-radius: 10px; font-size: 12px; box-shadow: 0 10px 30px rgba(2,6,23,0.25); border: 1px solid #e5e7eb; opacity: 0; visibility: hidden; transition: opacity .12s ease; z-index: 15; }
+    .tip:hover .tiptext { opacity: 0.98; visibility: visible; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="header-inner container">
+      <div class="brand">
+        <h1>Biodiversity Data Quality Report</h1>
+        <div class="file-name" id="fileName">Loading…</div>
+      </div>
+      <div class="icons" aria-hidden="true">
+        <i class="fa-solid fa-seedling icon-bio" title="Biodiversity"></i>
+        <i class="fa-solid fa-chart-simple icon-chart" title="Overview"></i>
+        <i class="fa-solid fa-table icon-table" title="What was tested"></i>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+
+
+    <section class="kpis" id="kpis">
+      <div class="kpi"><div class="label">Number of records</div><div class="value" id="kpiRecords">–</div></div>
+      <div class="kpi"><div class="label">Number of tests run</div><div class="value" id="kpiTests">–</div></div>
+      <div class="kpi"><div class="label">Prerequisites not met</div><div class="value" id="kpiPrereq">–</div><div class="sub">EXTERNAL or INTERNAL</div></div>
+      <div class="kpi"><div class="label">Overall pass rate</div><div class="value" id="kpiPass">–</div><div class="sub">Excludes prerequisites-not-met</div></div>
+      <div class="kpi"><div class="label">Proposed amendments</div><div class="value" id="kpiAmended">–</div></div>
+      <div class="kpi"><div class="label">Total results</div><div class="value" id="kpiTotal">–</div></div>
+    </section>
+
+    <section class="section">
+      <h2>Needs attention <span class="tip"><i class="fa-solid fa-circle-info" aria-hidden="true"></i><span class="tiptext">
+        <strong>What counts as “needs attention”?</strong><br/>
+        • Validation tests: result is NOT_COMPLIANT<br/>
+        • Amendment tests: result is AMENDED (a change is proposed)<br/>
+        • Issue tests: result is POTENTIAL_ISSUE
+      </span></span></h2>
+      <div class="card">
+        <div class="chart-wrap"><canvas id="needsChart" aria-label="Attention needed by data area" role="img"></canvas></div>
+        <div id="classLegend" style="margin-top:8px;"></div>
+        <div class="footer-note">Shows results needing attention by data area: NOT_COMPLIANT (validations), AMENDED (amendments), POTENTIAL_ISSUE (issue tests).</div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Needs attention</h2>
+      <div class="grid-3">
+        <div class="card">
+          <div class="item-title" style="margin-bottom:10px;">
+            <div><strong>Validation</strong> (NOT_COMPLIANT)</div>
+            <span class="pill" id="countValidations">–</span>
+          </div>
+          <div class="list" id="listValidations"></div>
+        </div>
+        <div class="card">
+          <div class="item-title" style="margin-bottom:10px;">
+            <div><strong>Amendment</strong> (AMENDED)</div>
+            <span class="pill" id="countAmendments">–</span>
+          </div>
+          <div class="list" id="listAmendments"></div>
+        </div>
+        <div class="card">
+          <div class="item-title" style="margin-bottom:10px;">
+            <div><strong>Issue</strong> (POTENTIAL_ISSUE)</div>
+            <span class="pill" id="countIssues">–</span>
+          </div>
+          <div class="list" id="listIssues"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>What was tested</h2>
+      <div class="card">
+        <div id="catalogue" style="border-radius:10px; overflow:hidden;"></div>
+        <div class="footer-note">This table describes the tests present in the results file using TG2 metadata. Click any test in the lists above to see details.</div>
+      </div>
+    </section>
+
+    <div id="toast" class="toast hidden"></div>
+    <div id="modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <div class="modal">
+        <header>
+          <h3 id="modalTitle">Details</h3>
+          <button class="close" id="modalClose" aria-label="Close">×</button>
+        </header>
+        <div class="content" id="modalContent"></div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+  // Utility helpers
+  const $ = (q) => document.querySelector(q);
+  const $$ = (q) => Array.from(document.querySelectorAll(q));
+  const fmtInt = (n) => n.toLocaleString();
+  const byValDesc = (a, b) => b.value - a.value;
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+  function showToast(msg, opts={}) {
+    const t = $('#toast');
+    t.textContent = msg;
+    t.classList.remove('hidden');
+    setTimeout(() => t.classList.add('hidden'), opts.ms || 2600);
+  }
+
+  function getParam(name) {
+    const u = new URL(window.location.href);
+    return u.searchParams.get(name);
+  }
+
+  function prettifyFileName(name) {
+    try {
+      const leaf = name.split('/').pop();
+      return leaf.replace(/_/g, ' ').replace(/-/g, ' ');
+    } catch { return name; }
+  }
+
+  function isAbsoluteUrl(s) { return /^https?:\/\//i.test(s); }
+
+  // Data holders
+  const TG2 = {
+    byLabel: new Map(), // Label (test_id) -> test info row
+    rows: [], // all rows for catalogue
+  };
+
+  const AGG = {
+    recordIds: new Set(),
+    testIds: new Set(),
+    totals: { rows: 0, prerequisites: 0, pass: 0, considered: 0, amended: 0 },
+    // per test label
+    perTest: new Map(), // label -> { counts: { NOT_COMPLIANT, AMENDED, POTENTIAL_ISSUE, COMPLIANT, NOT_AMENDED, NOT_ISSUE, EXTERNAL_PREREQUISITES_NOT_MET, INTERNAL_PREREQUISITES_NOT_MET, other }, type: 'Validation'|'Amendment'|'Issue'|unknown }
+    // per IE Class stacks for needs-attention
+  };
+
+  const IE_CLASS_COUNTS = new Map(); // class -> { NOT_COMPLIANT, AMENDED, POTENTIAL_ISSUE }
+  // Consistent IE Class colors
+  const CLASS_COLORS = new Map();
+  const CLASS_PALETTE = ['#C7D2FE', '#FBCFE8', '#BAE6FD', '#A7F3D0', '#FDE68A', '#E9D5FF'];
+  function getClassColor(cls) {
+    if (!CLASS_COLORS.has(cls)) {
+      const idx = CLASS_COLORS.size % CLASS_PALETTE.length;
+      CLASS_COLORS.set(cls, CLASS_PALETTE[idx]);
+    }
+    return CLASS_COLORS.get(cls);
+  }
+
+  // Track which records are in a needs-attention state for each test
+  const ATTENTION = {
+    byTest: new Map(),     // label -> Set(recordId)
+    byRecord: new Map(),   // recordId -> Set(label)
+  };
+
+  // Top values per test per field from the original data file
+  const TOPS = new Map(); // label -> Map(fieldHeader -> Map(value -> count))
+  // Fallback values from results comments when core fields are unavailable
+  const FALLBACK_TOPS = new Map(); // label -> Map(fieldToken -> Map(value -> count))
+
+  function inc(obj, key, by=1) { obj[key] = (obj[key]||0)+by; }
+  const normalizeId = (v) => {
+    if (v === null || v === undefined) return '';
+    return String(v).trim();
+  };
+
+  function getPerTest(label) {
+    if (!AGG.perTest.has(label)) {
+      AGG.perTest.set(label, { counts: {}, type: undefined });
+    }
+    return AGG.perTest.get(label);
+  }
+
+  function addAttention(label, recordId) {
+    if (!recordId) return;
+    if (!ATTENTION.byTest.has(label)) ATTENTION.byTest.set(label, new Set());
+    ATTENTION.byTest.get(label).add(recordId);
+    if (!ATTENTION.byRecord.has(recordId)) ATTENTION.byRecord.set(recordId, new Set());
+    ATTENTION.byRecord.get(recordId).add(label);
+  }
+
+  function getIeClassCounts(cls) {
+    if (!IE_CLASS_COUNTS.has(cls)) {
+      IE_CLASS_COUNTS.set(cls, { NOT_COMPLIANT: 0, AMENDED: 0, POTENTIAL_ISSUE: 0 });
+    }
+    return IE_CLASS_COUNTS.get(cls);
+  }
+
+  function passByType(testType, outcome) {
+    if (outcome === 'EXTERNAL_PREREQUISITES_NOT_MET' || outcome === 'INTERNAL_PREREQUISITES_NOT_MET') return false;
+    if (testType === 'Validation') return outcome === 'COMPLIANT';
+    if (testType === 'Amendment') return outcome === 'NOT_AMENDED';
+    if (testType === 'Issue') return outcome === 'NOT_ISSUE';
+    // If unknown type, conservatively treat the canonical pass words
+    return ['COMPLIANT','NOT_AMENDED','NOT_ISSUE'].includes(outcome);
+  }
+
+  function needsAttentionBucket(testType, outcome) {
+    if (testType === 'Validation' && outcome === 'NOT_COMPLIANT') return 'NOT_COMPLIANT';
+    if (testType === 'Amendment' && outcome === 'AMENDED') return 'AMENDED';
+    if (testType === 'Issue' && outcome === 'POTENTIAL_ISSUE') return 'POTENTIAL_ISSUE';
+    return null;
+  }
+
+  const CANON = new Set(['COMPLIANT','NOT_COMPLIANT','AMENDED','NOT_AMENDED','POTENTIAL_ISSUE','NOT_ISSUE','EXTERNAL_PREREQUISITES_NOT_MET','INTERNAL_PREREQUISITES_NOT_MET']);
+  function getOutcome(row) {
+    let out = (row['result']||'').trim();
+    if (!CANON.has(out)) {
+      const s = (row['status']||'').trim();
+      if (CANON.has(s)) out = s;
+    }
+    return out;
+  }
+
+  // Load TG2 tests metadata
+  async function loadTG2(url) {
+    return new Promise((resolve, reject) => {
+      Papa.parse(url, {
+        download: true,
+        header: true,
+        dynamicTyping: false,
+        skipEmptyLines: true,
+        complete: (res) => {
+          try {
+            TG2.rows = res.data;
+            TG2.byLabel.clear();
+            for (const row of TG2.rows) {
+              const label = row['Label'] || row['term_localName'] || row['prefLabel'];
+              if (!label) continue;
+              TG2.byLabel.set(label, row);
+            }
+            resolve(TG2);
+          } catch (e) { reject(e); }
+        },
+        error: reject,
+      });
+    });
+  }
+
+  function detectRecordIdHeader(headers) {
+    const lc = headers.map(h => h.toLowerCase());
+    // Prefer explicit dwc:occurrenceID first
+    const idxExactOcc = headers.indexOf('dwc:occurrenceID');
+    if (idxExactOcc >= 0) return headers[idxExactOcc];
+    const idxExactTax = headers.indexOf('dwc:taxonID');
+    if (idxExactTax >= 0) return headers[idxExactTax];
+    // Prefer namespaced columns first (dwc:occurrenceID etc.)
+    let idx = lc.findIndex(h => /:(occurrenceid|taxonid)$/.test(h));
+    if (idx >= 0) return headers[idx];
+    // Then unprefixed Darwin Core local names
+    idx = lc.findIndex(h => /^(occurrenceid|taxonid)$/.test(h));
+    if (idx >= 0) return headers[idx];
+    // Fallback to first column
+    return headers[0];
+  }
+
+  // Choose the join column by scoring overlaps with known record IDs (from results)
+  function detectRecordIdHeaderFromData(headers, sampleRows, knownIdsSet) {
+    if (!headers || !sampleRows || sampleRows.length === 0 || !knownIdsSet || knownIdsSet.size === 0) return detectRecordIdHeader(headers);
+    // Name-based hint
+    let bestHeader = detectRecordIdHeader(headers);
+    let bestScore = -1;
+    for (const h of headers) {
+      let score = 0;
+      for (const r of sampleRows) {
+        const v = r[h];
+        if (v !== undefined && v !== null) {
+          const s = String(v).trim();
+          if (s && knownIdsSet.has(s)) score++;
+        }
+      }
+      if (score > bestScore) { bestScore = score; bestHeader = h; }
+    }
+    return bestHeader;
+  }
+
+  // Stream parse results CSV
+  async function loadResults(url) {
+    return new Promise((resolve, reject) => {
+      let recIdHeader = null;
+      Papa.parse(url, {
+        download: true,
+        header: true,
+        worker: true,
+        skipEmptyLines: true,
+        chunkSize: 1024 * 1024, // 1MB chunks
+        chunk: (chunk) => {
+          if (!recIdHeader) {
+            recIdHeader = detectRecordIdHeader(chunk.meta.fields || Object.keys(chunk.data[0]||{}));
+          }
+          for (const row of chunk.data) {
+            AGG.totals.rows++;
+            const recordId = normalizeId(row[recIdHeader]);
+            if (recordId) AGG.recordIds.add(recordId);
+            const label = row['test_id'] || row['Label'];
+            if (!label) continue;
+            AGG.testIds.add(label);
+            const testType = row['test_type'] || (TG2.byLabel.get(label)||{})['Type'] || 'Unknown';
+            const outcome = getOutcome(row);
+            const resultStr = (row['result']||'').trim();
+            const per = getPerTest(label);
+            if (!per.type && testType) per.type = testType;
+            inc(per.counts, outcome);
+
+            if (outcome === 'EXTERNAL_PREREQUISITES_NOT_MET' || outcome === 'INTERNAL_PREREQUISITES_NOT_MET') {
+              AGG.totals.prerequisites++;
+            } else {
+              AGG.totals.considered++;
+              if (passByType(testType, outcome)) AGG.totals.pass++;
+            }
+            if (testType === 'Amendment' && outcome === 'AMENDED') AGG.totals.amended++;
+
+            const tg2 = TG2.byLabel.get(label);
+            const ieClass = tg2 ? (tg2['IE Class'] || 'Unknown') : 'Unknown';
+            const bucket = needsAttentionBucket(testType, outcome);
+            if (bucket) {
+              const counts = getIeClassCounts(ieClass);
+              inc(counts, bucket);
+              addAttention(label, recordId);
+              // Fallback: also attempt to extract the acted-upon value from the comment
+              const actedTokens = (tg2 && tg2['InformationElement:ActedUpon']) ? tg2['InformationElement:ActedUpon'].split(/[,;]+/).map(s=>s.trim()).filter(Boolean) : [];
+              const values = extractValuesFromComment(row['comment']||'');
+              if (values.length && actedTokens.length) {
+                for (const token of actedTokens) for (const v of values) bumpFallbackTop(label, token, v);
+              }
+              // Also parse proposed key=value pairs from the result column for Amendments
+              if (testType === 'Amendment' && actedTokens.length) {
+                const parts = String(resultStr).split('|');
+                for (const p of parts) {
+                  const idx = p.indexOf('=');
+                  if (idx > 0) {
+                    const key = p.slice(0, idx).trim();
+                    const value = normalizeValue(p.slice(idx+1));
+                    if (actedTokens.includes(key)) bumpFallbackTop(label, key, value);
+                  }
+                }
+              }
+            }
+          }
+        },
+        complete: () => resolve(AGG),
+        error: reject,
+      });
+    });
+  }
+
+  // Map TG2 acted-upon tokens to actual header names in the data file (case-insensitive; remove namespace prefixes)
+  function mapTokensToHeaders(tokenString, headers) {
+    if (!tokenString) return [];
+    const headerSet = new Set(headers);
+    const lookup = new Map(headers.map(h => [h.toLowerCase(), h]));
+    const tokens = tokenString.split(/[,;]+/).map(s => s.trim()).filter(Boolean);
+    const mapped = [];
+    for (const tok of tokens) {
+      const bare = tok.includes(':') ? tok.split(':').slice(1).join(':') : tok;
+      const candidates = [tok, bare];
+      for (const c of candidates) {
+        const lc = c.toLowerCase();
+        if (lookup.has(lc)) { mapped.push(lookup.get(lc)); break; }
+        // common DwC core uses localName without prefix
+        if (lookup.has(bare.toLowerCase())) { mapped.push(lookup.get(bare.toLowerCase())); break; }
+      }
+    }
+    // de-duplicate
+    return Array.from(new Set(mapped));
+  }
+
+  function normalizeValue(v) {
+    if (v === null || v === undefined) return '(empty)';
+    let s = String(v).trim();
+    if (!s) return '(empty)';
+    if (s.length > 120) s = s.slice(0,117) + '…';
+    return s;
+  }
+
+  function bumpTop(label, field, value) {
+    if (!TOPS.has(label)) TOPS.set(label, new Map());
+    const byField = TOPS.get(label) || FALLBACK_TOPS.get(label);
+    if (!byField.has(field)) byField.set(field, new Map());
+    const byVal = byField.get(field);
+    byVal.set(value, (byVal.get(value) || 0) + 1);
+  }
+
+  function bumpFallbackTop(label, fieldToken, value) {
+    if (!FALLBACK_TOPS.has(label)) FALLBACK_TOPS.set(label, new Map());
+    const byField = FALLBACK_TOPS.get(label);
+    if (!byField.has(fieldToken)) byField.set(fieldToken, new Map());
+    const byVal = byField.get(fieldToken);
+    byVal.set(value, (byVal.get(value) || 0) + 1);
+  }
+
+  function extractValuesFromComment(comment) {
+    const vals = [];
+    if (!comment) return vals;
+    const re = /\[([^\]]+)\]/g;
+    let m;
+    while ((m = re.exec(comment)) !== null) {
+      const v = normalizeValue(m[1]);
+      if (v) vals.push(v);
+    }
+    return vals;
+  }
+
+  async function loadCoreData(url) {
+    return new Promise((resolve, reject) => {
+      let recIdHeader = null;
+      let headers = null;
+      let mappedFieldsByTest = null; // label -> [header]
+      let matchedRows = 0;
+      const attentionTotal = ATTENTION.byRecord.size;
+      Papa.parse(url, {
+        download: true,
+        header: true,
+        worker: true,
+        skipEmptyLines: true,
+        chunkSize: 1024 * 1024,
+        chunk: (chunk) => {
+          if (!headers) {
+            headers = chunk.meta.fields || Object.keys(chunk.data[0]||{});
+            // Prefer strict dwc:occurrenceID for the join, otherwise fallback to overlap detection
+            recIdHeader = headers.includes('dwc:occurrenceID') ? 'dwc:occurrenceID' : detectRecordIdHeaderFromData(headers, chunk.data.slice(0, 200), AGG.recordIds);
+            // Map acted-upon per test to actual headers, but only for tests with attention
+            mappedFieldsByTest = new Map();
+            for (const [label, ids] of ATTENTION.byTest.entries()) {
+              if (!ids || ids.size === 0) continue;
+              const tg2 = TG2.byLabel.get(label) || {};
+              const fields = mapTokensToHeaders(tg2['InformationElement:ActedUpon'] || '', headers);
+              if (fields.length) mappedFieldsByTest.set(label, fields);
+            }
+          }
+          for (const row of chunk.data) {
+            const recId = normalizeId(row[recIdHeader]);
+            if (!recId || !ATTENTION.byRecord.has(recId)) continue;
+            matchedRows++;
+            const labels = ATTENTION.byRecord.get(recId);
+            for (const label of labels) {
+              const fields = mappedFieldsByTest.get(label);
+              if (!fields || !fields.length) continue;
+              for (const f of fields) {
+                const val = normalizeValue(row[f]);
+                bumpTop(label, f, val);
+              }
+            }
+          }
+        },
+        complete: () => resolve(true),
+        error: reject,
+      });
+    });
+  }
+
+  let needsChartRef = null;
+  function buildNeedsChart() {
+    const ctx = document.getElementById('needsChart');
+    const classes = Array.from(IE_CLASS_COUNTS.keys());
+    const stacks = classes.map(cls => IE_CLASS_COUNTS.get(cls));
+    const notCompliant = stacks.map(s => s.NOT_COMPLIANT || 0);
+    const amended = stacks.map(s => s.AMENDED || 0);
+    const potential = stacks.map(s => s.POTENTIAL_ISSUE || 0);
+    // Create legend chips for IE Class colors
+    const legendHost = document.getElementById('classLegend');
+    if (legendHost) {
+      const items = classes.map(cls => {
+        const col = getClassColor(cls);
+        return `<span class=\"legend-chip\"><span class=\"legend-dot\" style=\"background:${col}\"></span>${escapeHtml(cls)}</span>`;
+      }).join(' ');
+      legendHost.innerHTML = items || '<div class="muted">No classes to show.</div>';
+    }
+
+    const data = {
+      labels: classes,
+      datasets: [
+        { label: 'Validation: NOT_COMPLIANT', data: notCompliant, backgroundColor: 'rgba(251,207,232,0.85)', borderColor: '#f472b6', borderWidth: 1, stack: 'stack0' },
+        { label: 'Amendment: AMENDED', data: amended, backgroundColor: 'rgba(253,230,138,0.85)', borderColor: '#f59e0b', borderWidth: 1, stack: 'stack0' },
+        { label: 'Issue: POTENTIAL_ISSUE', data: potential, backgroundColor: 'rgba(186,230,253,0.85)', borderColor: '#38bdf8', borderWidth: 1, stack: 'stack0' },
+      ]
+    };
+    if (needsChartRef) try { needsChartRef.destroy(); } catch {}
+    needsChartRef = new Chart(ctx, {
+      type: 'bar',
+      data,
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: { 
+          x: { stacked: true, ticks: { color: '#0f172a' }, grid: { color: 'rgba(148,163,184,0.25)' } }, 
+          y: { stacked: true, beginAtZero: true, ticks: { color: '#0f172a' }, grid: { color: 'rgba(148,163,184,0.25)' } } 
+        },
+        plugins: {
+          legend: { position: 'bottom', labels: { color: '#0f172a' } },
+          tooltip: { mode: 'index', intersect: false },
+          title: { display: true, text: 'Attention needed by data area', color: '#0f172a' }
+        }
+      }
+    });
+    return needsChartRef;
+  }
+
+  function renderKPIs() {
+    $('#kpiRecords').textContent = fmtInt(AGG.recordIds.size);
+    $('#kpiTests').textContent = fmtInt(AGG.testIds.size);
+    $('#kpiPrereq').textContent = fmtInt(AGG.totals.prerequisites);
+    const passRate = AGG.totals.considered ? Math.round(1000 * (AGG.totals.pass / AGG.totals.considered)) / 10 : 0;
+    $('#kpiPass').textContent = AGG.totals.considered ? `${passRate}%` : '–';
+    $('#kpiAmended').textContent = fmtInt(AGG.totals.amended);
+    $('#kpiTotal').textContent = fmtInt(AGG.totals.rows);
+  }
+
+  function listNeedsAttention() {
+    // Build arrays of tests with counts
+    const validations = [];
+    const amendments = [];
+    const issues = [];
+    for (const [label, per] of AGG.perTest.entries()) {
+      const tg2 = TG2.byLabel.get(label) || {};
+      const nice = tg2['prefLabel'] || label;
+      const acted = (tg2['InformationElement:ActedUpon'] || '').trim();
+      const consulted = (tg2['InformationElement:Consulted'] || '').trim();
+      const desc = (tg2['Description'] || '').trim();
+      const obj = { label, nice, desc, acted, consulted, type: per.type, counts: per.counts, tg2 };
+      const c = per.counts || {};
+      if (per.type === 'Validation' && (c['NOT_COMPLIANT']||0) > 0) validations.push({ ...obj, value: c['NOT_COMPLIANT'] });
+      if (per.type === 'Amendment'  && (c['AMENDED']||0) > 0) amendments.push({ ...obj, value: c['AMENDED'] });
+      if (per.type === 'Issue'      && (c['POTENTIAL_ISSUE']||0) > 0) issues.push({ ...obj, value: c['POTENTIAL_ISSUE'] });
+    }
+    validations.sort(byValDesc); amendments.sort(byValDesc); issues.sort(byValDesc);
+    $('#countValidations').textContent = fmtInt(validations.length);
+    $('#countAmendments').textContent = fmtInt(amendments.length);
+    $('#countIssues').textContent = fmtInt(issues.length);
+
+    function renderTopValues(label) {
+      const byField = TOPS.get(label) || FALLBACK_TOPS.get(label);
+      if (!byField) return '';
+      const parts = [];
+      for (const [field, byVal] of byField.entries()) {
+        // top 3
+        const arr = Array.from(byVal.entries()).map(([value, count]) => ({value, count}))
+          .sort((a,b) => b.count - a.count).slice(0,3);
+        if (!arr.length) continue;
+        const vals = arr.map(x => `<span class="val">${escapeHtml(x.value)} (${fmtInt(x.count)})</span>`).join(' ');
+        parts.push(`<div><span class="field">${escapeHtml(field)}:</span> ${vals}</div>`);
+      }
+      return parts.length ? `<div class="tops">${parts.join('')}</div>` : '';
+    }
+
+    function mkItem(entry) {
+      const el = document.createElement('div');
+      el.className = 'list-item color-left';
+      const cls = (entry.tg2 && entry.tg2['IE Class']) ? entry.tg2['IE Class'] : 'Unknown';
+      const color = getClassColor(cls);
+      el.style.borderLeftColor = color;
+      el.innerHTML = `
+        <div class="item-title">
+          <div><strong>${escapeHtml(entry.nice)}</strong> <span class="muted">(${escapeHtml(entry.label)})</span></div>
+          <span class="badge">${fmtInt(entry.value)}</span>
+        </div>
+        <div class="muted" style="margin-top:6px;">${escapeHtml(truncate(entry.desc, 220))}</div>
+        <div class="chips" style="margin-top:8px;">
+          ${renderIEChips(entry.acted, 'Acted upon')}
+          ${renderIEChips(entry.consulted, 'Consulted')}
+        </div>
+        ${renderTopValues(entry.label)}
+      `;
+      el.addEventListener('click', () => showTestDetails(entry.label));
+      return el;
+    }
+    const lv = $('#listValidations'); lv.innerHTML = ''; validations.forEach(v => lv.appendChild(mkItem(v)));
+    const la = $('#listAmendments');  la.innerHTML = ''; amendments.forEach(v => la.appendChild(mkItem(v)));
+    const li = $('#listIssues');      li.innerHTML = ''; issues.forEach(v => li.appendChild(mkItem(v)));
+  }
+
+  function escapeHtml(s='') { return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c])); }
+  function truncate(s='', n=140) { return s.length>n ? s.slice(0,n-1)+'…' : s; }
+
+  function renderIEChips(value, title) {
+    const items = (value || '').split(/[,;]+/).map(s => s.trim()).filter(Boolean).slice(0,3);
+    if (!items.length) return '';
+    return `<span class="pill">${title}</span> ` + items.map(v => `<span>${escapeHtml(v)}</span>`).join(' ');
+  }
+
+  function openModalContent(title, html) {
+    $('#modalTitle').textContent = title;
+    $('#modalContent').innerHTML = html;
+    $('#modal').classList.add('show');
+  }
+
+  function closeModal() {
+    $('#modal').classList.remove('show');
+  }
+
+  function showTestDetails(label) {
+    const per = AGG.perTest.get(label) || { counts: {} };
+    const tg2 = TG2.byLabel.get(label) || {};
+    const nice = tg2['prefLabel'] || label;
+    const desc = tg2['Description'] || '';
+    const notes = tg2['Notes'] || '';
+    const acted = tg2['InformationElement:ActedUpon'] || '';
+    const consulted = tg2['InformationElement:Consulted'] || '';
+
+    const lines = [];
+    const keys = ['COMPLIANT','NOT_COMPLIANT','NOT_AMENDED','AMENDED','NOT_ISSUE','POTENTIAL_ISSUE','EXTERNAL_PREREQUISITES_NOT_MET','INTERNAL_PREREQUISITES_NOT_MET'];
+    for (const k of keys) if ((per.counts[k]||0) > 0) lines.push(`<span class=\\"count-pill\\"><strong>${k}:</strong> ${fmtInt(per.counts[k])}</span>`);
+    const countsHtml = lines.length ? `<div class=\\"counts\\">${lines.join('')}</div>` : '<div class="muted">No results counted.</div>';
+    // top values (up to 5) per field
+    let topsHtml = '';
+    const byField = TOPS.get(label) || FALLBACK_TOPS.get(label);
+    if (byField) {
+      const blocks = [];
+      for (const [field, byVal] of byField.entries()) {
+        const arr = Array.from(byVal.entries()).map(([value, count]) => ({value, count}))
+          .sort((a,b) => b.count - a.count).slice(0,5);
+        if (!arr.length) continue;
+        const vals = arr.map(x => `<span class="val">${escapeHtml(x.value)} (${fmtInt(x.count)})</span>`).join(' ');
+        blocks.push(`<div style=\"margin-top:6px;\"><span class=\"field\">${escapeHtml(field)}:</span> ${vals}</div>`);
+      }
+      if (blocks.length) topsHtml = `<div class=\\"section-block\\">${blocks.join('')}</div>`;
+    }
+
+    const actedList = (acted || '').split(/[,;]+/).map(s=>s.trim()).filter(Boolean);
+    const colsLine = actedList.length ? `Columns: [${actedList.join(', ')}]` : '';
+    const classPill = (tg2['IE Class']) ? `<span class=\\"pill-soft\\" style=\\"background:${getClassColor(tg2['IE Class'])}\\">${escapeHtml(tg2['IE Class'])}</span>` : '';
+    const msg = `
+      <div>
+        <h3 class=\\"desc\\" style=\\"font-size:18px; font-weight:600; margin:0 0 6px 0;\\">${escapeHtml(desc)}</h3>
+        ${notes ? `<p class=\\"desc\\" style=\\"margin:6px 0 10px 0;\\">${escapeHtml(notes)}</p>` : ''}
+        ${colsLine ? `<div style=\\"margin:6px 0;\\">${escapeHtml(colsLine)}</div>` : ''}
+        ${classPill ? `<div style=\\"margin:6px 0 12px 0;\\">${classPill}</div>` : ''}
+        ${countsHtml}
+        ${topsHtml || '<div class=\\"muted\\" style=\\"margin-top:8px;\\">No common values found.</div>'}
+      </div>`;
+    openModalContent(`${escapeHtml(nice)} ( ${escapeHtml(label)} )`, msg);
+  }
+
+  // Build test catalogue table with Tabulator
+  function buildCatalogue() {
+    const testsPresent = new Set(AGG.testIds);
+    const rows = [];
+    for (const [label, tg2] of TG2.byLabel.entries()) {
+      if (!testsPresent.has(label)) continue; // only those we ran
+      rows.push({
+        label,
+        prefLabel: tg2['prefLabel'] || '',
+        ieClass: tg2['IE Class'] || '',
+        acted: tg2['InformationElement:ActedUpon'] || '',
+        consulted: tg2['InformationElement:Consulted'] || '',
+        expected: tg2['ExpectedResponse'] || '',
+        description: tg2['Description'] || '',
+        notes: tg2['Notes'] || '',
+        examples: tg2['Examples'] || '',
+      });
+    }
+    const table = new Tabulator('#catalogue', {
+      data: rows,
+      layout: 'fitColumns',
+      height: '420px',
+      pagination: true,
+      paginationSize: 12,
+      movableColumns: true,
+      placeholder: 'No tests found in results.',
+      columns: [
+        { title: 'Label', field: 'label', width: 230, headerFilter: 'input' },
+        { title: 'Name', field: 'prefLabel', widthGrow: 2, headerFilter: 'input' },
+        { title: 'IE Class', field: 'ieClass', width: 180, headerFilter: 'input' },
+        { title: 'Acted upon', field: 'acted', width: 200 },
+        { title: 'Consulted', field: 'consulted', width: 200 },
+        { title: 'Expected response', field: 'expected', widthGrow: 2 },
+        { title: 'Description', field: 'description', widthGrow: 3 },
+        { title: 'Notes', field: 'notes', widthGrow: 2 },
+      ],
+      rowClick: (e, row) => showTestDetails(row.getData().label),
+    });
+    return table;
+  }
+
+  function computeFileNameTitle(csvUrl) {
+    try {
+      const leaf = csvUrl.split('?')[0].split('#')[0].split('/').pop();
+      const withoutExt = leaf.replace(/\.csv$/i, '');
+      return prettifyFileName(withoutExt);
+    } catch { return prettifyFileName(csvUrl); }
+  }
+
+  function guessResultsUrlFromParam(param) {
+    if (!param) return null;
+    if (isAbsoluteUrl(param)) return param;
+    // Assume results/ relative to this page
+    const base = new URL(window.location.href);
+    const url = new URL(param, base);
+    // If param does not include a slash, prefix results/
+    if (!param.includes('/')) {
+      url.pathname = (base.pathname.replace(/[^\/]*$/, '')) + 'results/' + param;
+    }
+    return url.toString();
+  }
+
+  function guessDataUrlFromParam(param) {
+    if (!param) return null;
+    if (isAbsoluteUrl(param)) return param;
+    const base = new URL(window.location.href);
+    const url = new URL(param, base);
+    if (!param.includes('/')) {
+      url.pathname = (base.pathname.replace(/[^\/]*$/, '')) + 'results/' + param;
+    }
+    return url.toString();
+  }
+
+  function guessTG2Url() {
+    // Prefer same folder TG2_tests.csv
+    const base = new URL(window.location.href);
+    const candidate = new URL('TG2_tests.csv', base).toString();
+    return candidate;
+  }
+
+  async function main() {
+    // From query param
+    const resultsParam = getParam('results');
+    const originalParam = getParam('original');
+    const resultsUrl = guessResultsUrlFromParam(resultsParam || '');
+    const originalUrl = originalParam ? guessDataUrlFromParam(originalParam) : null;
+    if (resultsUrl) run(resultsUrl, originalUrl);
+  }
+
+  async function run(csvUrl, dataUrl) {
+    try {
+      $('#fileName').textContent = 'Loading…';
+      showToast('Loading TG2 tests…');
+      await loadTG2(guessTG2Url());
+      showToast('Parsing results…');
+      // Reset state
+      AGG.recordIds.clear(); AGG.testIds.clear(); AGG.perTest.clear(); IE_CLASS_COUNTS.clear();
+      ATTENTION.byTest.clear(); ATTENTION.byRecord.clear(); TOPS.clear();
+      AGG.totals = { rows: 0, prerequisites: 0, pass: 0, considered: 0, amended: 0 };
+      await loadResults(csvUrl);
+
+      // Update header filename
+      $('#fileName').textContent = 'for ' + computeFileNameTitle(csvUrl);
+
+      // KPIs
+      renderKPIs();
+      // Chart
+      buildNeedsChart();
+      // Needs attention lists
+      listNeedsAttention();
+      // Attempt to load core data for top values
+      if (dataUrl) {
+        try {
+          showToast('Analyzing common values…');
+          await loadCoreData(dataUrl);
+          // re-render lists to include tops
+          listNeedsAttention();
+        } catch (e) {
+          console.warn('Core data not available or failed:', e);
+          showToast('Core data not loaded; common values unavailable.', {ms: 3000});
+        }
+      }
+      // Catalogue
+      // Ensure Tabulator is loaded before use
+      if (typeof Tabulator === 'undefined') {
+        // lazy-load Tabulator if not already present (e.g., CDN hiccup)
+        await new Promise((resolve, reject) => {
+          const s = document.createElement('script');
+          s.src = 'https://unpkg.com/tabulator-tables@5.5.2/dist/js/tabulator.min.js';
+          s.onload = resolve; s.onerror = reject; document.head.appendChild(s);
+        });
+      }
+      buildCatalogue();
+      showToast('Report ready');
+    } catch (e) {
+      console.error(e);
+      showToast('Failed to load report. See console.', {ms: 4000});
+      $('#fileName').textContent = 'Load error';
+    }
+  }
+
+  // Load Tabulator JS up front (non-blocking)
+  (function preloadTabulator(){
+    const s = document.createElement('script');
+    s.src = 'https://unpkg.com/tabulator-tables@5.5.2/dist/js/tabulator.min.js';
+    document.head.appendChild(s);
+  })();
+
+  window.addEventListener('DOMContentLoaded', main);
+  // Modal: close handlers
+  window.addEventListener('click', (e) => {
+    const m = document.getElementById('modal');
+    if (m && e.target === m) closeModal();
+  });
+  window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
+  document.addEventListener('click', (e) => {
+    if (e.target && e.target.id === 'modalClose') closeModal();
+  });
+  </script>
+</body>
+</html>
