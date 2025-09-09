@@ -3,19 +3,20 @@ import io
 import pandas as pd
 import google.generativeai as genai
 from google.generativeai import types
+from openai import OpenAI
 from typing import List, Dict, Any, Optional
 from app.utils.helper import log
 
 class LLMService:
-    """Service for generating intelligent summaries using Google Gemini"""
+    """Service for generating intelligent summaries using Google Gemini or OpenAI"""
     
     def __init__(self):
-        self.api_key = os.getenv("GOOGLE_API_KEY")
-        genai.configure(api_key=self.api_key)
+        self.google_api_key = os.getenv("GOOGLE_API_KEY")
+        self.openai_api_key = os.getenv("OPENAI_API_KEY")
+        genai.configure(api_key=self.google_api_key)
     
-    def generate_intelligent_summary(self, prompt, test_results_file, original_file):
+    def generate_gemini_intelligent_summary(self, prompt, test_results_file, original_file):
         """Generate intelligent summary from DataFrame-based test results"""
-        # Gemini version:
         client = genai.Client()
         original_file = client.files.upload_bytes(
             data=original_file.encode("utf-8"),
@@ -38,16 +39,35 @@ class LLMService:
             ],
             config=types.GenerateContentConfig(tools=[types.Tool(code_execution=types.ToolCodeExecution)]),
         )
-        
-        if response.text:
-            log(response.text[:1000])
-            return self._convert_to_html(response.text.strip())
-        else:
-            log("No response text from Gemini API", "ERROR")
-            return "<p>Unable to generate summary at this time.</p>"
+        return response.text
+                
+    def generate_openai_intelligent_summary(prompt, test_results_csv_text, original_csv_text, api_key=None):
+        client = OpenAI(api_key=api_key)
+
+        original_file = client.files.create(
+            file=io.BytesIO(original_csv_text.encode("utf-8")), purpose="assistants"
+        )
+        results_file = client.files.create(
+            file=io.BytesIO(test_results_csv_text.encode("utf-8")), purpose="assistants"
+        )
+
+        response = client.responses.create(
+            model="gpt-4o",
+            tools=[{"type": "code_interpreter"}],
+            input=[{
+                "role": "user",
+                "content": [
+                    {"type": "input_text", "text": prompt},
+                    {"type": "input_file", "file_id": original_file.id},
+                    {"type": "input_file", "file_id": results_file.id},
+                ]
+            }]
+        )
+
+        return response.output_text
                 
     def create_prompt(self, email_data, core_type, summary_stats, test_results_snapshot, original_snapshot, relevant_test_contexts):
-        log("Generating the prompt for gemini...") 
+        log("Generating the prompt for LLM...") 
         prompt = f"""# YOUR TASK
 Write a professional, encouraging email analysis of the results of the Biodiversity Data Quality tests run against the user's dataset using the BDQEmail service.
 The user will have access to the test results csv and the amended dataset csv as email attachments.
