@@ -1,5 +1,6 @@
 import os
 import io
+import traceback
 from typing import Dict, Any
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
@@ -17,7 +18,7 @@ from app.services.bdq_api_service import BDQAPIService
 from app.services.csv_service import CSVService
 from app.services.llm_service import LLMService
 from app.services.minio_service import MinIOService
-from app.utils.helper import log
+from app.utils.helper import log, str_snapshot, get_relevant_test_contexts
 import pandas as pd
 
 # Initialize services at module level for dependency injection
@@ -62,31 +63,23 @@ async def _handle_email_processing(email_data: Dict[str, Any]):
         return
 
     # Upload original processed DataFrame to MinIO
-    original_csv_name = minio_service.upload_dataframe(df, original_filename, "original")
+    original_csv = minio_service.upload_dataframe(df, original_filename, "original")
 
-    # Note that at this point test_results will never be empty because the CSV has either occurrenceID or taxonID and the API will run tests on these at least
+    # Run tests on dataset - note that at this point test_results will never be empty because the CSV has either occurrenceID or taxonID and the API will run tests on these at least
     test_results = await bdq_api_service.run_tests_on_dataset(df, core_type)
     summary_stats = _get_summary_stats(test_results, core_type)
 
-    # Extract email content (prefer HTML, fallback to text)
-    email_body = email_data['body']['html'] if email_data['body']['html'] else email_data['body']['text']
-    email_content = f"FROM: {email_data['headers']['from']}\nSUBJECT: {email_data['headers']['subject']}\n{email_body}"
+    # Upload test results and amended dataset to MinIO
+    test_results_csv = minio_service.upload_dataframe(test_results, original_filename, "test_results")
+    amended_dataset = csv_service.generate_amended_dataset(df, test_results, core_type)
+    amended_csv = minio_service.upload_csv_string(amended_dataset, original_filename, "amended")
     
-    # Get LLM analysis (without stats)
-    llm_analysis = llm_service.generate_intelligent_summary(test_results, email_content, core_type, summary_stats, pd.DataFrame())
+    # Get LLM analysis
+    prompt = llm_service.create_prompt(email_data, core_type, summary_stats, str_snapshot(test_results), str_snapshot(df), get_relevant_test_contexts(test_results['test_id'].unique().tolist()))
+    llm_analysis = llm_service.generate_intelligent_summary(prompt, test_results_csv, original_csv)
     
-    # Generate result files and upload to MinIO
-    raw_results_csv = csv_service.generate_raw_results_csv(test_results)
-    amended_dataset_csv = csv_service.generate_amended_dataset(df, test_results, core_type)
-    
-    # Upload result CSV strings directly to MinIO (no need to convert back to DataFrames)
-    results_csv_name = minio_service.upload_csv_string(raw_results_csv, original_filename or "unknown_file", "raw_results")
-    amended_csv_name = minio_service.upload_csv_string(amended_dataset_csv, original_filename or "unknown_file", "amended")
-    
-    # Generate dashboard URL if both files were uploaded successfully
-    dashboard_url = None
-    if results_csv_name and original_csv_name:
-        dashboard_url = minio_service.generate_dashboard_url(results_csv_name, original_csv_name)
+    # Generate dashboard URL
+    dashboard_url = minio_service.generate_dashboard_url(test_results_csv, original_csv)
     
     # Combine summary stats + LLM analysis + breakdown button
     body = _format_summary_stats_html(summary_stats, core_type, len(df)) + llm_analysis
@@ -94,7 +87,7 @@ async def _handle_email_processing(email_data: Dict[str, Any]):
         body += _format_breakdown_button_html(dashboard_url)
     
     # Send reply email
-    await email_service.send_results_reply(email_data, body, raw_results_csv, amended_dataset_csv)
+    await email_service.send_results_reply(email_data, body, test_results_csv, amended_csv)
     
 
 @app.post("/email/incoming")
@@ -179,7 +172,7 @@ def _format_summary_stats_html(summary_stats, core_type, no_of_records):
         <h3 style="margin-top: 0; color: #007bff;">&#x1F4CA; BDQ Test Results Summary</h3>
         <ul style="margin: 0; padding-left: 20px;">
             <li><strong>Dataset:</strong> {core_type.title()} core with {no_of_records} records</li>
-            <li><strong>Tests Run:</strong> {summary_stats['no_of_tests_results']} tests across {summary_stats['no_of_tests']} types of BDQ Tests</li>
+            <li><strong>Tests Run:</strong> {summary_stats['no_of_tests_results']} tests across {summary_stats['no_of_tests_run']} types of BDQ Tests</li>
             <li><strong>Non-Compliant Validations:</strong> {summary_stats['no_of_non_compliant_validations']}, most commonly: {summary_stats['top_non_compliant_validations']}</li>
             <li><strong>Amendments:</strong> {summary_stats['no_of_amendments']}, most commonly: {summary_stats['top_amendments']}</li>
             <li><strong>Filled In:</strong> {summary_stats['no_of_filled_in']}, most commonly: {summary_stats['top_filled_in']}</li>
@@ -206,7 +199,6 @@ def _format_breakdown_button_html(dashboard_url: str) -> str:
         </a>
     </div>
     """
-        
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):

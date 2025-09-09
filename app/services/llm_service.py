@@ -2,6 +2,7 @@ import os
 import io
 import pandas as pd
 import google.generativeai as genai
+from google.generativeai import types
 from typing import List, Dict, Any, Optional
 from app.utils.helper import log
 
@@ -11,38 +12,32 @@ class LLMService:
     def __init__(self):
         self.api_key = os.getenv("GOOGLE_API_KEY")
         genai.configure(api_key=self.api_key)
-        self.bdq_tests_df = self._load_bdq_tests()
     
-    def _load_bdq_tests(self) -> pd.DataFrame:
-        """Load BDQ tests information from CSV file"""
-        csv_path = os.path.join(os.path.dirname(__file__), '..', 'TG2_tests.csv')
-        df = pd.read_csv(csv_path, dtype=str).fillna('')  # Load all as strings to avoid float conversions
-        log(f"Loaded {len(df)} BDQ tests from CSV")
-        return df
-    
-    def _get_relevant_test_contexts(self, test_ids: List[str]) -> str:
-        """Get relevant BDQ test contexts for the given test IDs"""
-        relevant_tests = self.bdq_tests_df[self.bdq_tests_df['Label'].isin(test_ids)]
-        columns_needed = ['Label', 'InformationElement:ActedUpon', 'InformationElement:Consulted', 'ExpectedResponse', 'Description', 'Examples', 'Notes', 'IE Class', 'UseCases']
-        tests = relevant_tests[columns_needed].copy()
-        tests = tests.rename(columns={'IE Class': 'Information Element Class'})
-        return f"\n## BDQ TEST CONTEXT\nThe following tests were run on the dataset:\n\n{str(tests)}"
-    
-    def generate_intelligent_summary(self, email_content, core_type, summary_stats):
+    def generate_intelligent_summary(self, prompt, test_results_file, original_file):
         """Generate intelligent summary from DataFrame-based test results"""
-        log("Generating the prompt for gemini...") 
-        prompt = self._create_prompt(test_results_df, email_content, core_type, summary_stats, unique_with_results_df)
-        log("Prompt generated!")
-        log(prompt)
-
-        # Call Gemini API
+        # Gemini version:
         client = genai.Client()
+        original_file = client.files.upload_bytes(
+            data=original_file.encode("utf-8"),
+            name="original_file.csv",
+            mime_type="text/csv"
+        )
+        test_results_file = client.files.upload_bytes(
+            data=test_results_file.encode("utf-8"),
+            name="test_results_file.csv",
+            mime_type="text/csv"
+        )
         response = client.models.generate_content(
             model="gemini-2.5-pro",
-            contents=prompt,
+            contents=[
+                types.Content(role="user", parts=[
+                    types.Part.from_text(prompt),
+                    types.Part.from_uri(file_uri=original_file.uri),
+                    types.Part.from_uri(file_uri=test_results_file.uri),
+                ])
+            ],
             config=types.GenerateContentConfig(tools=[types.Tool(code_execution=types.ToolCodeExecution)]),
         )
-        response = self.model.generate_content(prompt)
         
         if response.text:
             log(response.text[:1000])
@@ -51,9 +46,11 @@ class LLMService:
             log("No response text from Gemini API", "ERROR")
             return "<p>Unable to generate summary at this time.</p>"
                 
-    def _create_prompt(self, email_content, core_type, summary_stats):
-        prompt += f"""# YOUR TASK
-Write a professional, encouraging email analysis. 
+    def create_prompt(self, email_data, core_type, summary_stats, test_results_snapshot, original_snapshot, relevant_test_contexts):
+        log("Generating the prompt for gemini...") 
+        prompt = f"""# YOUR TASK
+Write a professional, encouraging email analysis of the results of the Biodiversity Data Quality tests run against the user's dataset using the BDQEmail service.
+The user will have access to the test results csv and the amended dataset csv as email attachments.
 
 ## TONE & STYLE
 - Friendly, helpful and pragmatic
@@ -65,84 +62,38 @@ Write a professional, encouraging email analysis.
 
 ## YOUR RESOURCES
 
-USER'S ORIGINAL FILE ({core_type} dataset type):
-- URL to full file: {original_url}
-- Snapshot: 
+### USER'S ORIGINAL EMAIL
+{email_data}
+
+### USER'S ORIGINAL FILE ({core_type} dataset type) is attached.
+- Snapshot from attached original file: 
 {original_snapshot}
 
-USER'S TEST RESULTS FILE: 
-- URL to full file: {test_results_url}
-- Snapshot: 
+### Biodiversity Data Quality Tests Background
+The BDQ Tests (TG2) are a standardized set of machine-readable checks for biodiversity records designed to assess and improve “fitness for use.” Developed by TDWG's Biodiversity Data Quality Task Group 2, they focus on common Darwin Core fields such as location, time, taxonomy, and licensing. The tests exist to detect missing or malformed values, flag potential problems, and, where safe and unambiguous, propose improvements so data can be more reliably mapped, analyzed over time, and integrated with external resources. They will probably mostly be run against GBIF datasets. 
+There are four test types. Validation tests check conformance or completeness and return COMPLIANT or NOT_COMPLIANT. Issue tests flag concerns with IS_ISSUE, POTENTIAL_ISSUE, or NOT_ISSUE. Amendment tests propose changes: AMENDED means a suggested correction to an existing value, FILLED_IN means a suggested value for a blank field, and NOT_AMENDED means no safe change is proposed; the proposed changes are given as key:value pairs. Measure tests report counts or a summary status (COMPLETE/NOT_COMPLETE). Every test returns a Response.status (e.g., RUN_HAS_RESULT, INTERNAL_PREREQUISITES_NOT_MET, EXTERNAL_PREREQUISITES_NOT_MET), a Response.result (the outcome or proposed changes), and a Response.comment explaining why.
+
+### USER'S TEST RESULTS FILE is also attached. 
+- Snapshot from attached results file: 
 {test_results_snapshot}
+Notes:
+  AMENDED = a suggested correction to a value that’s already there (e.g., “Australia” → “AU”).
+  FILLED IN = a suggested value for a blank field (e.g., derive coordinates from verbatim text).
+  NOT_AMENDED = no safe change suggested (often because it’s ambiguous).
+
+### SUMMARY STATS FROM RESULTS FILE
+{summary_stats} 
 
 ### BDQ TESTS CONTEXT
-{self._get_relevant_test_contexts(test_results_df['test_id'].unique().tolist())} 
-
-### USER'S EMAIL CONTENT
-{email_content}
-
-### SUMMARY STATISTICS
-{summary_stats}
+{relevant_test_contexts} 
 
 ## CONTENT
 
-1. **Acknowledge** the submission and thank the user for using BDQ. Reply to any queries in the original email. 
-
-2. **Analyze** what the test results mean using the BDQ TESTS CONTEXT their email content if there is any (focus on interpretation, not repeating numbers)
-Content headings can be generated on a case-by-case basis, but 
-- Your Data At A Glance: DATA OVERVIEW provided and provide a summary that makes sense given the context. Examples: Coverage: records by year, by country/region, by major taxon groups. Keep it short and just use it to give a flavour of the data.
-- What We Found, use Information Element Class to group the tests by theme (i.e. location, dates, taxonomy, etc.). Explain what was checked in each theme area. 
-- Quick wins section
-  Suggested Fixes
-
-  - Quick wins (safe to accept automatically)
-      - Standardize obvious things: country codes, month/day formats, common abbreviations.
-      - Fill in blanks from other fields when unambiguous (e.g., fill coordinates from verbatim text).
-  - Needs human review
-      - Ambiguous dates (e.g., dd/mm vs mm/dd), coordinates near borders, names matching multiple taxa.
-  - Provider/dataset actions
-      - Top 3 datasets to contact and the simplest fixes they can make at source.
-  - Prioritized checklist
-      -
-          1. Accept auto‑fixes; 2) Review “high‑impact” ambiguities; 3) Contact providers; 4) Re‑run tests.
-
-  Impact If Fixes Are Applied
-
-  - Expected lift: “usable now” records goes from X% → Y%.
-  - By theme: +A% valid dates; +B% valid locations; +C% names recognized.
-  - Where it helps: better maps, cleaner time series, more reliable species counts.
-
-  How To Read “Amended” vs “Filled In”
-
-  - AMENDED = a suggested correction to a value that’s already there (e.g., “Australia” → “AU”).
-  - FILLED IN = a suggested value for a blank field (e.g., derive coordinates from verbatim text).
-  - NOT_AMENDED = no safe change suggested (often because it’s ambiguous).
-
-  Deliverables You Can Use
-
-  - Summary tables (PDF/HTML):
-      - Overall readiness; top issues; quick wins; provider/dataset rankings.
-  - Action spreadsheets (CSV):
-      - “Auto‑fix suggestions” (ready to accept).
-      - “Needs review” (ambiguous/edge cases).
-      - “Provider follow‑up” (issues grouped by dataset).
-  - Visuals:
-      - Map of suspect points; bar charts of missing fields; trend of usable dates by year.
-
-  Method (Short Note)
-
-  - Tests used standard checks for location, time, taxonomy, and licensing.
-  - External lookups (e.g., vocabularies, gazetteers) were used when needed.
-  - Some checks can’t decide automatically; those are flagged for human review.
-
-
-2. **Analyzes** what the test results mean using the BDQ TESTS CONTEXT provided below and their email content if there is any (focus on interpretation, not repeating numbers)
-3. **Explains** the significance of any issues found and their impact on data quality, using the BDQ TESTS CONTEXT to provide specific insights about what each test checks
-4. **Provides** specific, actionable advice for improving their data quality based on the BDQ TESTS CONTEXTS and their top/most common results in each category in their summary statistics. Go into “quick wins” - easy corrections with high impact - and the most critical issues likely to affect dataset reuse.
-5. **Describes** what the attached files contain and how to use them effectively
-6. **Encourages** them to resubmit after making improvements
-
-
+1. **Acknowledge** the submission and thank the user for using BDQEmail to test their data. Reply to any queries in the original email. 
+2. **Analyze** what the test results mean using the BDQ TESTS CONTEXT and their email content if there is any (focus on interpretation, not repeating numbers)
+3. **Explain** the significance of any issues found and their impact on data quality, using the BDQ TESTS CONTEXT to provide specific insights about what each test checks
+4. **Provide** specific, actionable advice for improving their data quality based on the BDQ TESTS CONTEXTS and their top/most common results in each category in their summary statistics. Go into “quick wins” - easy corrections with high impact - and the most critical issues likely to affect dataset reuse. They have access to the test results csv and the amended dataset csv as email attachments.
+5. **Encourage** them to resubmit after making improvements
 
 ## FORMAT
 Write as a complete email body that will appear below the summary stats box. Use clear paragraphs and bullet points where appropriate. Do NOT include the summary statistics - they are already displayed above."""

@@ -203,7 +203,9 @@ def test_summary_statistics_generation():
             'test_type': 'Validation',
             'status': 'RUN_HAS_RESULT',
             'result': 'COMPLIANT',
-            'comment': 'Valid country code'
+            'comment': 'Valid country code',
+            'actedUpon': 'dwc:countryCode=US',
+            'consulted': 'dwc:countryCode=US'
         },
         {
             'dwc:occurrenceID': 'occ2',
@@ -211,7 +213,9 @@ def test_summary_statistics_generation():
             'test_type': 'Validation',
             'status': 'RUN_HAS_RESULT',
             'result': 'NOT_COMPLIANT',
-            'comment': 'Invalid country code'
+            'comment': 'Invalid country code',
+            'actedUpon': 'dwc:countryCode=ZZ',
+            'consulted': 'dwc:countryCode=ZZ'
         },
         {
             'dwc:occurrenceID': 'occ3',
@@ -219,35 +223,21 @@ def test_summary_statistics_generation():
             'test_type': 'Amendment',
             'status': 'AMENDED',
             'result': '2023-01-01T00:00:00',
-            'comment': 'Standardized date'
+            'comment': 'Standardized date',
+            'actedUpon': 'dwc:eventDate=2023-01-01',
+            'consulted': 'dwc:eventDate=2023-01-01'
         }
     ])
     
-    summary = _get_summary_stats(test_results)
+    summary = _get_summary_stats(test_results, 'occurrence')
     
-    assert summary['total_records'] == 3
-    assert summary['total_tests_run'] == 3
-    assert summary['unique_tests'] == 2
-    assert summary['validation_failures'] == 1
-    assert summary['amendments_applied'] == 1
-    assert summary['compliant_results'] == 1
-    assert summary['success_rate_percent'] == 33.3
-    assert 'VALIDATION_COUNTRYCODE_VALID' in summary['failure_counts_by_test']
-    assert summary['failure_counts_by_test']['VALIDATION_COUNTRYCODE_VALID'] == 1
-
-
-def test_empty_summary_statistics():
-    """Test summary statistics with empty results"""
-    from app.main import _get_summary_stats
-    
-    # Test with empty DataFrame
-    empty_df = pd.DataFrame()
-    summary = _get_summary_stats(empty_df)
-    assert summary == {}
-    
-    # Test with None
-    summary = _get_summary_stats(None)
-    assert summary == {}
+    assert summary['no_of_tests_results'] == 3
+    assert summary['no_of_tests_run'] == 2
+    assert summary['no_of_non_compliant_validations'] == 1
+    assert summary['no_of_amendments'] == 1
+    assert summary['no_of_filled_in'] == 0
+    assert summary['no_of_issues'] == 0
+    assert len(summary['list_of_all_columns_tested']) > 0
 
 
 def test_summary_statistics_common_issues():
@@ -262,7 +252,9 @@ def test_summary_statistics_common_issues():
             'test_type': 'Validation',
             'status': 'RUN_HAS_RESULT',
             'result': 'NOT_COMPLIANT',
-            'comment': 'Invalid country code format'
+            'comment': 'Invalid country code format',
+            'actedUpon': 'dwc:countryCode=ZZ',
+            'consulted': 'dwc:countryCode=ZZ'
         },
         {
             'dwc:occurrenceID': 'occ2',
@@ -270,7 +262,9 @@ def test_summary_statistics_common_issues():
             'test_type': 'Validation',
             'status': 'RUN_HAS_RESULT',
             'result': 'NOT_COMPLIANT',
-            'comment': 'Invalid country code format'
+            'comment': 'Invalid country code format',
+            'actedUpon': 'dwc:countryCode=ZZ',
+            'consulted': 'dwc:countryCode=ZZ'
         },
         {
             'dwc:occurrenceID': 'occ3',
@@ -278,7 +272,9 @@ def test_summary_statistics_common_issues():
             'test_type': 'Validation',
             'status': 'RUN_HAS_RESULT',
             'result': 'NOT_COMPLIANT',
-            'comment': 'Country code missing'
+            'comment': 'Country code missing',
+            'actedUpon': 'dwc:countryCode=',
+            'consulted': 'dwc:countryCode='
         },
         {
             'dwc:occurrenceID': 'occ4',
@@ -286,20 +282,18 @@ def test_summary_statistics_common_issues():
             'test_type': 'Validation',
             'status': 'RUN_HAS_RESULT',
             'result': 'NOT_COMPLIANT',
-            'comment': ''  # Empty comment should be ignored
+            'comment': '',  # Empty comment should be ignored
+            'actedUpon': 'dwc:countryCode=ZZ',
+            'consulted': 'dwc:countryCode=ZZ'
         }
     ])
     
-    summary = _get_summary_stats(test_results)
+    summary = _get_summary_stats(test_results, 'occurrence')
     
-    # Check common issues
-    assert 'common_issues' in summary
-    assert 'Invalid country code format' in summary['common_issues']
-    assert summary['common_issues']['Invalid country code format'] == 2
-    assert 'Country code missing' in summary['common_issues']
-    assert summary['common_issues']['Country code missing'] == 1
-    # Empty comment should not appear
-    assert '' not in summary['common_issues']
+    # Check basic stats
+    assert summary['no_of_non_compliant_validations'] == 4
+    assert summary['no_of_tests_run'] == 1
+    assert len(summary['top_non_compliant_validations']) > 0
 
 
 def test_summary_statistics_no_validation_failures():
@@ -314,7 +308,9 @@ def test_summary_statistics_no_validation_failures():
             'test_type': 'Validation',
             'status': 'RUN_HAS_RESULT',
             'result': 'COMPLIANT',
-            'comment': 'Valid country code'
+            'comment': 'Valid country code',
+            'actedUpon': 'dwc:countryCode=US',
+            'consulted': 'dwc:countryCode=US'
         },
         {
             'dwc:occurrenceID': 'occ2',
@@ -322,16 +318,19 @@ def test_summary_statistics_no_validation_failures():
             'test_type': 'Validation',
             'status': 'RUN_HAS_RESULT',
             'result': 'COMPLIANT',
-            'comment': 'Valid country code'
+            'comment': 'Valid country code',
+            'actedUpon': 'dwc:countryCode=CA',
+            'consulted': 'dwc:countryCode=CA'
         }
     ])
     
-    summary = _get_summary_stats(test_results)
+    summary = _get_summary_stats(test_results, 'occurrence')
     
-    assert summary['validation_failures'] == 0
-    assert summary['success_rate_percent'] == 100.0
-    assert summary['failure_counts_by_test'] == {}
-    assert summary['common_issues'] == []
+    assert summary['no_of_non_compliant_validations'] == 0
+    assert summary['no_of_amendments'] == 0
+    assert summary['no_of_filled_in'] == 0
+    assert summary['no_of_issues'] == 0
+    assert len(summary['top_non_compliant_validations']) == 0
 
 
 if __name__ == "__main__":

@@ -7,6 +7,7 @@ These tests focus on the core behavior verification without complex mocking issu
 import pytest
 import json
 import base64
+import pandas as pd
 from unittest.mock import Mock, AsyncMock, patch
 from fastapi.testclient import TestClient
 
@@ -206,7 +207,20 @@ class TestRecipientHandlingFinal:
             # Setup mocks
             mock_email_service.extract_csv_attachment.return_value = ("test,csv\ndata,here", "test.csv")
             mock_csv_service.parse_csv_and_detect_core.return_value = (Mock(), "occurrence")
-            mock_bdq_service.run_tests_on_dataset = AsyncMock(return_value=Mock())
+            # Create proper test results DataFrame
+            mock_test_results = pd.DataFrame([
+                {
+                    'dwc:occurrenceID': 'occ1',
+                    'test_id': 'VALIDATION_COUNTRYCODE_VALID',
+                    'test_type': 'Validation',
+                    'status': 'RUN_HAS_RESULT',
+                    'result': 'COMPLIANT',
+                    'comment': 'Valid country code',
+                    'actedUpon': 'dwc:countryCode=US',
+                    'consulted': 'dwc:countryCode=US'
+                }
+            ])
+            mock_bdq_service.run_tests_on_dataset = AsyncMock(return_value=mock_test_results)
             mock_llm_service.generate_intelligent_summary.return_value = "<p>LLM analysis</p>"
             mock_csv_service.generate_raw_results_csv.return_value = "raw,results"
             mock_csv_service.generate_amended_dataset.return_value = "amended,dataset"

@@ -84,7 +84,9 @@ occ5,2023-01-05,BadCountry,ZZ,91.0,181.0,InvalidName,BadBasis""", "test_dataset.
             'test_type': 'Validation',
             'status': 'RUN_HAS_RESULT',
             'result': 'COMPLIANT',
-            'comment': 'Valid country code'
+            'comment': 'Valid country code',
+            'actedUpon': 'dwc:countryCode=US',
+            'consulted': 'dwc:countryCode=US'
         },
         {
             'dwc:occurrenceID': 'occ5',
@@ -92,7 +94,9 @@ occ5,2023-01-05,BadCountry,ZZ,91.0,181.0,InvalidName,BadBasis""", "test_dataset.
             'test_type': 'Validation',
             'status': 'RUN_HAS_RESULT',
             'result': 'NOT_COMPLIANT',
-            'comment': 'Invalid country code: ZZ'
+            'comment': 'Invalid country code: ZZ',
+            'actedUpon': 'dwc:countryCode=ZZ',
+            'consulted': 'dwc:countryCode=ZZ'
         },
         {
             'dwc:occurrenceID': 'occ5',
@@ -100,7 +104,9 @@ occ5,2023-01-05,BadCountry,ZZ,91.0,181.0,InvalidName,BadBasis""", "test_dataset.
             'test_type': 'Validation',
             'status': 'RUN_HAS_RESULT',
             'result': 'NOT_COMPLIANT',
-            'comment': 'Invalid coordinates: 91.0, 181.0'
+            'comment': 'Invalid coordinates: 91.0, 181.0',
+            'actedUpon': 'dwc:decimalLatitude=91.0|dwc:decimalLongitude=181.0',
+            'consulted': 'dwc:decimalLatitude=91.0|dwc:decimalLongitude=181.0'
         }
     ])
     mock_bdq_service.run_tests_on_dataset = AsyncMock(return_value=mock_test_results)
@@ -109,11 +115,18 @@ occ5,2023-01-05,BadCountry,ZZ,91.0,181.0,InvalidName,BadBasis""", "test_dataset.
     
     mock_llm_service = Mock()
     mock_llm_service.generate_intelligent_summary.return_value = "<p>BDQ Test Results for occurrence dataset: Found 3 test results with 2 validation failures.</p>"
+    mock_llm_service.create_prompt.return_value = "Test prompt"
+
+    mock_minio_service = Mock()
+    mock_minio_service.upload_dataframe.return_value = "test_results.csv"
+    mock_minio_service.upload_csv_string.return_value = "amended_dataset.csv"
+    mock_minio_service.generate_dashboard_url.return_value = "https://example.com/dashboard"
     
     # Mock the module-level services (except CSV service)
     with patch('app.main.email_service', mock_email_service), \
          patch('app.main.bdq_api_service', mock_bdq_service), \
-         patch('app.main.llm_service', mock_llm_service):
+         patch('app.main.llm_service', mock_llm_service), \
+         patch('app.main.minio_service', mock_minio_service):
         
         from app.main import _handle_email_processing
         
@@ -206,7 +219,9 @@ def test_csv_output_validation():
             'test_type': 'Validation',
             'status': 'RUN_HAS_RESULT',
             'result': 'COMPLIANT',
-            'comment': 'Valid country code'
+            'comment': 'Valid country code',
+            'actedUpon': 'dwc:countryCode=US',
+            'consulted': 'dwc:countryCode=US'
         },
         {
             'dwc:occurrenceID': 'occ2',
@@ -214,7 +229,9 @@ def test_csv_output_validation():
             'test_type': 'Validation',
             'status': 'RUN_HAS_RESULT',
             'result': 'NOT_COMPLIANT',
-            'comment': 'Invalid coordinates'
+            'comment': 'Invalid coordinates',
+            'actedUpon': 'dwc:decimalLatitude=91.0|dwc:decimalLongitude=181.0',
+            'consulted': 'dwc:decimalLatitude=91.0|dwc:decimalLongitude=181.0'
         },
         {
             'dwc:occurrenceID': 'occ3',
@@ -222,7 +239,9 @@ def test_csv_output_validation():
             'test_type': 'Amendment',
             'status': 'AMENDED',
             'result': 'dwc:eventDate=2023-01-01T00:00:00',
-            'comment': 'Standardized date format'
+            'comment': 'Standardized date format',
+            'actedUpon': 'dwc:eventDate=2023-01-01',
+            'consulted': 'dwc:eventDate=2023-01-01'
         }
     ])
     
@@ -282,7 +301,9 @@ def test_summary_statistics():
             'test_type': 'Validation',
             'status': 'RUN_HAS_RESULT',
             'result': 'COMPLIANT',
-            'comment': 'Valid country code'
+            'comment': 'Valid country code',
+            'actedUpon': 'dwc:countryCode=US',
+            'consulted': 'dwc:countryCode=US'
         },
         {
             'dwc:occurrenceID': 'occ2',
@@ -290,7 +311,9 @@ def test_summary_statistics():
             'test_type': 'Validation',
             'status': 'RUN_HAS_RESULT',
             'result': 'NOT_COMPLIANT',
-            'comment': 'Invalid country code'
+            'comment': 'Invalid country code',
+            'actedUpon': 'dwc:countryCode=ZZ',
+            'consulted': 'dwc:countryCode=ZZ'
         },
         {
             'dwc:occurrenceID': 'occ3',
@@ -298,22 +321,21 @@ def test_summary_statistics():
             'test_type': 'Amendment',
             'status': 'AMENDED',
             'result': '2023-01-01T00:00:00',
-            'comment': 'Standardized date'
+            'comment': 'Standardized date',
+            'actedUpon': 'dwc:eventDate=2023-01-01',
+            'consulted': 'dwc:eventDate=2023-01-01'
         }
     ])
     
-    summary = _get_summary_stats(test_results)
+    summary = _get_summary_stats(test_results, 'occurrence')
     
     # Verify summary statistics
-    assert summary['total_records'] == 3
-    assert summary['total_tests_run'] == 3
-    assert summary['unique_tests'] == 2
-    assert summary['validation_failures'] == 1
-    assert summary['amendments_applied'] == 1
-    assert summary['compliant_results'] == 1
-    assert summary['success_rate_percent'] == 33.3
-    assert 'VALIDATION_COUNTRYCODE_VALID' in summary['failure_counts_by_test']
-    assert summary['failure_counts_by_test']['VALIDATION_COUNTRYCODE_VALID'] == 1
+    assert summary['no_of_tests_results'] == 3
+    assert summary['no_of_tests_run'] == 2
+    assert summary['no_of_non_compliant_validations'] == 1
+    assert summary['no_of_amendments'] == 1
+    assert summary['no_of_filled_in'] == 0
+    assert summary['no_of_issues'] == 0
 
 
 if __name__ == "__main__":
