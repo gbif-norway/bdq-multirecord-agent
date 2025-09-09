@@ -502,13 +502,13 @@ header {
   display: inline-flex; 
   align-items: center; 
   justify-content: center; 
-  margin-left: 8px; 
   cursor: help; 
 }
 
 .tip i {
   color: #f59e0b;
   font-size: 14px;
+  margin-left: 8px;
 }
 
 .tip .tiptext { 
@@ -533,4 +533,32 @@ header {
 .tip:hover .tiptext { 
   opacity: 0.98; 
   visibility: visible; 
+}
+
+/* Amendment table styling */
+.amendment-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin-top: 8px;
+}
+
+.amendment-table th {
+  background: #f8fafb;
+  border-bottom: 1px solid #e5e7eb;
+  padding: 6px 8px;
+  text-align: left;
+  font-weight: 600;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.amendment-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid #f1f5f9;
+  font-size: 11px;
+}
+
+.amendment-table tr:hover td {
+  background: #f8fafb;
 }

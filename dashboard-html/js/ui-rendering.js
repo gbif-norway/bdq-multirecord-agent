@@ -1,5 +1,5 @@
 import { CONFIG } from './config.js';
-import { AGG, TG2, TOPS, FALLBACK_TOPS, getClassColor } from './data-structures.js';
+import { AGG, TG2, TOPS, FALLBACK_TOPS, AMENDMENTS, TOP_GROUPED, getClassColor } from './data-structures.js';
 import { $, fmtInt, byValDesc, escapeHtml, truncate } from './utils.js';
 
 // UI rendering functions
@@ -38,67 +38,190 @@ export function renderTopValues(label) {
   return parts.length ? `<div class="tops">${parts.join('')}</div>` : '';
 }
 
-export function listNeedsAttention() {
-  // Build arrays of tests with counts
-  const validations = [];
+export function renderAmendments() {
   const amendments = [];
-  const issues = [];
   
+  // Get all amendment tests from AGG.perTest that have actual amendments
   for (const [label, per] of AGG.perTest.entries()) {
+    if (per.type !== 'Amendment') continue;
+    
+    const amendmentData = AMENDMENTS.get(label) || { original: new Map(), amended: new Map(), total: 0 };
+    
+    // Only show tests that have actual amendments (AMENDED only)
+    const hasAmendments = (per.counts && (per.counts['AMENDED'] || 0) > 0);
+    if (!hasAmendments) continue;
+    
     const tg2 = TG2.byLabel.get(label) || {};
     const nice = tg2['prefLabel'] || label;
-    const acted = (tg2['InformationElement:ActedUpon'] || '').trim();
-    const consulted = (tg2['InformationElement:Consulted'] || '').trim();
     const desc = (tg2['Description'] || '').trim();
-    const obj = { label, nice, desc, acted, consulted, type: per.type, counts: per.counts, tg2 };
-    const c = per.counts || {};
     
-    if (per.type === 'Validation' && (c['NOT_COMPLIANT'] || 0) > 0) validations.push({ ...obj, value: c['NOT_COMPLIANT'] });
-    if (per.type === 'Amendment' && (c['AMENDED'] || 0) > 0) amendments.push({ ...obj, value: c['AMENDED'] });
-    if (per.type === 'Issue' && (c['POTENTIAL_ISSUE'] || 0) > 0) issues.push({ ...obj, value: c['POTENTIAL_ISSUE'] });
+    amendments.push({ 
+      label, 
+      nice, 
+      desc, 
+      total: amendmentData.total,
+      original: amendmentData.original,
+      amended: amendmentData.amended,
+      tg2 
+    });
   }
   
-  validations.sort(byValDesc); 
-  amendments.sort(byValDesc); 
-  issues.sort(byValDesc);
+  amendments.sort((a, b) => b.total - a.total);
   
-  $('#countValidations').textContent = fmtInt(validations.length);
-  $('#countAmendments').textContent = fmtInt(amendments.length);
-  $('#countIssues').textContent = fmtInt(issues.length);
-
-  function mkItem(entry) {
+  function mkAmendmentItem(entry) {
     const el = document.createElement('div');
     el.className = 'list-item color-left';
     const cls = (entry.tg2 && entry.tg2['IE Class']) ? entry.tg2['IE Class'] : 'Unknown';
     const color = getClassColor(cls);
     el.style.borderLeftColor = color;
+    
+    // Create data affected table
+    const tableRows = [];
+    const allValues = new Set([...entry.original.keys(), ...entry.amended.keys()]);
+    
+    for (const value of allValues) {
+      const originalCount = entry.original.get(value) || 0;
+      const amendedCount = entry.amended.get(value) || 0;
+      const totalCount = originalCount + amendedCount;
+      
+      if (totalCount > 0) {
+        // Show original value, amended value (if different), and count
+        const amendedValue = entry.amended.get(value) || value;
+        const isAmended = amendedValue !== value;
+        
+        tableRows.push(`
+          <tr>
+            <td>${escapeHtml(value)}</td>
+            <td>${isAmended ? escapeHtml(amendedValue) : '<span class="muted">No change</span>'}</td>
+            <td>${fmtInt(totalCount)}</td>
+          </tr>
+        `);
+      }
+    }
+    
+    const dataTable = tableRows.length > 0 ? `
+      <div style="margin-top: 12px;">
+        <h4 style="margin: 0 0 8px 0; font-size: 14px; font-weight: 600;">Data affected</h4>
+        <table class="amendment-table">
+          <thead>
+            <tr>
+              <th>Original</th>
+              <th>Amendment</th>
+              <th>Number of rows affected</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${tableRows.join('')}
+          </tbody>
+        </table>
+      </div>
+    ` : '<div class="muted" style="margin-top: 12px;">No amendment data available.</div>';
+    
+    // Get total records tested for this amendment test
+    const perTest = AGG.perTest.get(entry.label) || { counts: {} };
+    const totalTested = Object.values(perTest.counts).reduce((sum, count) => sum + (count || 0), 0);
+    
     el.innerHTML = `
       <div class="item-title">
         <div><strong>${escapeHtml(entry.nice)}</strong> <span class="muted">(${escapeHtml(entry.label)})</span></div>
-        <span class="badge">${fmtInt(entry.value)}</span>
+        <span class="badge">${fmtInt(totalTested)}</span>
       </div>
       <div class="muted" style="margin-top:6px;">${escapeHtml(truncate(entry.desc, CONFIG.MAX_DESCRIPTION_LENGTH))}</div>
-      <div class="chips" style="margin-top:8px;">
-        ${renderIEChips(entry.acted, 'Acted upon')}
-        ${renderIEChips(entry.consulted, 'Consulted')}
-      </div>
-      ${renderTopValues(entry.label)}
+      ${dataTable}
     `;
     el.addEventListener('click', () => showTestDetails(entry.label));
     return el;
   }
   
-  const lv = $('#listValidations'); 
-  lv.innerHTML = ''; 
-  validations.forEach(v => lv.appendChild(mkItem(v)));
-  
   const la = $('#listAmendments');  
   la.innerHTML = ''; 
-  amendments.forEach(v => la.appendChild(mkItem(v)));
   
-  const li = $('#listIssues');      
-  li.innerHTML = ''; 
-  issues.forEach(v => li.appendChild(mkItem(v)));
+  if (amendments.length === 0) {
+    la.innerHTML = '<div class="muted" style="text-align: center; padding: 20px;">None of the BDQ Tests generated any auto amendments which could be applied to your dataset.</div>';
+  } else {
+    amendments.forEach(v => la.appendChild(mkAmendmentItem(v)));
+  }
+}
+
+export function renderValidations() {
+  const validations = [];
+  
+  // Get all validation tests from AGG.perTest that have NOT_COMPLIANT results
+  for (const [label, per] of AGG.perTest.entries()) {
+    if (per.type !== 'Validation') continue;
+    
+    // Only show tests that have NOT_COMPLIANT results
+    const hasNotCompliant = (per.counts && (per.counts['NOT_COMPLIANT'] || 0) > 0);
+    if (!hasNotCompliant) continue;
+    
+    const tg2 = TG2.byLabel.get(label) || {};
+    const nice = tg2['prefLabel'] || label;
+    const desc = (tg2['Description'] || '').trim();
+    
+    // Get top grouped data for this validation test
+    const topGroupedData = [];
+    for (const [groupKey, count] of TOP_GROUPED.validations.entries()) {
+      if (groupKey.endsWith(`|${label}`)) {
+        const [actedUpon, consulted] = groupKey.split('|');
+        topGroupedData.push({ actedUpon, consulted, count });
+      }
+    }
+    topGroupedData.sort((a, b) => b.count - a.count);
+    
+    validations.push({ 
+      label, 
+      nice, 
+      desc, 
+      notCompliantCount: per.counts['NOT_COMPLIANT'] || 0,
+      topGroupedData,
+      tg2 
+    });
+  }
+  
+  validations.sort((a, b) => b.notCompliantCount - a.notCompliantCount);
+  
+  function mkValidationItem(entry) {
+    const el = document.createElement('div');
+    el.className = 'list-item color-left';
+    const cls = (entry.tg2 && entry.tg2['IE Class']) ? entry.tg2['IE Class'] : 'Unknown';
+    const color = getClassColor(cls);
+    el.style.borderLeftColor = color;
+    
+    // Create top grouped data display
+    const topGroupedHtml = entry.topGroupedData.length > 0 ? `
+      <div style="margin-top: 12px;">
+        <h4 style="margin: 0 0 8px 0; font-size: 14px; font-weight: 600;">Most common issues:</h4>
+        <div style="font-size: 12px;">
+          ${entry.topGroupedData.slice(0, 5).map(item => 
+            `<div style="margin: 4px 0;">
+              <span class="badge" style="font-size: 11px;">${fmtInt(item.count)}</span>
+              ${escapeHtml(item.actedUpon)} ${item.consulted ? `(${escapeHtml(item.consulted)})` : ''}
+            </div>`
+          ).join('')}
+        </div>
+      </div>
+    ` : '';
+    
+    el.innerHTML = `
+      <div class="item-title">
+        <div><strong>${escapeHtml(entry.nice)}</strong> <span class="muted">(${escapeHtml(entry.label)})</span></div>
+        <span class="badge">${fmtInt(entry.notCompliantCount)}</span>
+      </div>
+      <div class="muted" style="margin-top:6px;">${escapeHtml(truncate(entry.desc, CONFIG.MAX_DESCRIPTION_LENGTH))}</div>
+      ${topGroupedHtml}
+    `;
+    el.addEventListener('click', () => showTestDetails(entry.label));
+    return el;
+  }
+  
+  const lv = $('#listValidations');  
+  lv.innerHTML = ''; 
+  
+  if (validations.length === 0) {
+    lv.innerHTML = '<div class="muted" style="text-align: center; padding: 20px;">All validation tests passed successfully.</div>';
+  } else {
+    validations.forEach(v => lv.appendChild(mkValidationItem(v)));
+  }
 }
 
 // Modal functions
@@ -156,43 +279,3 @@ export function showTestDetails(label) {
   openModalContent(`${escapeHtml(nice)} ( ${escapeHtml(label)} )`, msg);
 }
 
-// Build test catalogue table with Tabulator
-export function buildCatalogue() {
-  const testsPresent = new Set(AGG.testIds);
-  const rows = [];
-  for (const [label, tg2] of TG2.byLabel.entries()) {
-    if (!testsPresent.has(label)) continue; // only those we ran
-    rows.push({
-      label,
-      prefLabel: tg2['prefLabel'] || '',
-      ieClass: tg2['IE Class'] || '',
-      acted: tg2['InformationElement:ActedUpon'] || '',
-      consulted: tg2['InformationElement:Consulted'] || '',
-      expected: tg2['ExpectedResponse'] || '',
-      description: tg2['Description'] || '',
-      notes: tg2['Notes'] || '',
-      examples: tg2['Examples'] || '',
-    });
-  }
-  const table = new Tabulator('#catalogue', {
-    data: rows,
-    layout: 'fitColumns',
-    height: `${CONFIG.TABLE_HEIGHT}px`,
-    pagination: true,
-    paginationSize: CONFIG.PAGINATION_SIZE,
-    movableColumns: true,
-    placeholder: CONFIG.ERROR_MESSAGES.NO_TESTS_FOUND,
-    columns: [
-      { title: 'Label', field: 'label', width: 230, headerFilter: 'input' },
-      { title: 'Name', field: 'prefLabel', widthGrow: 2, headerFilter: 'input' },
-      { title: 'IE Class', field: 'ieClass', width: 180, headerFilter: 'input' },
-      { title: 'Acted upon', field: 'acted', width: 200 },
-      { title: 'Consulted', field: 'consulted', width: 200 },
-      { title: 'Expected response', field: 'expected', widthGrow: 2 },
-      { title: 'Description', field: 'description', widthGrow: 3 },
-      { title: 'Notes', field: 'notes', widthGrow: 2 },
-    ],
-    rowClick: (e, row) => showTestDetails(row.getData().label),
-  });
-  return table;
-}

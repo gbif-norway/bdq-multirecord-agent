@@ -13,14 +13,10 @@ export function buildNeedsChart() {
   const amended = stacks.map(s => s.AMENDED || 0);
   const potential = stacks.map(s => s.POTENTIAL_ISSUE || 0);
   
-  // Create legend chips for IE Class colors
+  // Clear legend chips
   const legendHost = document.getElementById('classLegend');
   if (legendHost) {
-    const items = classes.map(cls => {
-      const col = getClassColor(cls);
-      return `<span class="legend-chip"><span class="legend-dot" style="background:${col}"></span>${escapeHtml(cls)}</span>`;
-    }).join(' ');
-    legendHost.innerHTML = items || '<div class="muted">No classes to show.</div>';
+    legendHost.innerHTML = '';
   }
 
   const data = {

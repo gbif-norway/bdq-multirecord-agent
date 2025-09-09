@@ -27,6 +27,17 @@ export const TOPS = new Map(); // label -> Map(fieldHeader -> Map(value -> count
 // Fallback values from results comments when core fields are unavailable
 export const FALLBACK_TOPS = new Map(); // label -> Map(fieldToken -> Map(value -> count))
 
+// Amendment data tracking
+export const AMENDMENTS = new Map(); // label -> { original: Map(value -> count), amended: Map(value -> count), total: number }
+
+// Top grouped data tracking (similar to Python _get_top_grouped)
+export const TOP_GROUPED = {
+  amendments: new Map(), // groupKey -> count
+  validations: new Map(), // groupKey -> count
+  issues: new Map(), // groupKey -> count
+  filledIn: new Map() // groupKey -> count
+};
+
 // Data management functions
 export function getPerTest(label) {
   if (!AGG.perTest.has(label)) {
@@ -58,6 +69,13 @@ export function getClassColor(cls) {
   return CLASS_COLORS.get(cls);
 }
 
+export function getAmendmentData(label) {
+  if (!AMENDMENTS.has(label)) {
+    AMENDMENTS.set(label, { original: new Map(), amended: new Map(), total: 0 });
+  }
+  return AMENDMENTS.get(label);
+}
+
 export function resetDataStructures() {
   AGG.recordIds.clear(); 
   AGG.testIds.clear(); 
@@ -66,5 +84,11 @@ export function resetDataStructures() {
   ATTENTION.byTest.clear(); 
   ATTENTION.byRecord.clear(); 
   TOPS.clear();
+  FALLBACK_TOPS.clear();
+  AMENDMENTS.clear();
+  TOP_GROUPED.amendments.clear();
+  TOP_GROUPED.validations.clear();
+  TOP_GROUPED.issues.clear();
+  TOP_GROUPED.filledIn.clear();
   AGG.totals = { rows: 0, prerequisites: 0, pass: 0, considered: 0, amended: 0, validationCompliant: 0, validationNotCompliant: 0, potentialIssues: 0 };
 }

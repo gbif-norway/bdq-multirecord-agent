@@ -1,5 +1,5 @@
 import { CONFIG } from './config.js';
-import { TG2, AGG, IE_CLASS_COUNTS, ATTENTION, TOPS, FALLBACK_TOPS, getPerTest, addAttention, getIeClassCounts } from './data-structures.js';
+import { TG2, AGG, IE_CLASS_COUNTS, ATTENTION, TOPS, FALLBACK_TOPS, AMENDMENTS, TOP_GROUPED, getPerTest, addAttention, getIeClassCounts, getAmendmentData } from './data-structures.js';
 import { normalizeId, normalizeValue, inc } from './utils.js';
 import { withErrorHandling, validateUrl, AppError } from './error-handling.js';
 
@@ -197,7 +197,7 @@ export async function loadResults(url) {
             AGG.totals.considered++;
             if (passByType(testType, outcome)) AGG.totals.pass++;
           }
-          if (testType === 'Amendment' && (outcome === 'AMENDED' || outcome === 'FILLED_IN')) AGG.totals.amended++;
+          if (testType === 'Amendment' && outcome === 'AMENDED') AGG.totals.amended++;
           
           // Track validation-specific metrics
           if (testType === 'Validation') {
@@ -207,6 +207,60 @@ export async function loadResults(url) {
           
           // Track potential issues
           if (testType === 'Issue' && outcome === 'POTENTIAL_ISSUE') AGG.totals.potentialIssues++;
+          
+          // Track top grouped data (similar to Python _get_top_grouped)
+          const actedUpon = (row['actedUpon'] || '').trim();
+          const consulted = (row['consulted'] || '').trim();
+          const groupKey = `${actedUpon}|${consulted}|${label}`;
+          
+          if (testType === 'Amendment' && outcome === 'AMENDED') {
+            inc(TOP_GROUPED.amendments, groupKey);
+          } else if (testType === 'Validation' && outcome === 'NOT_COMPLIANT') {
+            inc(TOP_GROUPED.validations, groupKey);
+          } else if (testType === 'Issue' && outcome === 'POTENTIAL_ISSUE') {
+            inc(TOP_GROUPED.issues, groupKey);
+          }
+          
+          // Track amendment data for all Amendment test types
+          if (testType === 'Amendment') {
+            const amendmentData = getAmendmentData(label);
+            amendmentData.total++;
+            
+            // Parse the result string to extract amended values (for AMENDED only)
+            const resultStr = (row['result'] || '').trim();
+            if (resultStr && outcome === 'AMENDED') {
+              const parts = resultStr.split('|');
+              for (const part of parts) {
+                const idx = part.indexOf('=');
+                if (idx > 0) {
+                  const field = part.slice(0, idx).trim();
+                  const value = normalizeValue(part.slice(idx + 1));
+                  if (value) {
+                    // This is the amended value
+                    inc(amendmentData.amended, `${field}: ${value}`);
+                  }
+                }
+              }
+            }
+            
+            // Parse the actedUpon field to get original values (for all amendment tests)
+            const actedUpon = (row['actedUpon'] || '').trim();
+            if (actedUpon) {
+              const parts = actedUpon.split('|');
+              for (const part of parts) {
+                const idx = part.indexOf('=');
+                if (idx > 0) {
+                  const field = part.slice(0, idx).trim();
+                  const value = normalizeValue(part.slice(idx + 1));
+                  if (value) {
+                    // This is the original value
+                    inc(amendmentData.original, `${field}: ${value}`);
+                  }
+                }
+              }
+            }
+            
+          }
 
           const tg2 = TG2.byLabel.get(label);
           const ieClass = tg2 ? (tg2['IE Class'] || 'Unknown') : 'Unknown';

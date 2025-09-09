@@ -4,7 +4,7 @@ import { $, showToast, getParam } from './js/utils.js';
 import { resetDataStructures } from './js/data-structures.js';
 import { loadTG2, loadResults, loadCoreData } from './js/data-processing.js';
 import { buildNeedsChart } from './js/charts.js';
-import { renderKPIs, listNeedsAttention, buildCatalogue, closeModal } from './js/ui-rendering.js';
+import { renderKPIs, renderAmendments, renderValidations, closeModal } from './js/ui-rendering.js';
 import { computeFileNameTitle, guessResultsUrlFromParam, guessDataUrlFromParam, guessTG2Url } from './js/url-handling.js';
 import { withErrorHandling, handleError } from './js/error-handling.js';
 
@@ -37,35 +37,24 @@ async function run(csvUrl, dataUrl) {
     renderKPIs();
     // Chart
     buildNeedsChart();
-    // Needs attention lists
-    listNeedsAttention();
+    // Amendments list
+    renderAmendments();
+    // Validations list
+    renderValidations();
     
     // Attempt to load core data for top values
     if (dataUrl) {
       try {
         showToast('Analyzing common values…');
         await loadCoreData(dataUrl);
-        // re-render lists to include tops
-        listNeedsAttention();
+        // re-render sections to include tops
+        renderAmendments();
+        renderValidations();
       } catch (e) {
         console.warn('Core data not available or failed:', e);
         showToast('Core data not loaded; common values unavailable.', { ms: 3000 });
       }
     }
-    
-    // Catalogue
-    // Ensure Tabulator is loaded before use
-    if (typeof Tabulator === 'undefined') {
-      // lazy-load Tabulator if not already present (e.g., CDN hiccup)
-      await new Promise((resolve, reject) => {
-        const s = document.createElement('script');
-        s.src = 'https://unpkg.com/tabulator-tables@5.5.2/dist/js/tabulator.min.js';
-        s.onload = resolve; 
-        s.onerror = reject; 
-        document.head.appendChild(s);
-      });
-    }
-    buildCatalogue();
     showToast('Report ready');
   }, 'Loading report').catch(error => {
     $('#fileName').textContent = 'Load error';
@@ -73,12 +62,6 @@ async function run(csvUrl, dataUrl) {
   });
 }
 
-// Load Tabulator JS up front (non-blocking)
-(function preloadTabulator() {
-  const s = document.createElement('script');
-  s.src = 'https://unpkg.com/tabulator-tables@5.5.2/dist/js/tabulator.min.js';
-  document.head.appendChild(s);
-})();
 
 // Event listeners
 window.addEventListener('DOMContentLoaded', main);

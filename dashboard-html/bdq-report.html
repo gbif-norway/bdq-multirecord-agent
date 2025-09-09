@@ -8,8 +8,6 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-  <!-- Tabulator (for searchable test catalogue) -->
-  <link href="https://unpkg.com/tabulator-tables@5.5.2/dist/css/tabulator.min.css" rel="stylesheet">
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <!-- PapaParse -->
@@ -47,51 +45,29 @@
     </section>
 
     <section class="section">
-      <h2>Needs attention <span class="tip"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><span class="tiptext">
-        <strong>What counts as “needs attention”?</strong><br/>
+      <h2 class="tip">Needs attention <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i><span class="tiptext">
+        <strong>What counts as "needs attention"?</strong><br/>
         • Validation tests: result is NOT_COMPLIANT<br/>
         • Amendment tests: result is AMENDED (a change is proposed)<br/>
         • Issue tests: result is POTENTIAL_ISSUE
-      </span></span></h2>
+      </span></h2>
       <div class="card">
         <div class="chart-wrap"><canvas id="needsChart" aria-label="Attention needed by data area" role="img"></canvas></div>
         <div id="classLegend" style="margin-top:8px;"></div>
-        <div class="footer-note">Shows results needing attention by data area: NOT_COMPLIANT (validations), AMENDED (amendments), POTENTIAL_ISSUE (issue tests).</div>
       </div>
     </section>
 
     <section class="section">
-      <h2>Needs attention</h2>
-      <div class="grid-3">
-        <div class="card">
-          <div class="item-title" style="margin-bottom:10px;">
-            <div><strong>Validation</strong> (NOT_COMPLIANT)</div>
-            <span class="pill" id="countValidations">–</span>
-          </div>
-          <div class="list" id="listValidations"></div>
-        </div>
-        <div class="card">
-          <div class="item-title" style="margin-bottom:10px;">
-            <div><strong>Amendment</strong> (AMENDED)</div>
-            <span class="pill" id="countAmendments">–</span>
-          </div>
-          <div class="list" id="listAmendments"></div>
-        </div>
-        <div class="card">
-          <div class="item-title" style="margin-bottom:10px;">
-            <div><strong>Issue</strong> (POTENTIAL_ISSUE)</div>
-            <span class="pill" id="countIssues">–</span>
-          </div>
-          <div class="list" id="listIssues"></div>
-        </div>
-      </div>
-    </section>
-
-    <section class="section">
-      <h2>What was tested</h2>
+      <h2><i class="fa-solid fa-edit" style="color: #f59e0b; margin-right: 8px;"></i>Amendments</h2>
       <div class="card">
-        <div id="catalogue" style="border-radius:10px; overflow:hidden;"></div>
-        <div class="footer-note">This table describes the tests present in the results file using TG2 metadata. Click any test in the lists above to see details.</div>
+        <div class="list" id="listAmendments"></div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2><i class="fa-solid fa-check-circle" style="color: #dc2626; margin-right: 8px;"></i>Validations</h2>
+      <div class="card">
+        <div class="list" id="listValidations"></div>
       </div>
     </section>
 
