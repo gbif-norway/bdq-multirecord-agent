@@ -32,23 +32,19 @@ class CSVService:
 
         This ensures BDQ mappings that expect 'dwc:' names resolve without duplicating data.
         """
-        try:
-            renamed = 0
-            new_columns = []
-            for col in df.columns:
-                if not col.startswith('dwc:'):
-                    new_columns.append(f'dwc:{col}')
-                    renamed += 1
-                else:
-                    new_columns.append(col)
-            
-            if renamed:
-                df.columns = new_columns
-                log(f"Renamed {renamed} columns to have 'dwc:' prefix to match BDQ mappings")
-            return df
-        except Exception as e:
-            log(f"Error ensuring dwc-prefixed columns: {e}", "WARNING")
-            return df
+        renamed = 0
+        new_columns = []
+        for col in df.columns:
+            if not col.startswith('dwc:'):
+                new_columns.append(f'dwc:{col}')
+                renamed += 1
+            else:
+                new_columns.append(col)
+        
+        if renamed:
+            df.columns = new_columns
+            log(f"Renamed {renamed} columns to have 'dwc:' prefix to match BDQ mappings")
+        return df
     
     def generate_raw_results_csv(self, results_df):
         """Generate CSV with raw BDQ test results"""

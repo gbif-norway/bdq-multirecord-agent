@@ -31,110 +31,96 @@ class EmailService:
         """Extract CSV attachment from email data
         Returns (csv_content, original_filename)
         """
-        try:
-            csv_attachments = []
+        csv_attachments = []
 
-            for attachment in email_data['attachments']:
-                fn = (attachment.get('filename') or '').lower()
-                mt = (attachment.get('mimeType') or '').lower()
-                if (
-                    fn.endswith(('.csv', '.tsv'))
-                    or 'csv' in mt
-                    or 'text/plain' in mt
-                    or 'tab-separated' in mt
-                ):
-                    csv_attachments.append(attachment)
+        for attachment in email_data['attachments']:
+            fn = (attachment.get('filename') or '').lower()
+            mt = (attachment.get('mimeType') or '').lower()
+            if (
+                fn.endswith(('.csv', '.tsv'))
+                or 'csv' in mt
+                or 'text/plain' in mt
+                or 'tab-separated' in mt
+            ):
+                csv_attachments.append(attachment)
 
-            # Try attachments in order; skip empties/undecodable
-            for csv_attachment in csv_attachments:
-                b64_raw = csv_attachment['contentBase64']
-                b64 = b64_raw.strip()
-                original_filename = csv_attachment.get('filename', 'unknown_file')
+        # Try attachments in order; skip empties/undecodable
+        for csv_attachment in csv_attachments:
+            b64_raw = csv_attachment['contentBase64']
+            b64 = b64_raw.strip()
+            original_filename = csv_attachment.get('filename', 'unknown_file')
 
-                log(
-                    f"CSV attachment candidate: filename={original_filename}, "
-                    f"mime={csv_attachment.get('mimeType')}, size={csv_attachment.get('size')}, b64_len={len(b64)}"
-                )
+            log(
+                f"CSV attachment candidate: filename={original_filename}, "
+                f"mime={csv_attachment.get('mimeType')}, size={csv_attachment.get('size')}, b64_len={len(b64)}"
+            )
 
-                # Robust base64/url-safe base64 decode
-                pad = (-len(b64)) % 4
-                if pad:
-                    b64 += '=' * pad
+            # Robust base64/url-safe base64 decode
+            pad = (-len(b64)) % 4
+            if pad:
+                b64 += '=' * pad
+            try:
+                decoded_bytes = base64.urlsafe_b64decode(b64.encode('utf-8'))
+            except Exception:
                 try:
-                    decoded_bytes = base64.urlsafe_b64decode(b64.encode('utf-8'))
-                except Exception:
-                    try:
-                        decoded_bytes = base64.b64decode(b64.encode('utf-8'))
-                    except Exception as decode_err:
-                        log(
-                            f"Failed to decode base64 for {original_filename}: {decode_err}"
-                        )
-                        continue
-
-                try:
-                    csv_content = decoded_bytes.decode('utf-8', errors='replace')
-                except Exception as enc_err:
+                    decoded_bytes = base64.b64decode(b64.encode('utf-8'))
+                except Exception as decode_err:
                     log(
-                        f"Failed to decode bytes to UTF-8 for {original_filename}: {enc_err}"
+                        f"Failed to decode base64 for {original_filename}: {decode_err}"
                     )
                     continue
 
+            try:
+                csv_content = decoded_bytes.decode('utf-8', errors='replace')
+            except Exception as enc_err:
                 log(
-                    f"Extracted CSV attachment: {original_filename} ({len(csv_content)} chars)"
+                    f"Failed to decode bytes to UTF-8 for {original_filename}: {enc_err}"
                 )
-                return csv_content, original_filename
+                continue
 
-            log("All CSV-like attachments were empty or undecodable", "WARNING")
-            return None, None
+            log(
+                f"Extracted CSV attachment: {original_filename} ({len(csv_content)} chars)"
+            )
+            return csv_content, original_filename
 
-        except Exception as e:
-            log(f"Error extracting CSV attachment: {e}", "ERROR")
-            return None, None
+        log("All CSV-like attachments were empty or undecodable", "WARNING")
+        return None, None
     
     async def send_reply(self, email_data: dict, body: str, attachments: Optional[List[dict]] = None):
         """Send reply email with optional attachments"""
-        try:
-            if not self.gmail_send_endpoint:
-                log("GMAIL_SEND endpoint not configured", "ERROR")
-                return
-            
-            if not self.hmac_secret:
-                log("HMAC_SECRET not configured", "ERROR")
-                return
-            
-            reply_data = {
-                "threadId": email_data.get('threadId'),
-                "htmlBody": body,
-                "attachments": attachments or []
-            }
-            log(f"Reply data: {reply_data}")
-            
-            # Convert to JSON string for HMAC
-            body_json = json.dumps(reply_data)
-            signature = self._generate_hmac_signature(body_json)
-            
-            response = requests.post(
-                self.gmail_send_endpoint,
-                params={"X-Signature": signature, "signature": signature},  # Apps Script can't reliably read headers
-                data=body_json,
-                headers={
-                    "Content-Type": "application/json",
-                    "X-Signature": signature
-                },
-                timeout=30
-            )
-            response.raise_for_status()
-            log(
-                f"Sent reply to {email_data.get('headers').get('from')}; status={response.status_code}; body={(response.text or '')[:200]}"
-            )
-            
-        except Exception as e:
-            try:
-                status = getattr(e.response, 'status_code', None) if hasattr(e, 'response') else None
-                text = getattr(e.response, 'text', '') if hasattr(e, 'response') else ''
-                log(f"Error sending reply: {e}; status={status}; body={(text or '')[:200]}", "ERROR")
-            except Exception:
-                log(f"Error sending reply: {e}", "ERROR")
+        if not self.gmail_send_endpoint:
+            log("GMAIL_SEND endpoint not configured", "ERROR")
+            return
+        
+        if not self.hmac_secret:
+            log("HMAC_SECRET not configured", "ERROR")
+            return
+        
+        reply_data = {
+            "threadId": email_data.get('threadId'),
+            "htmlBody": body,
+            "attachments": attachments or []
+        }
+        log(f"Reply data: {reply_data}")
+        
+        # Convert to JSON string for HMAC
+        body_json = json.dumps(reply_data)
+        signature = self._generate_hmac_signature(body_json)
+        
+        response = requests.post(
+            self.gmail_send_endpoint,
+            params={"X-Signature": signature, "signature": signature},  # Apps Script can't reliably read headers
+            data=body_json,
+            headers={
+                "Content-Type": "application/json",
+                "X-Signature": signature
+            },
+            timeout=30
+        )
+        response.raise_for_status()
+        log(
+            f"Sent reply to {email_data.get('headers').get('from')}; status={response.status_code}; body={(response.text or '')[:200]}"
+        )
     
     async def send_error_reply(self, email_data: dict, error_message: str):
         """Send error reply email"""

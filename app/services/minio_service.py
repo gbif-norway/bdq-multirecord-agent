@@ -21,18 +21,14 @@ class MinIOService:
             log("MINIO_SECRET environment variable not set - MinIO uploads will be disabled", "WARNING")
             return
         
-        try:
-            # Initialize MinIO client
-            self.client = Minio(
-                "storage.gbif-no.sigma2.no",
-                access_key=self.username,
-                secret_key=self.password,
-                secure=True
-            )
-            log("MinIO client initialized successfully")
-        except Exception as e:
-            log(f"Failed to initialize MinIO client: {e}", "ERROR")
-            self.client = None
+        # Initialize MinIO client
+        self.client = Minio(
+            "storage.gbif-no.sigma2.no",
+            access_key=self.username,
+            secret_key=self.password,
+            secure=True
+        )
+        log("MinIO client initialized successfully")
     
     def _generate_filename(self, prefix: str, original_name: str, extension: str = ".csv") -> str:
         """Generate unique filename with timestamp"""
@@ -50,40 +46,37 @@ class MinIOService:
             log("MinIO client not available - skipping DataFrame upload", "WARNING")
             return None
             
-        try:
-            # Convert DataFrame to CSV with utf8 encoding
-            csv_buffer = io.StringIO()
-            df.to_csv(csv_buffer, index=False, encoding='utf-8')
-            csv_content = csv_buffer.getvalue()
-            
-            # Generate filename based on type
-            if file_type == "original":
-                filename = self._generate_filename("original", original_filename)
-            elif file_type == "raw_results":
-                filename = self._generate_filename("results", original_filename)
-            elif file_type == "amended":
-                filename = self._generate_filename("amended", original_filename)
-            else:
-                log(f"Unknown file type: {file_type}", "ERROR")
-                return None
-            
-            object_path = f"{self.base_path}/{filename}"
-            
-            # Upload to MinIO
-            self.client.put_object(
-                bucket_name=self.bucket_name,
-                object_name=object_path,
-                data=io.BytesIO(csv_content.encode('utf-8')),
-                length=len(csv_content.encode('utf-8')),
-                content_type='text/csv'
-            )
-            
-            log(f"Uploaded {file_type} file to: {object_path}")
-            return filename  # Return just the filename for URL construction
-            
-        except Exception as e:
-            log(f"Failed to upload {file_type} file: {e}", "ERROR")
+        # Convert DataFrame to CSV with utf8 encoding
+        csv_buffer = io.StringIO()
+        df.to_csv(csv_buffer, index=False, encoding='utf-8')
+        csv_content = csv_buffer.getvalue()
+        
+        # Generate filename based on type
+        if file_type == "original":
+            filename = self._generate_filename("original", original_filename)
+        elif file_type == "raw_results":
+            filename = self._generate_filename("results", original_filename)
+        elif file_type == "amended":
+            filename = self._generate_filename("amended", original_filename)
+        elif file_type == "unique_results":
+            filename = self._generate_filename("unique_results", original_filename)
+        else:
+            log(f"Unknown file type: {file_type}", "ERROR")
             return None
+        
+        object_path = f"{self.base_path}/{filename}"
+        
+        # Upload to MinIO
+        self.client.put_object(
+            bucket_name=self.bucket_name,
+            object_name=object_path,
+            data=io.BytesIO(csv_content.encode('utf-8')),
+            length=len(csv_content.encode('utf-8')),
+            content_type='text/csv'
+        )
+        
+        log(f"Uploaded {file_type} file to: {object_path}")
+        return filename  # Return just the filename for URL construction
     
     def upload_csv_string(self, csv_content: str, original_filename: str, file_type: str) -> Optional[str]:
         """Upload a CSV string directly to MinIO
@@ -93,33 +86,30 @@ class MinIOService:
             log("MinIO client not available - skipping CSV string upload", "WARNING")
             return None
             
-        try:
-            # Generate filename based on type
-            if file_type == "raw_results":
-                filename = self._generate_filename("results", original_filename)
-            elif file_type == "amended":
-                filename = self._generate_filename("amended", original_filename)
-            else:
-                log(f"Unknown file type: {file_type}", "ERROR")
-                return None
-            
-            object_path = f"{self.base_path}/{filename}"
-            
-            # Upload to MinIO
-            self.client.put_object(
-                bucket_name=self.bucket_name,
-                object_name=object_path,
-                data=io.BytesIO(csv_content.encode('utf-8')),
-                length=len(csv_content.encode('utf-8')),
-                content_type='text/csv'
-            )
-            
-            log(f"Uploaded {file_type} file to: {object_path}")
-            return filename  # Return just the filename for URL construction
-            
-        except Exception as e:
-            log(f"Failed to upload {file_type} file: {e}", "ERROR")
+        # Generate filename based on type
+        if file_type == "raw_results":
+            filename = self._generate_filename("results", original_filename)
+        elif file_type == "amended":
+            filename = self._generate_filename("amended", original_filename)
+        elif file_type == "unique_results":
+            filename = self._generate_filename("unique_results", original_filename)
+        else:
+            log(f"Unknown file type: {file_type}", "ERROR")
             return None
+        
+        object_path = f"{self.base_path}/{filename}"
+        
+        # Upload to MinIO
+        self.client.put_object(
+            bucket_name=self.bucket_name,
+            object_name=object_path,
+            data=io.BytesIO(csv_content.encode('utf-8')),
+            length=len(csv_content.encode('utf-8')),
+            content_type='text/csv'
+        )
+        
+        log(f"Uploaded {file_type} file to: {object_path}")
+        return filename  # Return just the filename for URL construction
     
     def generate_dashboard_url(self, results_csv_name: str, original_csv_name: str) -> str:
         """Generate dashboard URL for viewing breakdown report"""

@@ -61,57 +61,70 @@ class BDQAPIService:
         log(f"Running {len(applicable_tests)} tests: [{', '.join(_shorten_test_id(test.id) for test in applicable_tests)}]")
 
         for test in applicable_tests:
-            try:
-                # Get a df which is a subset of the main df with unique items for testing for this particular test (e.g. just countryCode, or decimalLatitude and decimalLongitude and countryCode)
-                test_columns = test.actedUpon + test.consulted
-                unique_test_candidates = (
-                    df[test_columns]
-                    .drop_duplicates()
-                    .reset_index(drop=True)
-                    .replace([np.nan, np.inf, -np.inf], "")
-                    .astype(str)
-                )
-                unique_test_candidates_batch_request = [
-                    {"id": test.id, "params": row}
-                    for row in unique_test_candidates.to_dict(orient="records")
-                ]
-                
-                # Call batch endpoint
-                try:
-                    api_start_time = time.time()
-                    batch_response = requests.post(self.batch_endpoint, json=unique_test_candidates_batch_request, timeout=1800)
-                    batch_response.raise_for_status()
-                    batch_results = batch_response.json()
-                    api_duration = time.time() - api_start_time
-                except Exception as e:
-                    log(f"ERROR: Failed to run test {test.id}: {str(e)}", "ERROR")
-                    continue
+            # Get a df which is a subset of the main df with unique items for testing for this particular test (e.g. just countryCode, or decimalLatitude and decimalLongitude and countryCode)
+            test_columns = test.actedUpon + test.consulted
+            unique_test_candidates = (
+                df[test_columns]
+                .drop_duplicates()
+                .reset_index(drop=True)
+                .replace([np.nan, np.inf, -np.inf], "")
+                .astype(str)
+            )
+            unique_test_candidates_batch_request = [
+                {"id": test.id, "params": row}
+                for row in unique_test_candidates.to_dict(orient="records")
+            ]
+            
+            # Call batch endpoint
+            api_start_time = time.time()
+            batch_response = requests.post(self.batch_endpoint, json=unique_test_candidates_batch_request, timeout=1800)
+            batch_response.raise_for_status()
+            batch_results = batch_response.json()
+            api_duration = time.time() - api_start_time
 
-                # Create results df for unique combinations
-                unique_results_df = pd.DataFrame(batch_results).fillna("")
-                unique_results_df['test_id'] = test.id
-                unique_results_df['test_type'] = test.type
+            # Create results df for unique combinations
+            unique_results_df = pd.DataFrame(batch_results).fillna("")
+            unique_results_df['test_id'] = test.id
+            unique_results_df['test_type'] = test.type
+            
+            # Combine unique test data with results
+            unique_with_results = pd.concat([unique_test_candidates, unique_results_df], axis=1)
+            
+            # Merge results back to original dataframe to get one row per test per original row
+            expanded_results = df.merge(
+                unique_with_results, 
+                on=test_columns, 
+                how='left'
+            )
+            
+            # Select only the required columns: occurrenceID/taxonID, test_id, test_type, status, result, comment, actedUpon, consulted
+            id_column = f'dwc:{core_type}ID'
+            final_results = expanded_results[[id_column, 'test_id', 'test_type', 'status', 'result', 'comment']].copy()
+            
+            # Add actedUpon and consulted columns with test field names and actual values
+            acted_upon_values = []
+            consulted_values = []
+            
+            for _, row in expanded_results.iterrows():
+                # Format actedUpon: "field1=value1, field2=value2"
+                acted_upon_pairs = []
+                for field in test.actedUpon:
+                    if field in row and pd.notna(row[field]):
+                        acted_upon_pairs.append(f"{field}={row[field]}")
+                acted_upon_values.append("|".join(acted_upon_pairs))
                 
-                # Combine unique test data with results
-                unique_with_results = pd.concat([unique_test_candidates, unique_results_df], axis=1)
-                
-                # Merge results back to original dataframe to get one row per test per original row
-                expanded_results = df.merge(
-                    unique_with_results, 
-                    on=test_columns, 
-                    how='left'
-                )
-                
-                # Select only the required columns: occurrenceID/taxonID, test_id, test_type, status, result, comment
-                id_column = f'dwc:{core_type}ID'
-                final_results = expanded_results[[id_column, 'test_id', 'test_type', 'status', 'result', 'comment']]
-                
-                all_results_dfs.append(final_results)
-                log(f"Completed test {test.id}: {len(final_results)} results (API call took {api_duration:.2f}s)")
-
-            except Exception as e:
-                log(f"Error running test {test.id}: {str(e)}", "ERROR")
-                continue
+                # Format consulted: "field1=value1, field2=value2"
+                consulted_pairs = []
+                for field in test.consulted:
+                    if field in row and pd.notna(row[field]):
+                        consulted_pairs.append(f"{field}={row[field]}")
+                consulted_values.append("|".join(consulted_pairs))
+            
+            final_results['actedUpon'] = acted_upon_values
+            final_results['consulted'] = consulted_values
+            
+            all_results_dfs.append(final_results)
+            log(f"Completed test {test.id}: {len(final_results)} results (API call took {api_duration:.2f}s)")
                 
         # Combine all test results
         total_duration = time.time() - start_time
