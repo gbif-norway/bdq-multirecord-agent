@@ -69,14 +69,20 @@ async def _handle_email_processing(email_data: Dict[str, Any]):
     test_results = await bdq_api_service.run_tests_on_dataset(df, core_type)
     summary_stats = _get_summary_stats(test_results, core_type)
 
-    # Upload test results and amended dataset to MinIO
+    # Upload test results, unique test results (for the dashboard), and amended dataset to MinIO
     test_results_csv = minio_service.upload_dataframe(test_results, original_filename, "test_results")
+    unique_test_results = test_results.drop(columns=[f'dwc:{core_type}ID']).drop_duplicates()
+    minio_service.upload_dataframe(unique_test_results, original_filename, "test_results_unique")
     amended_dataset = csv_service.generate_amended_dataset(df, test_results, core_type)
     amended_csv = minio_service.upload_csv_string(amended_dataset, original_filename, "amended")
     
     # Get LLM analysis
     prompt = llm_service.create_prompt(email_data, core_type, summary_stats, str_snapshot(test_results), str_snapshot(df), get_relevant_test_contexts(test_results['test_id'].unique().tolist()))
-    llm_analysis = llm_service.generate_openai_intelligent_summary(prompt, test_results_csv, original_csv)
+    
+    # Convert DataFrames to CSV strings for LLM
+    test_results_csv_content = csv_service.dataframe_to_csv_string(test_results)
+    original_csv_content = csv_service.dataframe_to_csv_string(df)
+    llm_analysis = llm_service.generate_openai_intelligent_summary(prompt, test_results_csv_content, original_csv_content)
     
     # Generate dashboard URL
     dashboard_url = minio_service.generate_dashboard_url(test_results_csv, original_csv)
@@ -149,13 +155,18 @@ def _get_summary_stats(test_results_df, coreID):
                 .head(n))
 
     summary = {
+        'number_of_records_in_dataset': len(test_results_df),
         'list_of_all_columns_tested': all_cols_tested,
         'no_of_tests_results': len(test_results_df),
         'no_of_tests_run': test_results_df['test_id'].nunique(),
         'no_of_non_compliant_validations': len(non_compliant_validations),
+        'no_of_unique_non_compliant_validations': len(non_compliant_validations.drop_duplicates()),
         'no_of_amendments': len(amendments),
+        'no_of_unique_amendments': len(amendments.drop_duplicates()), # subset=['actedUpon', 'consulted', 'test_id']
         'no_of_filled_in': len(filled_in),
+        'no_of_unique_filled_in': len(filled_in.drop_duplicates()),
         'no_of_issues': len(issues),
+        'no_of_unique_issues': len(issues.drop_duplicates()),
         'top_issues': _get_top_grouped(issues, ['actedUpon', 'consulted', 'test_id']),
         'top_filled_in': _get_top_grouped(filled_in, ['actedUpon', 'consulted', 'test_id']),
         'top_amendments': _get_top_grouped(amendments, ['actedUpon', 'consulted', 'test_id']),

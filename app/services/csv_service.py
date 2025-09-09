@@ -46,6 +46,12 @@ class CSVService:
             log(f"Renamed {renamed} columns to have 'dwc:' prefix to match BDQ mappings")
         return df
     
+    def dataframe_to_csv_string(self, df: pd.DataFrame) -> str:
+        """Convert DataFrame to CSV string"""
+        csv_buffer = io.StringIO()
+        df.to_csv(csv_buffer, index=False)
+        return csv_buffer.getvalue()
+    
     def generate_amended_dataset(self, original_df: pd.DataFrame, results_df: pd.DataFrame, core_type: str) -> str:
         """Generate amended dataset with proposed changes applied"""
         amended_df = original_df.copy()

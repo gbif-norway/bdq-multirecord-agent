@@ -1,0 +1,46 @@
+<p>Hi there,</p>
+
+<p>Thanks for using BDQEmail to test your biodiversity dataset! We've run the quality checks and have the results ready for you.</p>
+
+<p>Your original dataset and the results file are attached to this email. We've also included an amendments file, but please note that this time, no automatic amendments were safely proposed or applied to your data. This means the system didn't find any obvious fixes it could make without asking you first.</p>
+
+<p>We didn't find any "issues" flagged in your dataset this round, which is great! These tests typically look for things that might be problems but aren't necessarily invalid. So, no major red flags there.</p>
+
+<p>Let's look at the "non-compliant validations" – these are the areas where your data didn't quite meet a specific standard. Addressing these can make your dataset much more useful and reliable:</p>
+
+<ul>
+    <li>
+        <b>Occurrence IDs (dwc:occurrenceID):</b> All your occurrence IDs were flagged as not being standard. The test comment says they "may be a URI, but doesn't have host and path". A good practice for `dwc:occurrenceID` is to use a persistent, globally unique identifier, often in the form of a web address (a URI). This allows each record to be uniquely identified and potentially linked to more information online. Think about making them full URLs like `http://yourdomain.org/occurrence/occ1`.
+    </li>
+    <li>
+        <b>Scientific Names (dwc:scientificName):</b>
+        <ul>
+            <li>For most of your records (Homo sapiens, Canis lupus, Felis catus, Ursus americanus), the test found that while the basic name was an exact match in the GBIF backbone taxonomy, it wasn't an "exact match" to the full entry, often because it was missing the author and year (e.g., Linnaeus, 1758). Adding the full scientific name, including the author and year, like "Homo sapiens Linnaeus, 1758", will make your taxonomic data more precise and linkable to external resources.</li>
+            <li>For the record with "InvalidName", the test couldn't find any match at all. This means "InvalidName" isn't a recognized scientific name. You'll want to correct this name to ensure the record is properly identified and can be used in scientific analyses.</li>
+        </ul>
+    </li>
+    <li>
+        <b>Basis of Record (dwc:basisOfRecord):</b> The record with "BadBasis" was flagged. This value isn't a standard Darwin Core basis of record. Standardizing this to one of the accepted terms (e.g., "HumanObservation", "PreservedSpecimen", "FossilSpecimen", "LivingSpecimen", "MaterialSample", "MachineObservation") will make your data compatible with other biodiversity datasets.</li>
+    <li>
+        <b>Geographic Data (Country, Latitude, Longitude):</b>
+        <ul>
+            <li><b>Invalid Country Name:</b> "BadCountry" was not found in the Getty Thesaurus of Geographic Names. This means it's not a recognized country. Correcting this to a valid country name is important for accurate mapping and geographic analysis.</li>
+            <li><b>Out-of-Range Coordinates:</b> For the record with latitude 91.0 and longitude 181.0, these values are outside the possible ranges for Earth's coordinates (latitude should be between -90 and 90, longitude between -180 and 180). These likely indicate a data entry error and should be corrected to ensure your records can be mapped correctly.</li>
+            <li><b>Country and Country Code Consistency:</b>
+                <ul>
+                    <li>The test reported an inconsistency for "United States" with country code "US", and "France" with country code "FR". While these appear correct to us, the test indicates a mismatch with its reference. This could be due to a subtle difference in how the test expects these to be represented, or it might be looking for a specific linked entry that wasn't found. You may want to double-check these against a standard like ISO 3166-1 alpha-2 codes.</li>
+                    <li>For "BadCountry" with country code "ZZ", the test correctly flagged "ZZ" as not matching an ISO 3166-1 alpha-2 country code. Once you correct the country name, also update the country code to the correct two-letter code.</li>
+                </ul>
+            </li>
+        </ul>
+    </li>
+</ul>
+
+<p>Overall, your dataset has a good foundation with many fields correctly filled. The areas flagged are common points for improvement in biodiversity data. Fixing these will greatly improve how your data can be used for mapping, analysis, and integration with other global biodiversity efforts like GBIF.</p>
+
+<p>We encourage you to use the attached files and the dashboard to explore these results. Making these small changes can lead to a big jump in the quality and usability of your data.</p>
+
+<p>Let us know if you have any questions!</p>
+
+<p>Best,</p>
+<p>The BDQEmail Team</p>

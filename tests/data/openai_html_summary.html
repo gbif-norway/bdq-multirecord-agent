@@ -1,0 +1,47 @@
+Thank you for using the BDQEmail service to check the quality of your biodiversity data. Below is an analysis based on the results of the tests we ran on your dataset. We've attached the results and a proposed amendments file for clarity. Additionally, you can explore these results interactively via the dashboard link provided above.
+
+---
+
+### Amendments Summary
+
+No amendments were automatically applied to your dataset because the test results indicate that all current values align with the relevant standards where amendments might be suggested. It seems like your dataset is mostly well-structured, which is great! However, here are a few areas you might want to pay closer attention to:
+
+### Key Issues Identified
+
+1. **Invalid Geographical Coordinates:**
+   - The record with occurrence ID `occ5` has invalid latitude and longitude values (91.0 and 181.0, respectively). Geographic coordinates should be within valid ranges for the latitude (-90 to 90) and longitude (-180 to 180). Review these values, possibly by cross-referencing with an external map or geographical information source.
+
+2. **Non-standard Scientific and Basis of Record Names:**
+   - `occ5` also contains `InvalidName`, which did not pass the scientific name check. Verify the scientific names using known taxonomies.
+   - `BadBasis` appeared in the basis of record field. Ensure terms like "HumanObservation" or other recognized concepts from the Darwin Core standard are used.
+
+3. **Country and Country Code Consistency:**
+   - There's inconsistency in the country and country code fields, particularly with `BadCountry` and `ZZ`. Please align country names and codes according to ISO standards.
+
+### Non-compliant Validations
+
+- **Scientific Names:**
+  Reviewing your validation results, the names **Homo sapiens**, **Canis lupus**, **Felis catus**, and **Ursus americanus** might not perfectly match conventional taxonomic databases. Cross-verify these names against a reliable database to confirm their accuracy.
+
+- **Country Code Issues:**
+  Cross-check entries like **United States** and **US**, ensuring they match consistently with ISO 3166 standards.
+
+### Recommendations for Quick Wins
+
+- Update `BadCountry` and `ZZ` to recognized country names and codes.
+- Correct the latitude and longitude values for `occ5` to fall within standard geographic ranges.
+- Double-check your scientific names against trusted taxonomic resources, ensuring that they match the latest classification standards.
+
+### Closing Thoughts
+
+By addressing these issues, you can significantly enhance the reliability of your dataset for further scientific and analytical purposes. Improving data quality is a progressive journey, and you're on a great path by engaging with these tools. Keep refining and validating your data for it to be as accurate and useful as possible.
+
+Should you need any more help or have further questions, feel free to reach out. Thank you again for using BDQEmail. Happy data improving!
+
+Best regards,
+
+The BDQEmail Team
+
+--- 
+
+Let me know if you need anything else adjusted!
