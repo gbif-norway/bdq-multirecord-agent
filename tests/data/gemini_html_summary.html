@@ -1,92 +1,46 @@
-Hello,
+<p>Hi there,</p>
 
-Thank you for sending your biodiversity dataset for data quality testing using the BDQEmail service. We've run a set of tests on your data, and the results are now ready for you to review.
+<p>Thanks for using BDQEmail to test your biodiversity dataset! We've run the quality checks and have the results ready for you.</p>
 
-You'll find two files attached to this email: the detailed test results and an amendments file (which will be empty this time). We've also included a link below to an interactive dashboard where you can explore these results visually.
+<p>Your original dataset and the results file are attached to this email. We've also included an amendments file, but please note that this time, no automatic amendments were safely proposed or applied to your data. This means the system didn't find any obvious fixes it could make without asking you first.</p>
 
-Here's an analysis of your test results:
+<p>We didn't find any "issues" flagged in your dataset this round, which is great! These tests typically look for things that might be problems but aren't necessarily invalid. So, no major red flags there.</p>
 
-<h3>Quick Wins and What to Look For</h3>
-
-<p>
-    The good news is that no changes were automatically made (no "amendments" or "filled-in" values), and no "issues" were flagged in your dataset. This means the tests didn't find any obvious problems that could be automatically fixed or clear red flags needing immediate attention, which is a great start!
-</p>
-
-<p>
-    Most of the things highlighted in your results fall under "non-compliant validations." These are areas where your data doesn't quite meet a specific standard. Let's go through the key points, focusing on what you can easily improve:
-</p>
+<p>Let's look at the "non-compliant validations" – these are the areas where your data didn't quite meet a specific standard. Addressing these can make your dataset much more useful and reliable:</p>
 
 <ul>
     <li>
-        <strong>Record 'occ5' has several data entry errors:</strong>
+        <b>Occurrence IDs (dwc:occurrenceID):</b> All your occurrence IDs were flagged as not being standard. The test comment says they "may be a URI, but doesn't have host and path". A good practice for `dwc:occurrenceID` is to use a persistent, globally unique identifier, often in the form of a web address (a URI). This allows each record to be uniquely identified and potentially linked to more information online. Think about making them full URLs like `http://yourdomain.org/occurrence/occ1`.
+    </li>
+    <li>
+        <b>Scientific Names (dwc:scientificName):</b>
         <ul>
-            <li>
-                <strong>`dwc:basisOfRecord` ("BadBasis"):</strong> This value isn't a standard term. You should change "BadBasis" to a recognized Darwin Core `basisOfRecord` like "HumanObservation," "PreservedSpecimen," or "LivingSpecimen."
-            </li>
-            <li>
-                <strong>`dwc:country` ("BadCountry"):</strong> "BadCountry" is not a known country. Please correct this to a real country name.
-            </li>
-            <li>
-                <strong>`dwc:decimalLatitude` (91.0) and `dwc:decimalLongitude` (181.0):</strong> These coordinates are outside the possible range for Earth's surface (latitude must be between -90 and 90, longitude between -180 and 180). You'll need to check and correct these location values.
-            </li>
-            <li>
-                <strong>`dwc:scientificName` ("InvalidName"):</strong> This name did not match anything in the GBIF backbone taxonomy. It's important to use correct scientific names for species, so please fix this entry.
+            <li>For most of your records (Homo sapiens, Canis lupus, Felis catus, Ursus americanus), the test found that while the basic name was an exact match in the GBIF backbone taxonomy, it wasn't an "exact match" to the full entry, often because it was missing the author and year (e.g., Linnaeus, 1758). Adding the full scientific name, including the author and year, like "Homo sapiens Linnaeus, 1758", will make your taxonomic data more precise and linkable to external resources.</li>
+            <li>For the record with "InvalidName", the test couldn't find any match at all. This means "InvalidName" isn't a recognized scientific name. You'll want to correct this name to ensure the record is properly identified and can be used in scientific analyses.</li>
+        </ul>
+    </li>
+    <li>
+        <b>Basis of Record (dwc:basisOfRecord):</b> The record with "BadBasis" was flagged. This value isn't a standard Darwin Core basis of record. Standardizing this to one of the accepted terms (e.g., "HumanObservation", "PreservedSpecimen", "FossilSpecimen", "LivingSpecimen", "MaterialSample", "MachineObservation") will make your data compatible with other biodiversity datasets.</li>
+    <li>
+        <b>Geographic Data (Country, Latitude, Longitude):</b>
+        <ul>
+            <li><b>Invalid Country Name:</b> "BadCountry" was not found in the Getty Thesaurus of Geographic Names. This means it's not a recognized country. Correcting this to a valid country name is important for accurate mapping and geographic analysis.</li>
+            <li><b>Out-of-Range Coordinates:</b> For the record with latitude 91.0 and longitude 181.0, these values are outside the possible ranges for Earth's coordinates (latitude should be between -90 and 90, longitude between -180 and 180). These likely indicate a data entry error and should be corrected to ensure your records can be mapped correctly.</li>
+            <li><b>Country and Country Code Consistency:</b>
+                <ul>
+                    <li>The test reported an inconsistency for "United States" with country code "US", and "France" with country code "FR". While these appear correct to us, the test indicates a mismatch with its reference. This could be due to a subtle difference in how the test expects these to be represented, or it might be looking for a specific linked entry that wasn't found. You may want to double-check these against a standard like ISO 3166-1 alpha-2 codes.</li>
+                    <li>For "BadCountry" with country code "ZZ", the test correctly flagged "ZZ" as not matching an ISO 3166-1 alpha-2 country code. Once you correct the country name, also update the country code to the correct two-letter code.</li>
+                </ul>
             </li>
         </ul>
-        <p>
-            Correcting these values for 'occ5' will greatly improve the quality and usability of this record, especially for mapping and taxonomic searches.
-        </p>
-    </li>
-    <li>
-        <strong>`dwc:occurrenceID` is not a standard URI for any of your records:</strong>
-        <p>
-            The test checks if your `occurrenceID` values look like standard web addresses (URIs). While your current IDs (`occ1`, `occ2`, etc.) are unique, making them full URIs (e.g., `http://yourdomain.org/occurrence/occ1`) helps make your data more linkable and easier for others to use when it's shared online. This isn't a critical error, but it's a good practice for data sharing.
-        </p>
-    </li>
-    <li>
-        <strong>`dwc:scientificName` for most records didn't find an "exact match" in GBIF:</strong>
-        <p>
-            For species like "Homo sapiens," "Canis lupus," "Felis catus," and "Ursus americanus," the test found the correct scientific name but couldn't make an "exact match" in the GBIF Backbone Taxonomy. This often happens if the author and year (e.g., "Linnaeus, 1758") are missing from your `scientificName` field. Adding the full scientific name with authorship can help achieve an exact match, which improves data integration.
-        </p>
-    </li>
-    <li>
-        <strong>Inconsistent `dwc:country` and `dwc:countryCode` for some records:</strong>
-        <ul>
-            <li>
-                For "United States" and "US" (`occ1`), the test flagged these as inconsistent. This seems like a false alarm, as "US" is the correct code for "United States." We've noted this and will check our test's reference data.
-            </li>
-            <li>
-                Similarly, for "France" and "FR" (`occ4`), the test also reported an issue, stating "FR" is not a known ISO code. This is incorrect, as "FR" is the standard ISO 3166-1-alpha-2 code for France. Again, we'll look into our test's reference data for this.
-            </li>
-            <li>
-                For "BadCountry" and "ZZ" (`occ5`), the test correctly identified that "ZZ" is not a valid country code. This needs to be corrected once you fix "BadCountry."
-            </li>
-        </ul>
-        <p>
-            You might not need to do anything for `occ1` and `occ4` if you're sure your country codes are correct. However, getting your country and country codes consistent is important for global mapping and analysis.
-        </p>
     </li>
 </ul>
 
-<h3>Key Takeaways</h3>
+<p>Overall, your dataset has a good foundation with many fields correctly filled. The areas flagged are common points for improvement in biodiversity data. Fixing these will greatly improve how your data can be used for mapping, analysis, and integration with other global biodiversity efforts like GBIF.</p>
 
-<p>
-    You have a good base for your dataset! Most of the issues found are minor and can be fixed with straightforward corrections. The biggest impact will come from reviewing the errors in record 'occ5' and correcting the geographical and taxonomic data there. Addressing the scientific name completeness (adding authorship) will also make your data more robust.
-</p>
+<p>We encourage you to use the attached files and the dashboard to explore these results. Making these small changes can lead to a big jump in the quality and usability of your data.</p>
 
-<p>
-    Data quality is a journey, and every step you take makes your valuable biodiversity information more useful for research and conservation. Keep up the great work!
-</p>
+<p>Let us know if you have any questions!</p>
 
-<p>
-    You can explore all the detailed test results and proposed amendments (if any) using the attached CSV files and on the interactive dashboard here: [LINK_TO_DASHBOARD]
-</p>
-
-<p>
-    If you have any questions, feel free to reach out.
-</p>
-
-<p>
-    Best,
-    <br>The BDQEmail Team
-</p>
+<p>Best,</p>
+<p>The BDQEmail Team</p>

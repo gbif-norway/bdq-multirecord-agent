@@ -1,0 +1,6 @@
+dwc:occurrenceID,dwc:eventDate,dwc:country,dwc:countryCode,dwc:decimalLatitude,dwc:decimalLongitude,dwc:scientificName,dwc:basisOfRecord
+occ1,2023-01-01,United States,US,37.7749,-122.4194,Homo sapiens,HumanObservation
+occ2,2023-01-02,Canada,CA,43.6532,-79.3832,Canis lupus,HumanObservation
+occ3,2023-01-03,Mexico,MX,19.4326,-99.1332,Felis catus,HumanObservation
+occ4,2023-01-04,France,FR,48.8566,2.3522,Ursus americanus,HumanObservation
+occ5,2023-01-05,BadCountry,ZZ,91.0,181.0,InvalidName,BadBasis

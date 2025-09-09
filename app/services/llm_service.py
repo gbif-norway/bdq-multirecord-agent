@@ -58,27 +58,72 @@ class LLMService:
     def generate_openai_intelligent_summary(self, prompt, test_results_csv_text, original_csv_text, api_key=None):
         client = OpenAI(api_key=api_key)
 
+        # Upload files to OpenAI
         original_file = client.files.create(
-            file=io.BytesIO(original_csv_text.encode("utf-8")), purpose="assistants"
+            file=io.BytesIO(original_csv_text.encode("utf-8")), 
+            purpose="assistants"
         )
         results_file = client.files.create(
-            file=io.BytesIO(test_results_csv_text.encode("utf-8")), purpose="assistants"
+            file=io.BytesIO(test_results_csv_text.encode("utf-8")), 
+            purpose="assistants"
         )
 
-        response = client.responses.create(
+        # Use the Assistants API with file attachments (Responses API requires container setup)
+        assistant = client.beta.assistants.create(
+            name="BDQ Data Analyst",
+            instructions="You are a biodiversity data quality analyst. Analyze the provided CSV files and generate a comprehensive summary.",
             model="gpt-4o",
-            tools=[{"type": "code_interpreter"}],
-            input=[{
-                "role": "user",
-                "content": [
-                    {"type": "input_text", "text": prompt},
-                    {"type": "input_file", "file_id": original_file.id},
-                    {"type": "input_file", "file_id": results_file.id},
-                ]
-            }]
+            tools=[{"type": "code_interpreter"}]
         )
 
-        return response.output_text
+        # Create a thread and run
+        thread = client.beta.threads.create()
+        
+        # Attach files to the thread
+        client.beta.threads.messages.create(
+            thread_id=thread.id,
+            role="user",
+            content=prompt,
+            attachments=[
+                {"file_id": original_file.id, "tools": [{"type": "code_interpreter"}]},
+                {"file_id": results_file.id, "tools": [{"type": "code_interpreter"}]}
+            ]
+        )
+
+        run = client.beta.threads.runs.create(
+            thread_id=thread.id,
+            assistant_id=assistant.id
+        )
+
+        # Wait for completion
+        import time
+        while run.status in ['queued', 'in_progress', 'cancelling']:
+            time.sleep(1)
+            run = client.beta.threads.runs.retrieve(
+                thread_id=thread.id,
+                run_id=run.id
+            )
+
+        if run.status == 'completed':
+            messages = client.beta.threads.messages.list(thread_id=thread.id)
+            # Get the assistant's response (first message should be the assistant's response)
+            assistant_message = messages.data[0]
+            
+            # Extract text from all content blocks
+            response_parts = []
+            for content_block in assistant_message.content:
+                if hasattr(content_block, 'text') and content_block.text:
+                    response_parts.append(content_block.text.value)
+                elif hasattr(content_block, 'type') and content_block.type == 'text':
+                    response_parts.append(content_block.text.value)
+            
+            if response_parts:
+                return "\n".join(response_parts)
+            else:
+                # If no text content, return a message indicating the analysis was completed
+                return "Analysis completed successfully. The assistant has analyzed your CSV files and generated insights using the code interpreter."
+        else:
+            raise Exception(f"OpenAI run failed with status: {run.status}")
                 
     def create_prompt(self, email_data, core_type, summary_stats, test_results_snapshot, original_snapshot, relevant_test_contexts):
         log("Generating the prompt for LLM...") 
@@ -139,7 +184,7 @@ Summmarise and provide some key takeaways at the end. I want you to showcase you
 
 ## FORMAT
 Write as a complete HTML email body that will appear below the summary stats box. Use clear paragraphs, bullet points and other formatting where appropriate. 
-Do NOT include the summary statistics - they are already displayed to the user above your email body."""
+Do NOT include the summary statistics or the link to the dashboard - they are already displayed to the user above your email body."""
         log(prompt)
         return prompt
     

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Real-world test of the LLM service Gemini summary generation.
+Real-world test of the LLM service summary generation for both Gemini and OpenAI.
 This test uses the actual functions from main.py without mocking to generate
-a real summary using the simple_occurrence_dwc.csv and _RESULTS.csv files.
+real summaries using the simple_occurrence_dwc.csv and _RESULTS.csv files.
 """
 
 import os
@@ -71,8 +71,53 @@ def _get_summary_stats(test_results_df, coreID):
     log(f"Generated summary: {summary}")
     return summary
 
+def test_llm_model(llm_service, model_name, test_data_dir, prompt, test_results_csv_content, original_csv_content):
+    """Test a specific LLM model and save the results"""
+    log(f"Generating {model_name} summary...")
+    try:
+        if model_name.lower() == "gemini":
+            llm_analysis = llm_service.generate_gemini_intelligent_summary(
+                prompt, 
+                test_results_csv_content, 
+                original_csv_content
+            )
+            output_filename = 'gemini_html_summary.html'
+        elif model_name.lower() == "openai":
+            llm_analysis = llm_service.generate_openai_intelligent_summary(
+                prompt, 
+                test_results_csv_content, 
+                original_csv_content
+            )
+            output_filename = 'openai_html_summary.html'
+        else:
+            raise ValueError(f"Unknown model: {model_name}")
+        
+        log(f"Successfully generated {model_name} summary!")
+        
+        # Save the summary to the specified file
+        output_path = os.path.join(test_data_dir, output_filename)
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write(llm_analysis)
+        
+        log(f"Summary saved to: {output_path}")
+        print(f"\n✅ SUCCESS: {model_name} summary generated and saved to {output_path}")
+        print(f"Summary length: {len(llm_analysis)} characters")
+        
+        # Also print a preview of the summary
+        print(f"\n📄 Preview of {model_name} summary:")
+        print("=" * 80)
+        print(llm_analysis[:500] + "..." if len(llm_analysis) > 500 else llm_analysis)
+        print("=" * 80)
+        
+        return True
+        
+    except Exception as e:
+        log(f"Error generating {model_name} summary: {e}", "ERROR")
+        print(f"❌ ERROR: Failed to generate {model_name} summary: {e}")
+        return False
+
 def main():
-    """Run the real-world test of Gemini summary generation"""
+    """Run the real-world test of both Gemini and OpenAI summary generation"""
     
     # Load environment variables from .env.test
     load_dotenv('.env.test')
@@ -137,35 +182,44 @@ def main():
     test_results_csv_content = csv_service.dataframe_to_csv_string(test_results)
     original_csv_content = csv_service.dataframe_to_csv_string(df)
     
-    # Generate the Gemini summary
-    log("Generating Gemini summary...")
-    try:
-        llm_analysis = llm_service.generate_gemini_intelligent_summary(
-            prompt, 
-            test_results_csv_content, 
-            original_csv_content
-        )
-        log("Successfully generated Gemini summary!")
-        
-        # Save the summary to the specified file
-        output_path = os.path.join(test_data_dir, 'gemini_html_summary.html')
-        with open(output_path, 'w', encoding='utf-8') as f:
-            f.write(llm_analysis)
-        
-        log(f"Summary saved to: {output_path}")
-        print(f"\n✅ SUCCESS: Gemini summary generated and saved to {output_path}")
-        print(f"Summary length: {len(llm_analysis)} characters")
-        
-        # Also print a preview of the summary
-        print(f"\n📄 Preview of generated summary:")
-        print("=" * 80)
-        print(llm_analysis[:500] + "..." if len(llm_analysis) > 500 else llm_analysis)
-        print("=" * 80)
-        
-    except Exception as e:
-        log(f"Error generating Gemini summary: {e}", "ERROR")
-        print(f"❌ ERROR: Failed to generate Gemini summary: {e}")
-        raise
+    # Test both models
+    print("\n🚀 Starting LLM comparison test...")
+    print("=" * 60)
+    
+    # Test Gemini
+    gemini_success = test_llm_model(
+        llm_service, 
+        "Gemini", 
+        test_data_dir, 
+        prompt, 
+        test_results_csv_content, 
+        original_csv_content
+    )
+    
+    print("\n" + "=" * 60)
+    
+    # Test OpenAI
+    openai_success = test_llm_model(
+        llm_service, 
+        "OpenAI", 
+        test_data_dir, 
+        prompt, 
+        test_results_csv_content, 
+        original_csv_content
+    )
+    
+    print("\n" + "=" * 60)
+    print("📊 FINAL RESULTS:")
+    print(f"Gemini: {'✅ SUCCESS' if gemini_success else '❌ FAILED'}")
+    print(f"OpenAI: {'✅ SUCCESS' if openai_success else '❌ FAILED'}")
+    
+    if gemini_success and openai_success:
+        print("\n🎉 Both models completed successfully!")
+        print("You can now compare the generated summaries:")
+        print(f"- Gemini: {os.path.join(test_data_dir, 'gemini_html_summary.html')}")
+        print(f"- OpenAI: {os.path.join(test_data_dir, 'openai_html_summary.html')}")
+    else:
+        print("\n⚠️  Some models failed. Check the logs above for details.")
 
 if __name__ == "__main__":
     main()
