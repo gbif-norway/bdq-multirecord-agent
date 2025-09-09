@@ -117,7 +117,7 @@ Notes:
 
 ## FORMAT
 Write as a complete email body that will appear below the summary stats box. Use clear paragraphs and bullet points where appropriate. Do NOT include the summary statistics - they are already displayed above."""
-
+        log(prompt)
         return prompt
     
     

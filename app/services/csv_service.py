@@ -1,7 +1,6 @@
 import pandas as pd
 import io
-import base64
-from typing import Tuple, Optional, List, Dict, Any
+from typing import Tuple, Optional
 from app.utils.helper import log
 
 class CSVService:
@@ -12,11 +11,12 @@ class CSVService:
         Parse CSV data and detect core type (occurrence or taxon)
         Returns (dataframe, core_type)
         """
-        # Parse CSV with automatic delimiter detection
+        # Parse CSV with automatic delimiter detection, treating all data as strings
         df = pd.read_csv(io.StringIO(csv_data), sep=None, engine='python', dtype=str)
         df.columns = df.columns.str.strip().str.strip("\"'")
         df = self._ensure_dwc_prefixed_columns(df)
 
+        # Detect core type based on column names
         cols = [c.lower() for c in df.columns]
         core_type = None
         if 'dwc:occurrenceid' in cols:
@@ -46,13 +46,7 @@ class CSVService:
             log(f"Renamed {renamed} columns to have 'dwc:' prefix to match BDQ mappings")
         return df
     
-    def generate_raw_results_csv(self, results_df):
-        """Generate CSV with raw BDQ test results"""
-        csv_buffer = io.StringIO()
-        results_df.to_csv(csv_buffer, index=False)
-        return csv_buffer.getvalue()
-    
-    def generate_amended_dataset(self, original_df, results_df, core_type):
+    def generate_amended_dataset(self, original_df: pd.DataFrame, results_df: pd.DataFrame, core_type: str) -> str:
         """Generate amended dataset with proposed changes applied"""
         amended_df = original_df.copy()
         id_column = f'dwc:{core_type}ID'
@@ -85,7 +79,7 @@ class CSVService:
         amended_df.to_csv(csv_buffer, index=False)
         return csv_buffer.getvalue()
     
-    def _apply_single_amendment(self, df, row_idx, amendment):
+    def _apply_single_amendment(self, df: pd.DataFrame, row_idx: int, amendment: pd.Series) -> None:
         """Apply a single amendment to a specific row"""
         result = amendment['result']
         test_id = amendment['test_id']
