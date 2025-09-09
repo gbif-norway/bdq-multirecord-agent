@@ -1,0 +1,64 @@
+Have a scan of the @README and look at bdq_api_service.py and main.py for some context as to how BDQ tests get run and the outputs we produce. Read the LLM prompt too, and pay close attention to how we generate the stats in main.py
+
+Now we will build a simple, static HTML + JS dashboard for viewing BDQ test results.
+
+- Hosted in s3 bucket at https://storage.gbif-no.sigma2.no/misc/bdqreport/
+- Bucket should include:
+  - styles.css
+  - app.js
+  - TG2_tests_small.csv (TG2_tests.csv with only the columns required)
+  - bdq-report.html # Should import the above files using relative paths
+  - results/ 
+    - # Containing the unique_test_results files which get generated from bdq_api_service.py and main.py 
+    - # Loaded into the html file using URL argument, like bdq-report.html?unique_test_results=unique_test_results.csv (should be in relative path results/ folder)
+    - # Also contains summary stats
+
+Stack:
+- Fontawesome
+- PappaParse
+- Bootstrap 5.3 - IMPORTANT refer to the docs https://getbootstrap.com/docs/5.3/components/card/ while coding
+- Chart.js
+
+Spec:
+
+Colour scheme: 
+Green #0a7029
+Yellow #fede00
+Yellow Green #c8df52
+Mint #dbe8d8
+
+Simple header: <i class="fa-solid fa-robot"></i> <i class="fa-solid fa-robot"> </i><i class="fa-solid fa-robot"></i>  Biodiversity Data Quality Report from BDQEmail <greyed out>for Unique test results file</greyed out> 
+ - Derive name based on file name, replace - or _ with spaces and use title case, concat with ' file'
+ - First robot icon should be yellow, then yellow green, then mint
+ - Subtle animation effect on hover over the robot icons 
+
+Then we want a set of cards which get a shadow effect on hover.
+ - x records in dataset (number_of_records_in_dataset)
+ - x tests across dataset (no_of_tests_run) across x columns (len(list_of_all_columns_tested))
+ - x results (no_of_test_results)
+ - x changes can be applied automatically (no_of_amendments + no_of_filled_in)
+ - x corrections needing attention (no_of_unique_non_compliant_validations)
+ - x fields with potential issues (no_of_unique_issues)
+
+Next a bar graph. To populate it, unique_results LEFT JOIN on TG2_tests_small.csv (based on test_id)
+
+    summary = {
+        'no_of_tests_results': len(test_results_df),
+        'no_of_tests_run': test_results_df['test_id'].nunique(),
+
+        'no_of_non_compliant_validations': len(non_compliant_validations),
+        'no_of_unique_non_compliant_validations': len(non_compliant_validations.drop_duplicates()),
+        
+        'no_of_amendments': len(amendments),
+        'no_of_unique_amendments': len(amendments.drop_duplicates()), # subset=['actedUpon', 'consulted', 'test_id']
+        'no_of_filled_in': len(filled_in),
+        'no_of_unique_filled_in': len(filled_in.drop_duplicates()),
+
+        'no_of_issues': len(issues),
+        'no_of_unique_issues': len(issues.drop_duplicates()),
+
+        'top_issues': _get_top_grouped(issues, ['actedUpon', 'consulted', 'test_id']),
+        'top_filled_in': _get_top_grouped(filled_in, ['actedUpon', 'consulted', 'test_id']),
+        'top_amendments': _get_top_grouped(amendments, ['actedUpon', 'consulted', 'test_id']),
+        'top_non_compliant_validations': _get_top_grouped(non_compliant_validations, ['actedUpon', 'consulted', 'test_id']),
+    }
