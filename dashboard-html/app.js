@@ -104,8 +104,11 @@ async function loadTG2Tests(filePath) {
                 return header.trim()
                     .replace(/\s+/g, ' ')
                     .replace(/^IE Class$/i, 'ie_class')
+                    .replace(/^InformationElement:ActedUpon$/i, 'ie_acted_upon')
+                    .replace(/^InformationElement:Consulted$/i, 'ie_consulted')
                     .replace(/^Description$/i, 'description')
                     .replace(/^Notes$/i, 'notes')
+                    .replace(/^Type$/i, 'type')
                     .replace(/\r$/, ''); // Remove trailing \r
             },
             complete: function(results) {
@@ -154,7 +157,10 @@ function joinResultsWithTestContext() {
             ...result,
             test_description: testInfo ? testInfo.description : 'No description available',
             test_notes: testInfo ? testInfo.notes : 'No notes available',
-            ie_class: testInfo ? testInfo.ie_class : 'Unknown'
+            ie_class: testInfo ? testInfo.ie_class : 'Unknown',
+            ie_acted_upon: testInfo ? (testInfo.ie_acted_upon || '') : '',
+            ie_consulted: testInfo ? (testInfo.ie_consulted || '') : '',
+            test_kind: testInfo ? (testInfo.type || '') : ''
         };
     });
 }
@@ -287,7 +293,7 @@ function renderAmendmentsList(uniqueResultsWithTestContext) {
 function renderValidationsList(uniqueResultsWithTestContext) {
     const validations = uniqueResultsWithTestContext.filter(result => 
         (result.status === 'RUN_HAS_RESULT' && result.result === 'NOT_COMPLIANT') ||
-        (result.status === 'RUN_HAS_RESULT' && (result.result === 'IS_ISSUE' || result.result === 'POTENTIAL_ISSUE'))
+        (result.status === 'RUN_HAS_RESULT' && result.result === 'POTENTIAL_ISSUE')
     );
 
     renderPaginatedList(validations, 'validations', currentValidationsPage, 'validations-pagination');
@@ -306,10 +312,17 @@ function renderPaginatedList(data, containerId, currentPage, paginationId) {
         groupedData[item.test_id].push(item);
     });
 
-    const totalPages = Math.ceil(Object.keys(groupedData).length / itemsPerPage);
+    // Sort groups by total count (descending)
+    const sortedGroups = Object.entries(groupedData).sort(([, itemsA], [, itemsB]) => {
+        const totalCountA = itemsA.reduce((sum, item) => sum + parseInt(item.count || 1), 0);
+        const totalCountB = itemsB.reduce((sum, item) => sum + parseInt(item.count || 1), 0);
+        return totalCountB - totalCountA; // Descending order
+    });
+
+    const totalPages = Math.ceil(sortedGroups.length / itemsPerPage);
     const startIndex = (currentPage - 1) * itemsPerPage;
     const endIndex = startIndex + itemsPerPage;
-    const pageData = Object.entries(groupedData).slice(startIndex, endIndex);
+    const pageData = sortedGroups.slice(startIndex, endIndex);
 
     // Render list items using proper Bootstrap list-group structure
     container.innerHTML = `
@@ -318,6 +331,8 @@ function renderPaginatedList(data, containerId, currentPage, paginationId) {
                 const totalCount = items.reduce((sum, item) => sum + parseInt(item.count || 1), 0);
                 const testInfo = tg2Tests.find(test => test.test_id === testId);
                 const topCombos = getTopFieldCombinations(items, 5);
+                const appliedAmendments = containerId === 'validations' ? getAmendmentsAppliedForValidation(testId) : [];
+                const appliedAmendmentTests = containerId === 'validations' ? getAppliedAmendmentTests(appliedAmendments) : [];
 
                 return `
                     <a href="#" class="list-group-item list-group-item-action" 
@@ -327,9 +342,19 @@ function renderPaginatedList(data, containerId, currentPage, paginationId) {
                             <small class="text-body-secondary">${totalCount} items</small>
                         </div>
                          <p class="mb-1">${testInfo ? testInfo.description : 'No description available'}</p>
+                        ${containerId === 'validations' && appliedAmendmentTests.length > 0 ? `
+                        <div class="mb-1">
+                            <small class="text-body-secondary">Amendments: 
+                                ${appliedAmendmentTests.slice(0, 5).map(t => `
+                                    <span class="badge bg-secondary me-1">${formatTestTitle(t.test_id)}</span>
+                                `).join('')}
+                                ${appliedAmendmentTests.length > 5 ? `+${appliedAmendmentTests.length - 5} more` : ''}
+                            </small>
+                        </div>
+                        ` : ''}
                         <small class="text-body-secondary">
                             ${topCombos.slice(0, 2).map(combo => 
-                                `${combo.count} - ${combo.combo}`
+                                `Affected ${combo.count} records with the following values: ${combo.combo}`
                             ).join('; ')}
                             ${topCombos.length > 2 ? '...' : ''}
                         </small>
@@ -416,32 +441,46 @@ function openDetailModal(testId, containerType) {
         testData = uniqueResultsWithTestContext.filter(result => 
             result.test_id === testId && 
             ((result.status === 'RUN_HAS_RESULT' && result.result === 'NOT_COMPLIANT') ||
-             (result.status === 'RUN_HAS_RESULT' && (result.result === 'IS_ISSUE' || result.result === 'POTENTIAL_ISSUE')))
+             (result.status === 'RUN_HAS_RESULT' && result.result === 'POTENTIAL_ISSUE'))
         );
     }
 
     const testInfo = tg2Tests.find(test => test.test_id === testId);
     const allCombos = getTopFieldCombinations(testData, testData.length);
 
+    const appliedAmendments = containerType === 'validations' ? getAmendmentsAppliedForValidation(testId) : [];
+
     modalBody.innerHTML = `
-        <div class="mb-3">
-            <h6>Test Notes:</h6>
-            <p class="text-muted">${testInfo ? testInfo.notes : 'No notes available'}</p>
-        </div>
-        <div class="mb-3">
-            <h6>Description:</h6>
-            <p>${testInfo ? testInfo.description : 'No description available'}</p>
-        </div>
+        <blockquote>
+            <p><i class="fas fa-sticky-note text-warning"></i> <strong>${testInfo ? testInfo.description : 'No description available'}</strong></p>
+            ${testInfo && testInfo.notes ? `<p><i class="fas fa-info-circle text-primary"></i> ${testInfo.notes}</p>` : ''}
+        </blockquote>
         <div>
-            <h6>All Field Combinations:</h6>
+            <h6>Most common matches in your data:</h6>
             <div class="field-combinations">
                 ${allCombos.map(combo => `
                     <div class="field-combo">
-                        <span class="field-combo-count">${combo.count}</span> - ${combo.combo}
+                        <span class="field-combo-count">${combo.count} records</span>
+                        <div class="text-muted small">${combo.combo}</div>
                     </div>
                 `).join('')}
             </div>
         </div>
+        ${containerType === 'validations' ? `
+        <div class="mb-3">
+            <h6 style="margin-top: 15px;">Applied amendments to related fields:</h6>
+            ${appliedAmendments.length > 0 ? `
+                <div>
+                    ${appliedAmendments.map(a => `
+                        <div class="field-combo">
+                            <div><span class="field-combo-count">${a.count} records</span> had the <span class="badge bg-secondary">${formatTestTitle(a.test_id)}</span> amendment applied</div>
+                            <div class="text-muted small">${formatAmendmentResult(a.result)}</div>
+                        </div>
+                    `).join('')}
+                </div>
+            ` : '<p class="text-muted">No applied amendments found for this validation.</p>'}
+        </div>
+        ` : ''}
     `;
 
     modal.show();
@@ -451,7 +490,7 @@ function getTopFieldCombinations(items, limit) {
     const comboCounts = {};
     
     items.forEach(item => {
-        const combo = `${item.actedUpon || 'N/A'} | ${item.consulted || 'N/A'}`;
+        const combo = buildNormalizedCombo(item);
         comboCounts[combo] = (comboCounts[combo] || 0) + parseInt(item.count || 1);
     });
 
@@ -467,6 +506,97 @@ function formatTestTitle(testId) {
         .split(' ')
         .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
         .join(' ');
+}
+
+function parseIEList(value) {
+    if (!value) return [];
+    // Values may be like "dwc:countryCode" or comma-separated list
+    return value
+        .split(',')
+        .map(s => s.trim())
+        .filter(Boolean);
+}
+
+function getAmendmentsAppliedForValidation(validationTestId) {
+    const validationInfo = tg2Tests.find(t => t.test_id === validationTestId);
+    if (!validationInfo) return [];
+    const vFields = new Set([
+        ...parseIEList(validationInfo.ie_acted_upon || ''),
+        ...parseIEList(validationInfo.ie_consulted || '')
+    ]);
+    if (vFields.size === 0) return [];
+
+    // Collect applied amendment rows from uniqueResults
+    const appliedRows = uniqueResults.filter(r =>
+        r.test_type && r.test_type.toLowerCase() === 'amendment' &&
+        (r.status === 'AMENDED' || r.status === 'FILLED_IN')
+    );
+
+    // Only keep those amendments whose acted-upon fields intersect with the validation's fields
+    const groups = new Map(); // key: test_id||result -> {test_id, result, count}
+    appliedRows.forEach(r => {
+        const amendInfo = tg2Tests.find(t => t.test_id === r.test_id);
+        const aFields = new Set(parseIEList(amendInfo && amendInfo.ie_acted_upon || ''));
+        const intersects = [...aFields].some(f => vFields.has(f));
+        if (!intersects) return;
+        const key = `${r.test_id}||${r.result || ''}`;
+        const c = parseInt(r.count || 1);
+        if (!groups.has(key)) {
+            groups.set(key, { test_id: r.test_id, result: r.result || '', count: 0 });
+        }
+        const entry = groups.get(key);
+        entry.count += isNaN(c) ? 0 : c;
+    });
+
+    return Array.from(groups.values()).sort((a, b) => b.count - a.count);
+}
+
+function truncateText(text, maxLen) {
+    if (!text) return '';
+    if (text.length <= maxLen) return text;
+    return text.slice(0, maxLen - 1) + '…';
+}
+
+function getAppliedAmendmentTests(appliedAmendments) {
+    const counts = new Map();
+    appliedAmendments.forEach(a => {
+        counts.set(a.test_id, (counts.get(a.test_id) || 0) + (a.count || 0));
+    });
+    return Array.from(counts.entries())
+        .map(([test_id, count]) => ({ test_id, count }))
+        .sort((a, b) => b.count - a.count);
+}
+
+function formatAmendmentResult(resultStr) {
+    if (!resultStr) return '';
+    const pairs = resultStr.split('|').map(s => s.trim()).filter(Boolean);
+    if (pairs.length === 0) return '';
+    const parts = pairs.map(p => {
+        const idx = p.indexOf('=');
+        if (idx === -1) return p;
+        const key = p.slice(0, idx);
+        const val = p.slice(idx + 1);
+        return `${key} → ${val}`;
+    });
+    return `Change(s): ${parts.join('; ')}`;
+}
+
+function splitFieldPairs(str) {
+    if (!str) return [];
+    return str.split('|').map(s => s.trim()).filter(Boolean);
+}
+
+function buildNormalizedCombo(item) {
+    const parts = [];
+    const seen = new Set();
+    splitFieldPairs(item.actedUpon || '').forEach(p => {
+        if (!seen.has(p)) { seen.add(p); parts.push(p); }
+    });
+    splitFieldPairs(item.consulted || '').forEach(p => {
+        if (!seen.has(p)) { seen.add(p); parts.push(p); }
+    });
+    if (parts.length === 0) return 'N/A';
+    return parts.join(' · ');
 }
 
 function initializeTooltips() {

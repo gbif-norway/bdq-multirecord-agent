@@ -72,6 +72,8 @@ h2 small { font-size: 0.8rem;  color: var(--grey); }
 .list-group-item:hover {
     background-color: var(--mint);
 }
+blockquote { font-size: 0.9rem; padding-left: 10px;  }
+blockquote p { margin-bottom: 5px; color: var(--grey); }
 
 /* Test header styling - now handled by Bootstrap d-flex */
 .test-title {
@@ -128,15 +130,7 @@ h2 small { font-size: 0.8rem;  color: var(--grey); }
 }
 
 /* Modal styling */
-.modal-header {
-    background-color: var(--mint);
-    border-bottom: 2px solid var(--yellow-green);
-}
 
-.modal-title {
-    color: var(--green);
-    font-weight: 600;
-}
 
 /* Responsive adjustments */
 @media (max-width: 768px) {
