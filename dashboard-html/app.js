@@ -82,8 +82,40 @@ async function loadUniqueResults(filePath) {
         Papa.parse(filePath, {
             download: true,
             header: true,
+            skipEmptyLines: 'greedy',
+            transformHeader: function(header) {
+                // Normalize common header variants
+                return header.trim()
+                    .replace(/\s+/g, '')
+                    .replace(/^testid$/i, 'test_id')
+                    .replace(/^testtype$/i, 'test_type')
+                    .replace(/^status$/i, 'status')
+                    .replace(/^(response\.?result|result)$/i, 'result')
+                    .replace(/^(response\.?comment|comment)$/i, 'comment')
+                    .replace(/^(actedupon|acted_upon)$/i, 'actedUpon')
+                    .replace(/^(consulted)$/i, 'consulted')
+                    .replace(/^(count|n|records|total)$/i, 'count');
+            },
             complete: function(results) {
-                uniqueResults = results.data;
+                // Coerce and backfill
+                uniqueResults = (results.data || []).map(r => {
+                    const testId = r.test_id || r.testId || '';
+                    // Infer test_type if missing
+                    let testType = r.test_type;
+                    if (!testType && typeof testId === 'string') {
+                        if (testId.toUpperCase().startsWith('AMENDMENT_')) testType = 'Amendment';
+                        else if (testId.toUpperCase().startsWith('VALIDATION_')) testType = 'Validation';
+                    }
+                    const countNum = parseInt(r.count || 0);
+                    return {
+                        ...r,
+                        test_id: testId,
+                        test_type: testType || r.test_type || '',
+                        actedUpon: r.actedUpon || '',
+                        consulted: r.consulted || '',
+                        count: isNaN(countNum) ? 0 : countNum
+                    };
+                }).filter(r => r.test_id);
                 resolve();
             },
             error: function(error) {

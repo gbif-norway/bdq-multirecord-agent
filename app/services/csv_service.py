@@ -63,32 +63,47 @@ class CSVService:
         else:
             log(f"Applying {len(amendment_results)} amendments to dataset")
         
-        # Group by ID to handle multiple amendments per row
-        for id_value, group in amendment_results.groupby(id_column):
-            # Find the row index in the original dataframe
-            row_mask = amended_df[id_column] == id_value
-            if not row_mask.any():
-                log(f"Warning: Could not find row with {id_column}={id_value} for amendment", "WARNING")
-                continue
-                
-            row_idx = amended_df[row_mask].index[0]
-            
-            # Apply each amendment in the group
-            for _, amendment in group.iterrows():
-                if amendment['status'] == 'AMENDED':
-                    self._apply_single_amendment(amended_df, row_idx, amendment)
+        # Filter to only AMENDED status amendments
+        amended_only = amendment_results[amendment_results['status'] == 'AMENDED'].copy()
         
-        log(f"Applied amendments to {len(amendment_results)} records")
+        if amended_only.empty:
+            log("No amendments to apply (all amendments have status other than AMENDED)")
+        else:
+            # Use the original working method for now
+            amendments_applied = self._apply_amendments_original(amended_df, amended_only, id_column)
+            log(f"Applied {amendments_applied} amendments to dataset")
         
         # Convert DataFrame to CSV string
         csv_buffer = io.StringIO()
         amended_df.to_csv(csv_buffer, index=False)
         return csv_buffer.getvalue()
     
-    def _apply_single_amendment(self, df: pd.DataFrame, row_idx: int, amendment: pd.Series) -> None:
-        """Apply a single amendment to a specific row"""
+    def _apply_amendments_original(self, df: pd.DataFrame, amendments_df: pd.DataFrame, id_column: str) -> int:
+        """Apply amendments using optimized version of the original method"""
+        amendments_applied = 0
+        
+        # Create a mapping of ID to row index for O(1) lookups - this is the key optimization
+        id_to_index = {id_val: idx for idx, id_val in enumerate(df[id_column])}
+        
+        # Group by ID to handle multiple amendments per row
+        for id_value, group in amendments_df.groupby(id_column):
+            if id_value not in id_to_index:
+                log(f"Warning: Could not find row with {id_column}={id_value} for amendment", "WARNING")
+                continue
+                
+            row_idx = id_to_index[id_value]
+            
+            # Apply each amendment in the group
+            for _, amendment in group.iterrows():
+                if amendment['status'] == 'AMENDED':
+                    amendments_applied += self._apply_single_amendment_count(df, row_idx, amendment)
+        
+        return amendments_applied
+    
+    def _apply_single_amendment_count(self, df: pd.DataFrame, row_idx: int, amendment: pd.Series) -> int:
+        """Apply a single amendment and return count of fields amended"""
         result = amendment['result']
-        test_id = amendment['test_id']
+        amendments_applied = 0
     
         amendments = result.split('|')
         for amendment_part in amendments:
@@ -97,6 +112,9 @@ class CSVService:
             
             if col in df.columns:
                 df.at[row_idx, col] = amended_value
-                log(f"Applied amendment to {col}={amended_value} for test {test_id}")
+                amendments_applied += 1
             else:
-                log(f"ERROR: Column {col} not found for amendment in test {test_id}", "WARNING")
+                log(f"ERROR: Column {col} not found for amendment in test {amendment['test_id']}", "WARNING")
+        
+        return amendments_applied
+    

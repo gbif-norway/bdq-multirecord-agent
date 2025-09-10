@@ -32,19 +32,24 @@ function timingSafeEqual(a, b) {
 // }
 function doPost(e) {
   try {
-    const raw = e.postData?.contents || '';
+    // Avoid optional chaining for Rhino compatibility in some Apps Script projects
+    const raw = (e && e.postData && e.postData.contents) ? e.postData.contents : '';
     const sig = e.parameter['X-Signature'] || e.parameter['signature'] || (e.headers && e.headers['X-Signature']) || '';
     if (!verify_(raw, sig)) {
       return ContentService.createTextOutput('bad sig').setMimeType(ContentService.MimeType.TEXT);
     }
 
     const data = JSON.parse(raw);
+    try { console.log('doPost: payload meta', { hasThreadId: !!(data && data.threadId), atts: Array.isArray(data && data.attachments) ? data.attachments.length : 0, rawLen: String(raw || '').length }); } catch (eLog) {}
     if (!data || !data.threadId) {
       return ContentService.createTextOutput('bad request').setMimeType(ContentService.MimeType.TEXT);
     }
 
     const thread = GmailApp.getThreadById(String(data.threadId));
-    if (!thread) return ContentService.createTextOutput('no thread').setMimeType(ContentService.MimeType.TEXT);
+    if (!thread) {
+      try { console.log('doPost: no thread for', String(data.threadId)); } catch (eLog2) {}
+      return ContentService.createTextOutput('no thread').setMimeType(ContentService.MimeType.TEXT);
+    }
 
     const opts = { htmlBody: String(data.htmlBody || 'Done.') };
     if (Array.isArray(data.attachments) && data.attachments.length) {

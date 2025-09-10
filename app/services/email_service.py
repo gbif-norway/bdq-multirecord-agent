@@ -117,10 +117,18 @@ class EmailService:
             },
             timeout=30
         )
+        # Even when Apps Script errors, it often returns HTTP 200 with an HTML error page.
+        # Log more context and detect non-OK bodies to aid debugging in prod.
         response.raise_for_status()
+        resp_ct = (response.headers.get('Content-Type') or '').lower()
+        resp_text = (response.text or '')
+        body_preview = resp_text[:500]
         log(
-            f"Sent reply to {email_data.get('headers').get('from')}; status={response.status_code}; body={(response.text or '')[:200]}"
+            f"Sent reply to {email_data.get('headers').get('from')}; status={response.status_code}; content_type={resp_ct}; body={body_preview}"
         )
+        # Expect plain text 'ok' from Apps Script on success
+        if 'text/html' in resp_ct or not resp_text.strip().lower().startswith('ok'):
+            log("Gmail send webapp returned non-ok response; likely misconfig or script error", "ERROR")
     
     async def send_error_reply(self, email_data: dict, error_message: str):
         """Send error reply email"""
