@@ -13,7 +13,7 @@ body {
 }
 
 /* Header styles */
-header { background-color: var(--green); color:var(--light-green); margin-bottom: 2rem; }
+header { background-color: var(--green); color:var(--light-green); margin-bottom: 0.6rem; }
 h1 { font-size: 1.5rem; }
 h1 small { font-size: 0.8rem;  color: var(--light-green); }
 .robot-icon {
@@ -25,6 +25,23 @@ h1 small { font-size: 0.8rem;  color: var(--light-green); }
 .robot-icon:hover {
     transform: scale(1.2) rotate(10deg);
     filter: brightness(1.2);
+}
+p.intro {
+    margin-bottom: 0.7rem;
+    padding: 15px;
+    background-color: #E5FFDF;
+}
+p.intro {
+    transition: background-color 0.4s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.4s cubic-bezier(0.4, 0, 0.2, 1), transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+p.intro:hover {
+    background-color: rgba(254, 222, 0, 0.5); /* lighter, less hectic yellow */
+    box-shadow: 0 4px 24px 0 rgba(2, 126, 85, 0.10), 0 1.5px 6px 0 rgba(200, 223, 82, 0.10);
+    transform: scale(1.03);
+}
+p.intro small { font-size: 0.8em; color: var(--grey); }
+p.intro span.badge { background-color: #caebc3; color: black; font-weight: normal; font-size: 0.9em}
+p.intro span.badge:hover { background-color: #a4e398; color: black; }
 }
 
 /* Card hover effects */
@@ -67,13 +84,19 @@ h2 small { font-size: 0.8rem;  color: var(--grey); }
 /* List group styling */
 .list-group-item {
     cursor: pointer;
+    font-size: 0.7rem;
 }
+.list-group-item h5 { font-size: 0.9rem; }
 
 .list-group-item:hover {
     background-color: var(--mint);
 }
 blockquote { font-size: 0.9rem; padding-left: 10px;  }
 blockquote p { margin-bottom: 5px; color: var(--grey); }
+blockquote p.description { background-color: #fffdeb; padding: 3px; 
+    margin-bottom: 8px;
+    margin-top: 0;
+}
 
 /* Test header styling - now handled by Bootstrap d-flex */
 .test-title {
@@ -109,6 +132,7 @@ blockquote p { margin-bottom: 5px; color: var(--grey); }
 
 /* Chart styling */
 #needsAttentionChart {
+    height: 250px !important;
     max-height: 400px;
 }
 

@@ -271,6 +271,7 @@ function renderNeedsAttentionChart(uniqueResultsWithTestContext) {
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            aspectRatio: 2, // This sets the width/height ratio
             plugins: {
                 legend: {
                     display: false
@@ -482,9 +483,9 @@ function openDetailModal(testId, containerType) {
 
     const appliedAmendments = containerType === 'validations' ? getAmendmentsAppliedForValidation(testId) : [];
 
-    modalBody.innerHTML = `
+    const modalHTML = `
         <blockquote>
-            <p><i class="fas fa-sticky-note text-warning"></i> <strong>${testInfo ? testInfo.description : 'No description available'}</strong></p>
+            <p class="description"><i class="fas fa-sticky-note text-warning"></i> <strong>${testInfo ? testInfo.description : 'No description available'}</strong></p>
             ${testInfo && testInfo.notes ? `<p><i class="fas fa-info-circle text-primary"></i> ${testInfo.notes}</p>` : ''}
         </blockquote>
         <div>
@@ -515,6 +516,7 @@ function openDetailModal(testId, containerType) {
         ` : ''}
     `;
 
+    modalBody.innerHTML = modalHTML;
     modal.show();
 }
 
