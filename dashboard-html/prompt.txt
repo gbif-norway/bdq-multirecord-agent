@@ -32,7 +32,7 @@ Simple header: <i class="fa-solid fa-robot"></i> <i class="fa-solid fa-robot"> <
  - First robot icon should be yellow, then yellow green, then mint
  - Subtle animation effect on hover over the robot icons 
 
-Then we want a set of cards which get a shadow effect on hover.
+Next, a set of cards which get a shadow effect on hover.
  - x records in dataset (number_of_records_in_dataset)
  - x tests across dataset (no_of_tests_run) across x columns (len(list_of_all_columns_tested))
  - x results (no_of_test_results)
@@ -40,25 +40,31 @@ Then we want a set of cards which get a shadow effect on hover.
  - x corrections needing attention (no_of_unique_non_compliant_validations)
  - x fields with potential issues (no_of_unique_issues)
 
-Next a bar graph. To populate it, unique_results LEFT JOIN on TG2_tests_small.csv (based on test_id)
+Next, a bar graph, heading "<i class="fa-regular fa-eye"></i> Needs attention". 
+Tooltip on hover (Values a BDQ test has flagged as non-compliant or a possible potential issue) 
+Populate with unique_results LEFT JOIN on TG2_tests_small.csv (based on test_id) - this should be a common file called uniqueResultsWithTestContextInfo. 
+- Filter by: result = NOT_COMPLIANT or result = POTENTIAL_ISSUE or 
+- Each bar should be number per IE Class. Get rid of the prefix and :, so e.g. dcterms:Location should display as Location.
+- Each IE Class bar should be a colour in the range between Yellow #fede00 and Yellow Green #c8df52 (make it a gradient)
 
-    summary = {
-        'no_of_tests_results': len(test_results_df),
-        'no_of_tests_run': test_results_df['test_id'].nunique(),
+Next, a header with <i class="fa-solid fa-edit" style="color: #f59e0b; margin-right: 8px;"></i> Amendments automatically applied <small>(see your attached amendments csv in the email)<small>
+Below, a list group of uniqueResultsWithTestContextInfo, filter by 
+ - Amendment: where Response.status IN (AMENDED, FILLED_IN)
+Paginate, show 10 per page
 
-        'no_of_non_compliant_validations': len(non_compliant_validations),
-        'no_of_unique_non_compliant_validations': len(non_compliant_validations.drop_duplicates()),
-        
-        'no_of_amendments': len(amendments),
-        'no_of_unique_amendments': len(amendments.drop_duplicates()), # subset=['actedUpon', 'consulted', 'test_id']
-        'no_of_filled_in': len(filled_in),
-        'no_of_unique_filled_in': len(filled_in.drop_duplicates()),
+Next, a header with <i class="fa-solid fa-hand-sparkles"></i> Validations and issues
+Below, a list group of uniqueResultsWithTestContextInfo, get contents filter by 
+ - Validation: where Response.status = RUN_HAS_RESULT AND Response.result = NOT_COMPLIANT
+ - Issue: where Response.status = RUN_HAS_RESULT AND Response.result IN (IS_ISSUE, POTENTIAL_ISSUE)
+Paginate, show 10 per page
+ 
+For each list_group we need:
+test_id as a header (title case, replace '_' with ' ')
+a badge with total count in it 
+The description of the test
+The top 5 actedUpon and consulted field combos + counts for each 
+entire list_group should be clickable and should open a modal
+- same info in modal, but include at the top the notes of the test and instead of top 5 we should have ALL combos + counts, paginate by 10
 
-        'no_of_issues': len(issues),
-        'no_of_unique_issues': len(issues.drop_duplicates()),
 
-        'top_issues': _get_top_grouped(issues, ['actedUpon', 'consulted', 'test_id']),
-        'top_filled_in': _get_top_grouped(filled_in, ['actedUpon', 'consulted', 'test_id']),
-        'top_amendments': _get_top_grouped(amendments, ['actedUpon', 'consulted', 'test_id']),
-        'top_non_compliant_validations': _get_top_grouped(non_compliant_validations, ['actedUpon', 'consulted', 'test_id']),
-    }
+

@@ -1,0 +1,196 @@
+/* Color scheme variables */
+:root {
+    --green: #027e55;
+    --yellow: #fede00;
+    --yellow-green: #c8df52;
+    --mint: #fafef5;
+    --grey: #6c757d;
+    --light-green: #e5ffdf;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* Header styles */
+header { background-color: var(--green); color:var(--light-green); margin-bottom: 2rem; }
+h1 { font-size: 1.5rem; }
+h1 small { font-size: 0.8rem;  color: var(--light-green); }
+.robot-icon {
+    font-size: 2rem;
+    margin: 0 0.5rem;
+    transition: all 0.3s ease;
+    cursor: pointer;
+}
+.robot-icon:hover {
+    transform: scale(1.2) rotate(10deg);
+    filter: brightness(1.2);
+}
+
+/* Card hover effects */
+.card {
+    transition: all 0.3s ease;
+    text-align: center;
+}
+.card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+    background-color: var(--mint);
+}
+
+h2 { font-size: 1.2rem; }
+h2 small { font-size: 0.8rem;  color: var(--grey); }
+
+
+/* Summary cards styling */
+.summary-card {
+    text-align: center;
+    padding: 1.5rem;
+    border-radius: 10px;
+    border-left: 4px solid var(--green);
+}
+
+.card-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--green);
+    margin-bottom: 0.5rem;
+}
+
+.summary-label {
+    color: var(--grey);
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* List group styling */
+.list-group-item {
+    cursor: pointer;
+}
+
+.list-group-item:hover {
+    background-color: var(--mint);
+}
+
+/* Test header styling - now handled by Bootstrap d-flex */
+.test-title {
+    font-weight: 600;
+    color: var(--green);
+    margin: 0;
+}
+
+.test-description {
+    color: var(--grey);
+    font-size: 0.9rem;
+    margin-bottom: 1rem;
+}
+
+/* Field combinations styling */
+.field-combinations {
+    margin-top: 1rem;
+}
+
+.field-combo {
+    background-color: #f8f9fa;
+    padding: 0.5rem;
+    margin: 0.25rem 0;
+    border-radius: 5px;
+    border-left: 3px solid var(--yellow-green);
+    font-size: 0.85rem;
+}
+
+.field-combo-count {
+    font-weight: bold;
+    color: var(--green);
+}
+
+/* Chart styling */
+#needsAttentionChart {
+    max-height: 400px;
+}
+
+/* Pagination styling */
+.pagination .page-link {
+    color: var(--green);
+    border-color: var(--mint);
+}
+
+.pagination .page-link:hover {
+    background-color: var(--mint);
+    border-color: var(--yellow-green);
+    color: var(--green);
+}
+
+.pagination .page-item.active .page-link {
+    background-color: var(--green);
+    border-color: var(--green);
+}
+
+/* Modal styling */
+.modal-header {
+    background-color: var(--mint);
+    border-bottom: 2px solid var(--yellow-green);
+}
+
+.modal-title {
+    color: var(--green);
+    font-weight: 600;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .robot-icon {
+        font-size: 1.5rem;
+        margin: 0 0.25rem;
+    }
+    
+    .header-title {
+        font-size: 1.5rem;
+    }
+    
+    .summary-number {
+        font-size: 2rem;
+    }
+    
+    .d-flex.w-100.justify-content-between {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    
+}
+
+/* Loading animation */
+.loading {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border: 3px solid var(--mint);
+    border-radius: 50%;
+    border-top-color: var(--green);
+    animation: spin 1s ease-in-out infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Error styling */
+.error-message {
+    background-color: #f8d7da;
+    color: #721c24;
+    padding: 1rem;
+    border-radius: 5px;
+    border-left: 4px solid #dc3545;
+    margin: 1rem 0;
+}
+
+/* Success styling */
+.success-message {
+    background-color: #d1edff;
+    color: #0c5460;
+    padding: 1rem;
+    border-radius: 5px;
+    border-left: 4px solid var(--green);
+    margin: 1rem 0;
+}

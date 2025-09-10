@@ -1,15 +1,102 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>BDQEmail report</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
-  </head>
-  <body>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BDQ Test Results Dashboard</title>
     
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.8/dist/umd/popper.min.js" integrity="sha384-I7E8VVD/ismYTF4hNIPjVp/Zjvgyol6VFvRkX/vR+Vc4jQkC+hVqc2pM8ODewa9r" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.min.js" integrity="sha384-G/EV+4j2dNv+tEPo3++6LCgdCROaejBqfUeNjuKAiuXbjrxilcCdDz6ZAVfHWe1Y" crossorigin="anonymous"></script>
-  </body>
+    <!-- Bootstrap 5.3 -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- PapaParse -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    
+    <!-- Custom Styles -->
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <header class="navbar navbar-expand-lg bd-navbar sticky-top"> 
+        <nav class="container-xxl bd-gutter flex-wrap flex-lg-nowrap" aria-label="Main navigation"> 
+            <div class="bd-navbar-toggle"> 
+                <h1><i class="fa-solid fa-robot robot-icon"></i>BDQEmail Report <small id="file-name"></small></h1>
+            </div>
+        </nav>
+    </header>
+    <div class="container-xxl bd-gutter flex-wrap flex-lg-nowrap">
+        <!-- Summary Cards -->
+        <div class="row mb-4" id="summary-cards">
+            <!-- Cards will be populated by JavaScript -->
+        </div>
+
+        <!-- Needs Attention Chart -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <h2 id="needs-attention-heading" data-bs-toggle="tooltip" data-bs-placement="top" title="Values a BDQ test has flagged as non-compliant or a possible potential issue">
+                    <i class="fa-regular fa-eye" style="color: #f59e0b;"></i> Needs attention
+                </h2>
+                <canvas id="needsAttentionChart" width="400" height="200"></canvas>
+            </div>
+        </div>
+
+        <!-- Amendments Section -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <h2><i class="fa-solid fa-edit" style="color: #f59e0b;"></i> Amendments automatically applied <small>(see your attached amendments csv in the email)</small></h2>
+                <div id="amendments-list">
+                    <!-- Amendments will be populated by JavaScript -->
+                </div>
+                <nav aria-label="Amendments pagination">
+                    <ul class="pagination justify-content-center" id="amendments-pagination">
+                        <!-- Pagination will be populated by JavaScript -->
+                    </ul>
+                </nav>
+            </div>
+        </div>
+
+        <!-- Validations and Issues Section -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <h2><i class="fa-solid fa-hand-sparkles" style="color: #f59e0b;"></i> Validations and issues</h2>
+                <div id="validations-list">
+                    <!-- Validations will be populated by JavaScript -->
+                </div>
+                <nav aria-label="Validations pagination">
+                    <ul class="pagination justify-content-center" id="validations-pagination">
+                        <!-- Pagination will be populated by JavaScript -->
+                    </ul>
+                </nav>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for detailed view -->
+    <div class="modal fade" id="detailModal" tabindex="-1" aria-labelledby="detailModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="detailModalLabel">Test Details</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" id="modal-body">
+                    <!-- Modal content will be populated by JavaScript -->
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- Custom JavaScript -->
+    <script src="app.js"></script>
+</body>
 </html>

@@ -71,7 +71,15 @@ async def _handle_email_processing(email_data: Dict[str, Any]):
 
     # Upload test results, unique test results (for the dashboard), and amended dataset to MinIO
     test_results_csv = minio_service.upload_dataframe(test_results, original_filename, "test_results")
-    unique_test_results = test_results.drop(columns=[f'dwc:{core_type}ID']).drop_duplicates()
+    # Group by all columns except the ID, count occurrences, and add as 'count' column
+    group_cols = [col for col in test_results.columns if col != f'dwc:{core_type}ID']
+    unique_test_results = (
+        test_results
+        .groupby(group_cols, dropna=False)
+        .size()
+        .reset_index()
+        .rename(columns={0: "count"})
+    )
     minio_service.upload_dataframe(unique_test_results, original_filename, "test_results_unique")
     amended_dataset = csv_service.generate_amended_dataset(df, test_results, core_type)
     amended_csv = minio_service.upload_csv_string(amended_dataset, original_filename, "amended")

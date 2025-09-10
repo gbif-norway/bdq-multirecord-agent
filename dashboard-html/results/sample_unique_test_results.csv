@@ -1,0 +1,17 @@
+test_id,test_type,status,result,comment,actedUpon,consulted,count
+VALIDATION_COUNTRYCODE_STANDARD,Validation,RUN_HAS_RESULT,NOT_COMPLIANT,Invalid country code format,dwc:countryCode=XX,dwc:countryCode=XX,5
+VALIDATION_COUNTRYCODE_STANDARD,Validation,RUN_HAS_RESULT,COMPLIANT,Valid country code,dwc:countryCode=US,dwc:countryCode=US,10
+VALIDATION_COUNTRY_FOUND,Validation,RUN_HAS_RESULT,NOT_COMPLIANT,Country not found in authority,dwc:country=Unknown Country,dwc:country=Unknown Country,3
+VALIDATION_PHYLUM_FOUND,Validation,RUN_HAS_RESULT,COMPLIANT,Phylum found in authority,dwc:phylum=Tracheophyta,dwc:phylum=Tracheophyta,8
+VALIDATION_MINDEPTH_LESSTHAN_MAXDEPTH,Validation,RUN_HAS_RESULT,NOT_COMPLIANT,Minimum depth greater than maximum depth,dwc:minimumDepthInMeters=10|dwc:maximumDepthInMeters=5,dwc:minimumDepthInMeters=10|dwc:maximumDepthInMeters=5,2
+VALIDATION_EVENTDATE_STANDARD,Validation,RUN_HAS_RESULT,POTENTIAL_ISSUE,Date format may be ambiguous,dwc:eventDate=01/02/03,dwc:eventDate=01/02/03,4
+VALIDATION_DECIMALLATITUDE_VALID,Validation,RUN_HAS_RESULT,NOT_COMPLIANT,Latitude out of range,dwc:decimalLatitude=95.5,dwc:decimalLatitude=95.5,1
+VALIDATION_DECIMALLONGITUDE_VALID,Validation,RUN_HAS_RESULT,COMPLIANT,Valid longitude,dwc:decimalLongitude=-120.5,dwc:decimalLongitude=-120.5,12
+VALIDATION_COORDINATES_IN_COUNTRY,Validation,RUN_HAS_RESULT,NOT_COMPLIANT,Coordinates outside country boundaries,dwc:decimalLatitude=40.7128|dwc:decimalLongitude=-74.0060|dwc:countryCode=CA,dwc:decimalLatitude=40.7128|dwc:decimalLongitude=-74.0060|dwc:countryCode=CA,3
+VALIDATION_SCIENTIFICNAME_FORMAT,Validation,RUN_HAS_RESULT,COMPLIANT,Valid scientific name format,dwc:scientificName=Homo sapiens,dwc:scientificName=Homo sapiens,15
+VALIDATION_TAXONRANK_VALID,Validation,RUN_HAS_RESULT,NOT_COMPLIANT,Invalid taxonomic rank,dwc:taxonRank=invalid_rank,dwc:taxonRank=invalid_rank,2
+AMENDMENT_EVENTDATE_STANDARDIZED,Amendment,AMENDED,dwc:eventDate=1880-05-08,Standardized date format,dwc:eventDate=8 May 1880,dwc:eventDate=8 May 1880,6
+AMENDMENT_COORDINATES_DECIMAL,Amendment,AMENDED,dwc:decimalLatitude=40.446|dwc:decimalLongitude=-79.982,Converted to decimal degrees,dwc:decimalLatitude=40°26'46""N|dwc:decimalLongitude=79°58'56""W,dwc:decimalLatitude=40°26'46""N|dwc:decimalLongitude=79°58'56""W,4
+AMENDMENT_COUNTRYCODE_STANDARDIZED,Amendment,AMENDED,dwc:countryCode=US,Standardized country code,dwc:countryCode=United States,dwc:countryCode=United States,7
+AMENDMENT_SCIENTIFICNAME_CORRECTED,Amendment,AMENDED,dwc:scientificName=Homo sapiens,Corrected capitalization,dwc:scientificName=homo sapiens,dwc:scientificName=homo sapiens,5
+AMENDMENT_TAXONRANK_STANDARDIZED,Amendment,AMENDED,dwc:taxonRank=species,Standardized rank format,dwc:taxonRank=sp.,dwc:taxonRank=sp.,3
