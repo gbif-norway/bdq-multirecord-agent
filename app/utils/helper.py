@@ -42,13 +42,11 @@ def log(message: str, level: str = "INFO"):
 
 def get_relevant_test_contexts(test_ids: List[str]) -> str:
     """Get relevant BDQ test contexts for the given test IDs"""
-    bdq_tests_csv_path = os.path.join(os.path.dirname(__file__), '..', 'TG2_tests.csv')
+    bdq_tests_csv_path = os.path.join(os.path.dirname(__file__), '..', 'TG2_tests_small.csv')
     bdq_tests_df = pd.read_csv(bdq_tests_csv_path, dtype=str).fillna('')
     relevant_tests = bdq_tests_df[bdq_tests_df['Label'].isin(test_ids)]
-    columns_needed = ['Label', 'InformationElement:ActedUpon', 'InformationElement:Consulted', 'ExpectedResponse', 'Description', 'Examples', 'Notes', 'IE Class', 'UseCases']
-    tests = relevant_tests[columns_needed].copy()
-    tests = tests.rename(columns={'IE Class': 'Information Element Class'})
-    return f"\n## BDQ TEST CONTEXT\nThe following tests were run on the dataset:\n\n{str(tests)}"
+    relevant_tests = relevant_tests.rename(columns={'IE Class': 'Information Element Class'})
+    return f"\n## BDQ TEST CONTEXT\nThe following tests were run on the dataset:\n\n{str(relevant_tests)}"
 
 def _snapshot_df(df_obj):
     max_rows, max_columns, max_str_len = 10, 10, 70
