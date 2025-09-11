@@ -84,18 +84,19 @@ h2 small { font-size: 0.8rem;  color: var(--grey); }
 /* List group styling */
 .list-group-item {
     cursor: pointer;
-    font-size: 0.7rem;
+    font-size: 0.8rem;
 }
+.list-group-item .totalcount { height: 1.3rem; font-size: 0.8rem; font-weight: normal; }
 .list-group-item h5 { font-size: 0.9rem; }
 
 .list-group-item:hover {
     background-color: var(--mint);
 }
-blockquote { font-size: 0.9rem; padding-left: 10px;  }
-blockquote p { margin-bottom: 5px; color: var(--grey); }
+blockquote { font-size: 0.9rem;  }
+blockquote p { margin-bottom: 5px; color: black; margin-bottom: 1em; }
 blockquote p.description { background-color: #fffdeb; padding: 3px; 
-    margin-bottom: 8px;
     margin-top: 0;
+    color: var(--grey);
 }
 
 /* Test header styling - now handled by Bootstrap d-flex */
@@ -133,6 +134,7 @@ blockquote p.description { background-color: #fffdeb; padding: 3px;
     font-weight: bold;
     color: var(--green);
 }
+.btn-dl-custom { font-size: 0.6rem; color: black; padding: 3px; }
 
 /* Chart styling */
 #needsAttentionChart {

@@ -76,7 +76,7 @@
         <!-- Amendments Section -->
         <div class="row mb-3">
             <div class="col-12">
-                <h2><i class="fa-solid fa-edit" style="color: #f59e0b;"></i> Amendments automatically applied <small>(see your attached amendments csv in the email)</small></h2>
+                <h2><i class="fa-solid fa-edit" style="color: #f59e0b;"></i> Amendments automatically applied <small>(see Amended dataset csv)</small></h2>
                 <div id="amendments-list">
                     <!-- Amendments will be populated by JavaScript -->
                 </div>
@@ -118,6 +118,12 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
+                    <p>
+                        <a href="https://github.com/tdwg/bdq/tree/master/tg2" target="_blank">
+                            Browse the TDWG Tests and Assertions Task Group repo
+                            <i class="fa-solid fa-arrow-up-right-from-square ms-1" aria-label="External link"></i>
+                        </a>
+                    </p>
                     <h6 class="fw-bold">Small Checks</h6>
                     <p>BDQ Tests are bite-sized rules that look at one specific part of a record—usually a single Darwin Core field like country, date, or coordinates. They don't judge the whole record at once; they focus on one thing and keep the result simple: OK, needs fixing, or can't be checked. "Can't be checked" usually means the field is missing, unreadable, or the external reference list wasn't available.</p>
 

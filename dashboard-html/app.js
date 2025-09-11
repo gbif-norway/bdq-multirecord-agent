@@ -383,11 +383,35 @@ function renderAmendmentsList(uniqueResultsWithTestContext) {
     renderPaginatedList(amendments, 'amendments', currentAmendmentsPage, 'amendments-pagination');
 }
 
+function updateValidationsHeading(validations) {
+    // Group by test_id to count unique tests
+    const groupedByTestId = {};
+    validations.forEach(result => {
+        if (!groupedByTestId[result.test_id]) {
+            groupedByTestId[result.test_id] = [];
+        }
+        groupedByTestId[result.test_id].push(result);
+    });
+
+    // Calculate x: number of unique tests with results needing attention
+    const x = Object.keys(groupedByTestId).length;
+
+    // Calculate y: sum of all record counts
+    const y = validations.reduce((sum, result) => sum + parseInt(result.count || 1), 0);
+
+    // Update the heading
+    const heading = document.querySelector('h2 i.fa-flag').parentElement;
+    heading.innerHTML = `<i class="fa-regular fa-flag" style="color: #f59e0b;"></i> Validations and issues <small>(<strong>${x}</strong> tests with results needing attention, total of <strong>${y}</strong> records affected)</small>`;
+}
+
 function renderValidationsList(uniqueResultsWithTestContext) {
     const validations = uniqueResultsWithTestContext.filter(result => 
         (result.status === 'RUN_HAS_RESULT' && result.result === 'NOT_COMPLIANT') ||
         (result.status === 'RUN_HAS_RESULT' && result.result === 'POTENTIAL_ISSUE')
     );
+
+    // Update the heading with dynamic counts
+    updateValidationsHeading(validations);
 
     renderPaginatedList(validations, 'validations', currentValidationsPage, 'validations-pagination');
 }
@@ -412,6 +436,24 @@ function renderPaginatedList(data, containerId, currentPage, paginationId) {
         return totalCountB - totalCountA; // Descending order
     });
 
+    // Calculate min/max counts for gradient color mapping
+    const counts = sortedGroups.map(([, items]) => 
+        items.reduce((sum, item) => sum + parseInt(item.count || 1), 0)
+    );
+    const minCount = Math.min(...counts);
+    const maxCount = Math.max(...counts);
+    
+    // Generate gradient colors (using same logic as chart)
+    const gradientColors = generateGradientColors(sortedGroups.length);
+    
+    // Function to get color for a given count
+    const getColorForCount = (count) => {
+        if (maxCount === minCount) return gradientColors[0]; // All same count
+        const ratio = (count - minCount) / (maxCount - minCount);
+        const colorIndex = Math.floor(ratio * (gradientColors.length - 1));
+        return gradientColors[colorIndex];
+    };
+
     const totalPages = Math.ceil(sortedGroups.length / itemsPerPage);
     const startIndex = (currentPage - 1) * itemsPerPage;
     const endIndex = startIndex + itemsPerPage;
@@ -426,13 +468,14 @@ function renderPaginatedList(data, containerId, currentPage, paginationId) {
                 const topCombos = getTopFieldCombinations(items, 5);
                 const appliedAmendments = containerId === 'validations' ? getAmendmentsAppliedForValidation(testId) : [];
                 const appliedAmendmentTests = containerId === 'validations' ? getAppliedAmendmentTests(appliedAmendments) : [];
+                const badgeColor = getColorForCount(totalCount);
 
                 return `
                     <a href="#" class="list-group-item list-group-item-action" 
                        onclick="openDetailModal('${testId}', '${containerId}'); return false;">
                         <div class="d-flex w-100 justify-content-between">
                             <h5 class="mb-1">${formatTestTitle(testId)}</h5>
-                            <small class="text-body-secondary">${totalCount} items</small>
+                            <span class="badge totalcount" style="background-color: ${badgeColor}; color: #000;">${totalCount} records affected</span>
                         </div>
                          <p class="mb-1">${testInfo ? testInfo.description : 'No description available'}</p>
                         ${containerId === 'validations' && appliedAmendmentTests.length > 0 ? `
@@ -522,6 +565,7 @@ function openDetailModal(testId, containerType) {
     const modal = new bootstrap.Modal(document.getElementById('detailModal'));
     const modalTitle = document.getElementById('detailModalLabel');
     const modalBody = document.getElementById('modal-body');
+    const modalFooter = document.querySelector('#detailModal .modal-footer');
 
     modalTitle.textContent = formatTestTitle(testId);
 
@@ -553,7 +597,7 @@ function openDetailModal(testId, containerType) {
             ${testInfo && testInfo.suggested_fixes ? `<p><i class="fa-solid fa-wrench"></i></i> <strong>Suggested Fixes:</strong> ${testInfo.suggested_fixes}</p>` : ''}
         </blockquote>
         <div>
-            <h6>The following fields in your data were flagged:</h6>
+            <h6>The following fields in your data were flagged${containerType === 'validations' && testData.length > 0 ? ` <button type="button" class="btn btn-outline-dark btn-sm btn-dl-custom" onclick="downloadValidationCSV('${testId}')"><i class="fas fa-download me-1"></i>Download</button>` : ''}:</h6>
             <div class="field-combinations">
                 ${allCombos.map(combo => {
                     const displayText = containerType === 'amendments' ? 
@@ -597,6 +641,12 @@ function openDetailModal(testId, containerType) {
     `;
 
     modalBody.innerHTML = modalHTML;
+    
+    // Reset modal footer to default
+    modalFooter.innerHTML = `
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+    `;
+    
     modal.show();
 }
 
@@ -865,6 +915,122 @@ function initializeTooltips() {
     tooltipTriggerList.map(function (tooltipTriggerEl) {
         return new bootstrap.Tooltip(tooltipTriggerEl);
     });
+}
+
+function downloadValidationCSV(testId) {
+    // Get all data for this test
+    const uniqueResultsWithTestContext = joinResultsWithTestContext();
+    const testData = uniqueResultsWithTestContext.filter(result => 
+        result.test_id === testId && 
+        ((result.status === 'RUN_HAS_RESULT' && result.result === 'NOT_COMPLIANT') ||
+         (result.status === 'RUN_HAS_RESULT' && result.result === 'POTENTIAL_ISSUE'))
+    );
+
+    if (testData.length === 0) {
+        alert('No data available for download');
+        return;
+    }
+
+    // Get all unique field names from actedUpon and consulted
+    const allFields = new Set();
+    testData.forEach(item => {
+        // Parse actedUpon fields
+        if (item.actedUpon) {
+            const actedUponFields = item.actedUpon.split('|').map(field => field.trim()).filter(Boolean);
+            actedUponFields.forEach(field => {
+                const fieldName = field.split('=')[0];
+                if (fieldName) allFields.add(fieldName);
+            });
+        }
+        
+        // Parse consulted fields
+        if (item.consulted) {
+            const consultedFields = item.consulted.split('|').map(field => field.trim()).filter(Boolean);
+            consultedFields.forEach(field => {
+                const fieldName = field.split('=')[0];
+                if (fieldName) allFields.add(fieldName);
+            });
+        }
+    });
+
+    // Convert Set to sorted array
+    const fieldNames = Array.from(allFields).sort();
+    
+    // Add Records flagged column
+    const headers = [...fieldNames, 'Records flagged'];
+    
+    // Generate CSV rows
+    const rows = testData.map(item => {
+        const row = {};
+        
+        // Initialize all fields with empty values
+        fieldNames.forEach(field => {
+            row[field] = '';
+        });
+        
+        // Fill in actedUpon values
+        if (item.actedUpon) {
+            const actedUponFields = item.actedUpon.split('|').map(field => field.trim()).filter(Boolean);
+            actedUponFields.forEach(field => {
+                const [fieldName, value] = field.split('=');
+                if (fieldName && value !== undefined) {
+                    row[fieldName] = value;
+                }
+            });
+        }
+        
+        // Fill in consulted values (only if not already filled by actedUpon)
+        if (item.consulted) {
+            const consultedFields = item.consulted.split('|').map(field => field.trim()).filter(Boolean);
+            consultedFields.forEach(field => {
+                const [fieldName, value] = field.split('=');
+                if (fieldName && value !== undefined && !row[fieldName]) {
+                    row[fieldName] = value;
+                }
+            });
+        }
+        
+        // Add count
+        row['Records flagged'] = item.count || 1;
+        
+        return row;
+    });
+
+    // Convert to CSV format
+    const csvContent = generateCSV(headers, rows);
+    
+    // Create and trigger download
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${testId}_items.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+function generateCSV(headers, rows) {
+    // Escape CSV values (handle commas, quotes, newlines)
+    function escapeCSVValue(value) {
+        if (value === null || value === undefined) return '';
+        const stringValue = String(value);
+        if (stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')) {
+            return '"' + stringValue.replace(/"/g, '""') + '"';
+        }
+        return stringValue;
+    }
+    
+    // Generate header row
+    const headerRow = headers.map(escapeCSVValue).join(',');
+    
+    // Generate data rows
+    const dataRows = rows.map(row => 
+        headers.map(header => escapeCSVValue(row[header] || '')).join(',')
+    );
+    
+    return [headerRow, ...dataRows].join('\n');
 }
 
 function showError(message) {
