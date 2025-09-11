@@ -43,12 +43,14 @@ async function initializeDashboard() {
         console.log('Test IDs in TG2 tests:', tg2TestIds);
         console.log('Available properties in first TG2 test:', Object.keys(tg2Tests[0] || {}));
         
-        // Find missing test IDs
-        const missingTestIds = resultTestIds.filter(id => !tg2TestIds.includes(id));
-        const matchingTestIds = resultTestIds.filter(id => tg2TestIds.includes(id));
+        // Find missing test IDs using normalized comparison
+        const normalizedResultTestIds = resultTestIds.map(id => String(id || '').trim());
+        const normalizedTg2TestIds = tg2TestIds.map(id => String(id || '').trim());
+        const missingTestIds = normalizedResultTestIds.filter(id => !normalizedTg2TestIds.includes(id));
+        const matchingTestIds = normalizedResultTestIds.filter(id => normalizedTg2TestIds.includes(id));
         
-        console.log('Matching test IDs:', matchingTestIds);
-        console.log('Missing test IDs from TG2 file:', missingTestIds);
+        console.log('Matching test IDs (normalized):', matchingTestIds);
+        console.log('Missing test IDs (normalized):', missingTestIds);
         console.log(`Summary: ${matchingTestIds.length} matching, ${missingTestIds.length} missing out of ${resultTestIds.length} total`);
         
         // Render dashboard components
@@ -83,39 +85,9 @@ async function loadUniqueResults(filePath) {
             download: true,
             header: true,
             skipEmptyLines: 'greedy',
-            transformHeader: function(header) {
-                // Normalize common header variants
-                return header.trim()
-                    .replace(/\s+/g, '')
-                    .replace(/^testid$/i, 'test_id')
-                    .replace(/^testtype$/i, 'test_type')
-                    .replace(/^status$/i, 'status')
-                    .replace(/^(response\.?result|result)$/i, 'result')
-                    .replace(/^(response\.?comment|comment)$/i, 'comment')
-                    .replace(/^(actedupon|acted_upon)$/i, 'actedUpon')
-                    .replace(/^(consulted)$/i, 'consulted')
-                    .replace(/^(count|n|records|total)$/i, 'count');
-            },
             complete: function(results) {
-                // Coerce and backfill
-                uniqueResults = (results.data || []).map(r => {
-                    const testId = r.test_id || r.testId || '';
-                    // Infer test_type if missing
-                    let testType = r.test_type;
-                    if (!testType && typeof testId === 'string') {
-                        if (testId.toUpperCase().startsWith('AMENDMENT_')) testType = 'Amendment';
-                        else if (testId.toUpperCase().startsWith('VALIDATION_')) testType = 'Validation';
-                    }
-                    const countNum = parseInt(r.count || 0);
-                    return {
-                        ...r,
-                        test_id: testId,
-                        test_type: testType || r.test_type || '',
-                        actedUpon: r.actedUpon || '',
-                        consulted: r.consulted || '',
-                        count: isNaN(countNum) ? 0 : countNum
-                    };
-                }).filter(r => r.test_id);
+                // Use the file exactly as provided; assume schema is correct
+                uniqueResults = results.data || [];
                 resolve();
             },
             error: function(error) {
@@ -181,20 +153,30 @@ async function loadSummaryStats(filePath) {
 
 function joinResultsWithTestContext() {
     return uniqueResults.map(result => {
-        const testInfo = tg2Tests.find(test => test.test_id === result.test_id);
-        if (!testInfo) {
-            console.warn(`Test not found for test_id: ${result.test_id}`);
-        }
-        return {
-            ...result,
-            test_description: testInfo ? testInfo.description : 'No description available',
-            test_notes: testInfo ? testInfo.notes : 'No notes available',
-            ie_class: testInfo ? testInfo.ie_class : 'Unknown',
-            ie_acted_upon: testInfo ? (testInfo.ie_acted_upon || '') : '',
-            ie_consulted: testInfo ? (testInfo.ie_consulted || '') : '',
-            test_kind: testInfo ? (testInfo.type || '') : ''
-        };
-    });
+            // Normalize test_id for comparison (trim whitespace and convert to string)
+            const normalizedResultTestId = String(result.test_id || '').trim();
+            const testInfo = tg2Tests.find(test => {
+                const normalizedTestId = String(test.test_id || '').trim();
+                return normalizedTestId === normalizedResultTestId;
+            });
+            
+            if (!testInfo) {
+                console.warn(`Test not found for test_id: "${result.test_id}" (normalized: "${normalizedResultTestId}")`);
+                // Debug: show available test IDs for comparison
+                const availableTestIds = tg2Tests.map(t => `"${String(t.test_id || '').trim()}"`).slice(0, 5);
+                console.warn(`Available test IDs (first 5): ${availableTestIds.join(', ')}`);
+            }
+            
+            return {
+                ...result,
+                test_description: testInfo ? testInfo.description : 'No description available',
+                test_notes: testInfo ? testInfo.notes : 'No notes available',
+                ie_class: testInfo ? testInfo.ie_class : 'Unknown',
+                ie_acted_upon: testInfo ? (testInfo.ie_acted_upon || '') : '',
+                ie_consulted: testInfo ? (testInfo.ie_consulted || '') : '',
+                test_kind: testInfo ? (testInfo.type || '') : ''
+            };
+        });
 }
 
 function renderSummaryCards() {
@@ -278,10 +260,24 @@ function renderNeedsAttentionChart(uniqueResultsWithTestContext) {
                 }
             },
             scales: {
+                x: {
+                    grid: {
+                        display: false
+                    }
+                },
                 y: {
                     beginAtZero: true,
+                    grid: {
+                        display: false
+                    },
                     ticks: {
-                        stepSize: 1
+                        stepSize: 1,
+                        callback: function(value) {
+                            if (value >= 1000) {
+                                return (value / 1000).toFixed(0) + 'k';
+                            }
+                            return value;
+                        }
                     }
                 }
             }
@@ -300,6 +296,8 @@ function generateGradientColors(count) {
     }
     return colors;
 }
+
+// (triage chart removed on this branch)
 
 function renderAmendmentsList(uniqueResultsWithTestContext) {
     const amendments = uniqueResultsWithTestContext.filter(result => 
@@ -487,14 +485,19 @@ function openDetailModal(testId, containerType) {
         <blockquote>
             <p class="description"><i class="fas fa-sticky-note text-warning"></i> <strong>${testInfo ? testInfo.description : 'No description available'}</strong></p>
             ${testInfo && testInfo.notes ? `<p><i class="fas fa-info-circle text-primary"></i> ${testInfo.notes}</p>` : ''}
+            ${testInfo && testInfo.suggested_fixes ? `<p><i class="fa-solid fa-wrench"></i></i> <strong>Suggested Fixes:</strong> ${testInfo.suggested_fixes}</p>` : ''}
         </blockquote>
         <div>
-            <h6>Most common matches in your data:</h6>
+            <h6>The following fields in your data were flagged:</h6>
             <div class="field-combinations">
                 ${allCombos.map(combo => `
                     <div class="field-combo">
-                        <span class="field-combo-count">${combo.count} records</span>
-                        <div class="text-muted small">${combo.combo}</div>
+                        <span class="field-combo-count">${combo.count} records flagged</span>, with values: ${combo.combo}
+                        ${combo.comment && combo.comment.trim() ? `
+                        <div class="mt-1">
+                            <small><i class="fas fa-comment"></i> ${combo.comment}</small>
+                        </div>
+                        ` : ''}
                     </div>
                 `).join('')}
             </div>
@@ -525,11 +528,14 @@ function getTopFieldCombinations(items, limit) {
     
     items.forEach(item => {
         const combo = buildNormalizedCombo(item);
-        comboCounts[combo] = (comboCounts[combo] || 0) + parseInt(item.count || 1);
+        if (!comboCounts[combo]) {
+            comboCounts[combo] = { count: 0, comment: item.comment || '' };
+        }
+        comboCounts[combo].count += parseInt(item.count || 1);
     });
 
     return Object.entries(comboCounts)
-        .map(([combo, count]) => ({ combo, count }))
+        .map(([combo, data]) => ({ combo, count: data.count, comment: data.comment }))
         .sort((a, b) => b.count - a.count)
         .slice(0, limit);
 }

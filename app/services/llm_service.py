@@ -178,7 +178,7 @@ Start by acknowledging the submission and thank the user for using BDQEmail to t
 Carefully read the summary stats annd BDQ tests context. 
 Start with the amendments - explain that the attached amended dataset csv contains all the quick wins for the user automatically applied to their dataset. Describe what amendments were made. 
 Next go into the top issues - think in terms of real world practicality - which of these should the user be paying attention to? Go into detail and make suggestions.
-Look at the non-compliant validations - which are the quick and easy wins there? Which are the most critical that need paying attention to? Give a detailed analysis. Explore the full test results file and the user's original data if necessary to provide practical and actionable suggestions. 
+Look at the non-compliant validations - which are the quick and easy wins there? Which are the most critical that need paying attention to? Give a detailed analysis. Explore the full test results file and the user's original data if necessary to provide practical and actionable suggestions. For this stage it is important to be practical. What gets often automatically corrected by GBIF when the dataset gets ingested?
 
 Summmarise and provide some key takeaways at the end. I want you to showcase your understanding of the BDQ tests and your ability to help the user with their data quality issues. 
 

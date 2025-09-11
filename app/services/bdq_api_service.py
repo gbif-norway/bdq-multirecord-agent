@@ -97,6 +97,9 @@ class BDQAPIService:
                 how='left'
             )
             
+            # Filter out rows where test_id is NaN (these are rows that didn't match in the merge)
+            expanded_results = expanded_results.dropna(subset=['test_id'])
+            
             # Select only the required columns: occurrenceID/taxonID, test_id, test_type, status, result, comment, actedUpon, consulted, pre_amended_value
             id_column = f'dwc:{core_type}ID'
             final_results = expanded_results[[id_column, 'test_id', 'test_type', 'status', 'result', 'comment']].copy()

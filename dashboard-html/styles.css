@@ -124,6 +124,7 @@ blockquote p.description { background-color: #fffdeb; padding: 3px;
     border-left: 3px solid var(--yellow-green);
     font-size: 0.85rem;
 }
+.field-combo .mt-1 { color: var(--grey); }
 
 .field-combo-count {
     font-weight: bold;
