@@ -11,8 +11,8 @@ class CSVService:
         Parse CSV data and detect core type (occurrence or taxon)
         Returns (dataframe, core_type)
         """
-        # Parse CSV with automatic delimiter detection, treating all data as strings
-        df = pd.read_csv(io.StringIO(csv_data), sep=None, engine='python', dtype=str)
+        # Try multiple parsing strategies to handle malformed CSV data
+        df = self._parse_csv_robust(csv_data)
         df.columns = df.columns.str.strip().str.strip("\"'")
         df = self._ensure_dwc_prefixed_columns(df)
 
@@ -26,6 +26,70 @@ class CSVService:
         
         log(f"Parsed CSV with {len(df)} rows, {len(df.columns)} columns, core type: {core_type}")
         return df, core_type
+    
+    def _parse_csv_robust(self, csv_data: str) -> pd.DataFrame:
+        """
+        Parse CSV with multiple fallback strategies to handle malformed data
+        """
+        # Strategy 1: Standard pandas parsing with error handling
+        try:
+            df = pd.read_csv(io.StringIO(csv_data), sep=None, engine='python', dtype=str, quoting=1)
+            log("Successfully parsed CSV using standard pandas parser")
+            return df
+        except Exception as e:
+            log(f"Standard CSV parsing failed: {e}", "WARNING")
+        
+        # Strategy 2: Try with different quoting options
+        try:
+            df = pd.read_csv(io.StringIO(csv_data), sep=None, engine='python', dtype=str, quoting=3)
+            log("Successfully parsed CSV using QUOTE_NONE quoting")
+            return df
+        except Exception as e:
+            log(f"QUOTE_NONE parsing failed: {e}", "WARNING")
+        
+        # Strategy 3: Try with tab delimiter explicitly (common in biodiversity data)
+        try:
+            df = pd.read_csv(io.StringIO(csv_data), sep='\t', engine='python', dtype=str, quoting=3)
+            log("Successfully parsed CSV using tab delimiter with QUOTE_NONE")
+            return df
+        except Exception as e:
+            log(f"Tab delimiter parsing failed: {e}", "WARNING")
+        
+        # Strategy 4: Try to clean the data and parse again
+        try:
+            cleaned_data = self._clean_malformed_csv(csv_data)
+            df = pd.read_csv(io.StringIO(cleaned_data), sep='\t', engine='python', dtype=str, quoting=3)
+            log("Successfully parsed CSV after cleaning malformed quotes")
+            return df
+        except Exception as e:
+            log(f"Cleaned CSV parsing failed: {e}", "WARNING")
+        
+        # Strategy 5: Last resort - try with minimal error handling
+        try:
+            df = pd.read_csv(io.StringIO(csv_data), sep='\t', engine='python', dtype=str, 
+                           quoting=3, on_bad_lines='skip')
+            log("Successfully parsed CSV with error line skipping")
+            return df
+        except Exception as e:
+            log(f"All CSV parsing strategies failed: {e}", "ERROR")
+            raise Exception(f"Unable to parse CSV data: {e}")
+    
+    def _clean_malformed_csv(self, csv_data: str) -> str:
+        """
+        Clean common CSV malformation issues
+        """
+        lines = csv_data.split('\n')
+        cleaned_lines = []
+        
+        for line in lines:
+            # Fix malformed quotes like "text"moretext by adding tab separator
+            # This handles cases like "G.M.Dannevig"1951 -> "G.M.Dannevig"	1951
+            import re
+            # Pattern to match quote followed immediately by non-whitespace
+            line = re.sub(r'"([^"]*)"([^\s])', r'"\1"\t\2', line)
+            cleaned_lines.append(line)
+        
+        return '\n'.join(cleaned_lines)
  
     def _ensure_dwc_prefixed_columns(self, df: pd.DataFrame) -> pd.DataFrame:
         """Rename columns to have 'dwc:' prefix if they don't already have it.
