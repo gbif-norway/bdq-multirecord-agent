@@ -22,10 +22,11 @@
 </head>
 <body>
     <header class="navbar navbar-expand-lg bd-navbar sticky-top"> 
-        <nav class="container-xxl bd-gutter flex-wrap flex-lg-nowrap" aria-label="Main navigation"> 
+        <nav class="container-xxl bd-gutter d-flex justify-content-between align-items-center" aria-label="Main navigation"> 
             <div class="bd-navbar-toggle"> 
                 <h1><i class="fa-solid fa-robot robot-icon"></i>BDQEmail Report <small id="file-name"></small></h1>
             </div>
+            <!-- Download buttons will be added here by JavaScript -->
         </nav>
     </header>
     <div class="container-xxl bd-gutter flex-wrap flex-lg-nowrap">
@@ -57,21 +58,6 @@
 
         
 
-        <!-- Amendments Section -->
-        <div class="row mb-3">
-            <div class="col-12">
-                <h2><i class="fa-solid fa-edit" style="color: #f59e0b;"></i> Amendments automatically applied <small>(see your attached amendments csv in the email)</small></h2>
-                <div id="amendments-list">
-                    <!-- Amendments will be populated by JavaScript -->
-                </div>
-                <nav aria-label="Amendments pagination">
-                    <ul class="pagination justify-content-center" id="amendments-pagination">
-                        <!-- Pagination will be populated by JavaScript -->
-                    </ul>
-                </nav>
-            </div>
-        </div>
-
         <!-- Validations and Issues Section -->
         <div class="row mb-3">
             <div class="col-12">
@@ -81,6 +67,21 @@
                 </div>
                 <nav aria-label="Validations pagination">
                     <ul class="pagination justify-content-center" id="validations-pagination">
+                        <!-- Pagination will be populated by JavaScript -->
+                    </ul>
+                </nav>
+            </div>
+        </div>
+
+        <!-- Amendments Section -->
+        <div class="row mb-3">
+            <div class="col-12">
+                <h2><i class="fa-solid fa-edit" style="color: #f59e0b;"></i> Amendments automatically applied <small>(see your attached amendments csv in the email)</small></h2>
+                <div id="amendments-list">
+                    <!-- Amendments will be populated by JavaScript -->
+                </div>
+                <nav aria-label="Amendments pagination">
+                    <ul class="pagination justify-content-center" id="amendments-pagination">
                         <!-- Pagination will be populated by JavaScript -->
                     </ul>
                 </nav>

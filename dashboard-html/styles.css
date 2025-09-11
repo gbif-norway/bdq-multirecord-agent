@@ -117,14 +117,17 @@ blockquote p.description { background-color: #fffdeb; padding: 3px;
 }
 
 .field-combo {
-    background-color: #f8f9fa;
+    background-color: #e8f4ff;
     padding: 0.5rem;
     margin: 0.25rem 0;
-    border-radius: 5px;
-    border-left: 3px solid var(--yellow-green);
     font-size: 0.85rem;
 }
 .field-combo .mt-1 { color: var(--grey); }
+
+.field-combo-amended {
+    background-color: #e0ffe0 !important;
+    border-left: 3px solid var(--green) !important;
+}
 
 .field-combo-count {
     font-weight: bold;

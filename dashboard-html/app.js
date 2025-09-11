@@ -16,9 +16,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
 async function initializeDashboard() {
     try {
-        // Get filename from URL parameter
+        // Get filenames from URL parameters
         const urlParams = new URLSearchParams(window.location.search);
         const uniqueTestResultsFile = urlParams.get('unique_test_results');
+        const rawResultsFile = urlParams.get('raw_results');
+        const amendedDatasetFile = urlParams.get('amended_dataset');
         
         if (!uniqueTestResultsFile) {
             showError('No unique_test_results parameter provided in URL');
@@ -27,6 +29,9 @@ async function initializeDashboard() {
 
         // Set filename in header
         setFileName(uniqueTestResultsFile);
+        
+        // Set up download buttons
+        setupDownloadButtons(rawResultsFile, amendedDatasetFile);
 
         // Load data files
         await Promise.all([
@@ -83,6 +88,41 @@ function setFileName(filename) {
         .map(word => word.charAt(0).toUpperCase() + word.slice(1))
         .join(' ');
     fileNameElement.textContent = `for ${displayName} file`;
+}
+
+function setupDownloadButtons(rawResultsFile, amendedDatasetFile) {
+    const headerNav = document.querySelector('.bd-navbar .container-xxl');
+    
+    // Create download buttons container
+    const downloadButtonsContainer = document.createElement('div');
+    downloadButtonsContainer.className = 'd-flex gap-2';
+    
+    // Add raw results button if file is provided
+    if (rawResultsFile) {
+        const rawResultsButton = document.createElement('a');
+        rawResultsButton.type = 'button';
+        rawResultsButton.className = 'btn btn-outline-light';
+        rawResultsButton.href = `results/${rawResultsFile}`;
+        rawResultsButton.download = rawResultsFile;
+        rawResultsButton.innerHTML = '<i class="fas fa-download me-1"></i>Raw test results';
+        downloadButtonsContainer.appendChild(rawResultsButton);
+    }
+    
+    // Add amended dataset button if file is provided
+    if (amendedDatasetFile) {
+        const amendedDatasetButton = document.createElement('a');
+        amendedDatasetButton.type = 'button';
+        amendedDatasetButton.className = 'btn btn-light';
+        amendedDatasetButton.href = `results/${amendedDatasetFile}`;
+        amendedDatasetButton.download = amendedDatasetFile;
+        amendedDatasetButton.innerHTML = '<i class="fas fa-file-csv me-1"></i>Amended dataset';
+        downloadButtonsContainer.appendChild(amendedDatasetButton);
+    }
+    
+    // Add the buttons container to the header (it will be right-aligned due to justify-content-between)
+    if (downloadButtonsContainer.children.length > 0) {
+        headerNav.appendChild(downloadButtonsContainer);
+    }
 }
 
 async function loadUniqueResults(filePath) {
@@ -519,39 +559,41 @@ function openDetailModal(testId, containerType) {
                     const displayText = containerType === 'amendments' ? 
                         formatAmendmentDisplay(combo.item) : 
                         combo.combo;
+                    
+                    // For validations, check if there are applicable amendments
+                    let amendmentInfo = '';
+                    let hasAmendments = false;
+                    if (containerType === 'validations') {
+                        const applicableAmendments = getApplicableAmendmentsForValidation(combo.item, testId);
+                        if (applicableAmendments.length > 0) {
+                            hasAmendments = true;
+                            amendmentInfo = `
+                                <div class="mt-1">
+                                    <small><i class="fas fa-check-circle text-success"></i> Automatic fix: had the ${applicableAmendments.map(a => `<span class="badge bg-secondary me-1">${formatTestTitle(a.test_id)}</span>`).join('')} amendment applied</small>
+                                    <div class="mt-1">
+                                        <small class="text-muted">${applicableAmendments.map(a => formatAmendmentResult(a.result, a.actedUpon)).join('; ')}</small>
+                                    </div>
+                                </div>
+                            `;
+                        }
+                    }
+                    
+                    const fieldComboClass = hasAmendments ? 'field-combo field-combo-amended' : 'field-combo';
+                    
                     return `
-                    <div class="field-combo">
+                    <div class="${fieldComboClass}">
                         <span class="field-combo-count">${combo.count} records flagged</span>, with ${displayText}
                         ${combo.comment && combo.comment.trim() ? `
                         <div class="mt-1">
                             <small><i class="fas fa-comment"></i> ${combo.comment}</small>
                         </div>
                         ` : ''}
+                        ${amendmentInfo}
                     </div>
                 `;
                 }).join('')}
             </div>
         </div>
-        ${containerType === 'validations' ? `
-        <div class="mb-3">
-            <h6 style="margin-top: 15px;">Applied amendments to related fields:</h6>
-            ${appliedAmendments.length > 0 ? `
-                <div>
-                    ${appliedAmendments.map(a => {
-                        // Use efficient lookup instead of find()
-                        const key = `${a.test_id}||${a.result || ''}`;
-                        const amendmentData = amendmentLookupMap.get(key);
-                        return `
-                        <div class="field-combo">
-                            <div><span class="field-combo-count">${a.count} records</span> had the <span class="badge bg-secondary">${formatTestTitle(a.test_id)}</span> amendment applied</div>
-                            <div class="text-muted small">${formatAmendmentResult(a.result, amendmentData ? amendmentData.actedUpon : '')}</div>
-                        </div>
-                    `;
-                    }).join('')}
-                </div>
-            ` : '<p class="text-muted">No applied amendments found for this validation.</p>'}
-        </div>
-        ` : ''}
     `;
 
     modalBody.innerHTML = modalHTML;
@@ -633,6 +675,42 @@ function getAmendmentsAppliedForValidation(validationTestId) {
     });
 
     return Array.from(groups.values()).sort((a, b) => b.count - a.count);
+}
+
+function getApplicableAmendmentsForValidation(validationItem, validationTestId) {
+    // Parse the validation item's acted upon values
+    const validationFields = parseActedUponValues(validationItem.actedUpon || '');
+    if (validationFields.length === 0) return [];
+    
+    // Find amendments that match the same field values
+    const applicableAmendments = [];
+    
+    validationFields.forEach(validationField => {
+        // Look for amendments that have the same field and original value
+        amendmentLookupMap.forEach((amendmentData, key) => {
+            const amendmentResults = parseAmendmentResults(amendmentData.result);
+            const amendmentActedUpon = parseActedUponValues(amendmentData.actedUpon);
+            
+            // Check if this amendment affects the same field with the same original value
+            const matchingAmendment = amendmentActedUpon.find(acted => 
+                acted.field === validationField.field && acted.value === validationField.value
+            );
+            
+            if (matchingAmendment) {
+                const amendmentResult = amendmentResults.find(result => result.field === validationField.field);
+                if (amendmentResult) {
+                    applicableAmendments.push({
+                        test_id: amendmentData.test_id,
+                        result: amendmentData.result,
+                        actedUpon: amendmentData.actedUpon,
+                        count: amendmentData.count
+                    });
+                }
+            }
+        });
+    });
+    
+    return applicableAmendments;
 }
 
 function truncateText(text, maxLen) {
