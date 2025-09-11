@@ -197,8 +197,9 @@ async def debug_llm_analysis(
         # Create debug email data for sending
         debug_email_data = {
             "headers": {"from": "debug@bdq-service.com"},
-            "threadId": "debug-thread",
-            "subject": f"Debug LLM Analysis Results - {original_email.split('/')[-1]}"
+            "threadId": "debug-thread",    # will fall back to direct send if invalid
+            "to": "rukayasj@uio.no",
+            "subject": f"Debug LLM Analysis Results - {original_email.split('/')[-1]}",
         }
         
         # Send analysis to debug email
