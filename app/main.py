@@ -65,25 +65,15 @@ async def _handle_email_processing(email_data: Dict[str, Any]):
     # Upload original processed DataFrame to MinIO
     original_csv = minio_service.upload_dataframe(df, original_filename, "original")
 
-    # Run tests on dataset - note that at this point test_results will never be empty because the CSV has either occurrenceID or taxonID and the API will run tests on these at least
-    test_results = await bdq_api_service.run_tests_on_dataset(df, core_type)
+    # Run tests on dataset; returns unique results with counts
+    unique_test_results = await bdq_api_service.run_tests_on_dataset(df, core_type)
 
-    # Upload test results, unique test results (for the dashboard), and amended dataset to MinIO
-    test_results_csv = minio_service.upload_dataframe(test_results, original_filename, "test_results")
-    # Group by all columns except the ID, count occurrences, and add as 'count' column
-    group_cols = [col for col in test_results.columns if col != f'dwc:{core_type}ID']
-    unique_test_results = (
-        test_results
-        .groupby(group_cols, dropna=False)
-        .size()
-        .reset_index()
-        .rename(columns={0: "count"})
-    )
+    # Upload unique results (for the dashboard) and amended dataset to MinIO
     unique_test_results_csv = minio_service.upload_dataframe(unique_test_results, original_filename, "test_results_unique")
     
     # Generate summary stats using unique results (more efficient and accurate)
     summary_stats = _get_summary_stats_from_unique_results(unique_test_results, core_type, len(df))
-    amended_dataset = csv_service.generate_amended_dataset(df, test_results, core_type)
+    amended_dataset = csv_service.generate_amended_dataset(df, unique_test_results, core_type)
     amended_csv = minio_service.upload_dataframe(amended_dataset, original_filename, "amended")
     
     # Get LLM analysis using unique results (more efficient and focused)
@@ -94,8 +84,8 @@ async def _handle_email_processing(email_data: Dict[str, Any]):
     original_csv_content = csv_service.dataframe_to_csv_string(df)
     llm_analysis = llm_service.generate_openai_intelligent_summary(prompt, unique_results_csv_content, original_csv_content)
     
-    # Generate dashboard URL
-    dashboard_url = minio_service.generate_dashboard_url(unique_test_results_csv, test_results_csv, amended_csv)
+    # Generate dashboard URL (unique + amended only)
+    dashboard_url = minio_service.generate_dashboard_url(unique_test_results_csv, amended_csv)
     
     # Combine summary stats + LLM analysis + breakdown button
     body = _format_summary_stats_html(summary_stats, core_type, len(df)) + llm_analysis
@@ -312,7 +302,7 @@ def _format_summary_stats_html(summary_stats, core_type, no_of_records):
             <li><strong>Dataset:</strong> {core_type.title()} core with {no_of_records} records</li>
             <li><strong>Tests Run:</strong> {summary_stats['no_of_tests_results']} tests across {summary_stats['no_of_tests_run']} types of BDQ Tests</li>
             <li><strong>Possible problems found (Non-Compliant Validations):</strong> {summary_stats['no_of_non_compliant_validations']}</li>
-            <li><strong>Amendments automatically applied:</strong> {summary_stats['no_of_amendments'] + {summary_stats['no_of_filled_in']}}</li>
+            <li><strong>Amendments automatically applied:</strong> {summary_stats['no_of_amendments'] + summary_stats['no_of_filled_in']}</li>
             <li><strong>Other possible issues found:</strong> {summary_stats['no_of_issues']}</li>
         </ul>
     </div>

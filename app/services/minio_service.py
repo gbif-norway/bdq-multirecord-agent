@@ -67,10 +67,10 @@ class MinIOService:
         
         return self._upload_csv_content(csv_content, filename)
     
-    def generate_dashboard_url(self, unique_test_results_name: str, raw_results_name: str, amended_name: str) -> str:
-        """Generate dashboard URL for viewing breakdown report"""
+    def generate_dashboard_url(self, unique_test_results_name: str, amended_name: str) -> str:
+        """Generate dashboard URL for viewing breakdown report (unique + amended only)"""
         base_url = "https://storage.gbif-no.sigma2.no/misc/bdqreport/bdq-report.html"
-        return f"{base_url}?unique_test_results={unique_test_results_name}&raw_results={raw_results_name}&amended_dataset={amended_name}"
+        return f"{base_url}?unique_test_results={unique_test_results_name}&amended_dataset={amended_name}"
     
     def download_csv_from_url(self, s3_url: str) -> Optional[str]:
         """Download CSV content from S3 URL"""

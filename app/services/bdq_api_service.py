@@ -50,10 +50,18 @@ class BDQAPIService:
         return applicable_tests
     
     async def run_tests_on_dataset(self, df, core_type):
-        """Run BDQ tests on dataset with unique value deduplication."""
+        """Run BDQ tests and return unique results with counts (no per-row expansion).
+
+        For each applicable test:
+        - Build unique candidate combinations across actedUpon+consulted columns with counts
+        - Send batch request preserving order
+        - Combine API results back to candidates by position
+        - Include: test columns (values used), status/result/comment, test id/type,
+          human-readable actedUpon/consulted strings, actedUpon_cols/consulted_cols, and count
+        """
         start_time = time.time()
         applicable_tests = self._filter_applicable_tests(df.columns.tolist())
-        all_results_dfs: List[pd.DataFrame] = []
+        all_unique_results: List[pd.DataFrame] = []
 
         def _shorten_test_id(test_id):
             return test_id.replace("VALIDATION_", "V").replace("AMENDMENT_", "A")
@@ -61,80 +69,100 @@ class BDQAPIService:
         log(f"Running {len(applicable_tests)} tests: [{', '.join(_shorten_test_id(test.id) for test in applicable_tests)}]")
 
         for test in applicable_tests:
-            # Get a df which is a subset of the main df with unique items for testing for this particular test (e.g. just countryCode, or decimalLatitude and decimalLongitude and countryCode)
             test_columns = test.actedUpon + test.consulted
-            unique_test_candidates = (
+            if not test_columns:
+                # Defensive, though all tests should act on at least one column
+                continue
+
+            # Normalize candidate columns for matching and API params
+            norm_candidates = (
                 df[test_columns]
-                .drop_duplicates()
-                .reset_index(drop=True)
                 .replace([np.nan, np.inf, -np.inf], "")
                 .astype(str)
             )
+
+            # Compute unique combinations with counts
+            unique_counts = (
+                norm_candidates
+                .groupby(test_columns, dropna=False, as_index=False)
+                .size()
+                .rename(columns={"size": "count"})
+            )
+
+            if unique_counts.empty:
+                log(f"Skipping {test.id}: no candidates")
+                continue
+
+            # Prepare batch request preserving order
+            unique_params = unique_counts[test_columns].to_dict(orient="records")
             unique_test_candidates_batch_request = [
-                {"id": test.id, "params": row}
-                for row in unique_test_candidates.to_dict(orient="records")
+                {"id": test.id, "params": params} for params in unique_params
             ]
-            
-            # Call batch endpoint
+
+            # Call batch endpoint (results returned in same order)
             api_start_time = time.time()
-            batch_response = requests.post(self.batch_endpoint, json=unique_test_candidates_batch_request, timeout=1800)
+            batch_response = requests.post(
+                self.batch_endpoint, json=unique_test_candidates_batch_request, timeout=1800
+            )
             batch_response.raise_for_status()
             batch_results = batch_response.json()
             api_duration = time.time() - api_start_time
 
-            # Create results df for unique combinations
-            unique_results_df = pd.DataFrame(batch_results).fillna("")
-            unique_results_df['test_id'] = test.id
-            unique_results_df['test_type'] = test.type
-            
-            # Combine unique test data with results
-            unique_with_results = pd.concat([unique_test_candidates, unique_results_df], axis=1)
-            
-            # Merge results back to original dataframe to get one row per test per original row
-            expanded_results = df.merge(
-                unique_with_results, 
-                on=test_columns, 
-                how='left'
+            # Build results DataFrame aligned by order
+            results_df = pd.DataFrame(batch_results).fillna("")
+            results_df["test_id"] = test.id
+            results_df["test_type"] = test.type
+
+            # Stitch candidates + counts + results side-by-side
+            stitched = pd.concat(
+                [unique_counts.reset_index(drop=True), results_df.reset_index(drop=True)], axis=1
             )
-            
-            # Filter out rows where test_id is NaN (these are rows that didn't match in the merge)
-            expanded_results = expanded_results.dropna(subset=['test_id'])
-            
-            # Select only the required columns: occurrenceID/taxonID, test_id, test_type, status, result, comment, actedUpon, consulted
-            id_column = f'dwc:{core_type}ID'
-            final_results = expanded_results[[id_column, 'test_id', 'test_type', 'status', 'result', 'comment']].copy()
-            
-            # Add actedUpon and consulted columns with test field names and actual values
-            acted_upon_values = []
-            consulted_values = []
-            
-            for _, row in expanded_results.iterrows():
-                # Format actedUpon: "field1=value1, field2=value2"
-                acted_upon_pairs = []
-                for field in test.actedUpon:
-                    if field in row and pd.notna(row[field]):
-                        acted_upon_pairs.append(f"{field}={row[field]}")
-                acted_upon_values.append("|".join(acted_upon_pairs))
-                
-                # Format consulted: "field1=value1, field2=value2"
-                consulted_pairs = []
-                for field in test.consulted:
-                    if field in row and pd.notna(row[field]):
-                        consulted_pairs.append(f"{field}={row[field]}")
-                consulted_values.append("|".join(consulted_pairs))
-            
-            final_results['actedUpon'] = acted_upon_values
-            final_results['consulted'] = consulted_values
-            
-            all_results_dfs.append(final_results)
-            log(f"Completed test {test.id}: {len(final_results)} results (API call took {api_duration:.2f}s)")
-                
-        # Combine all test results
+
+            # Add actedUpon/consulted strings and column lists
+            acted_upon_cols = "|".join(test.actedUpon)
+            consulted_cols = "|".join(test.consulted)
+
+            def _pairs_str(row: pd.Series, cols: List[str]) -> str:
+                pairs = []
+                for c in cols:
+                    v = row.get(c, "")
+                    if pd.notna(v) and v != "":
+                        pairs.append(f"{c}={v}")
+                    else:
+                        # still include empty values for transparency
+                        pairs.append(f"{c}=")
+                return "|".join(pairs)
+
+            stitched["actedUpon_cols"] = acted_upon_cols
+            stitched["consulted_cols"] = consulted_cols
+            stitched["actedUpon"] = stitched.apply(lambda r: _pairs_str(r, test.actedUpon), axis=1)
+            stitched["consulted"] = stitched.apply(lambda r: _pairs_str(r, test.consulted), axis=1)
+
+            # Order columns for readability
+            ordered_cols = (
+                [*test_columns, "count", "test_id", "test_type", "status", "result", "comment", "actedUpon", "consulted", "actedUpon_cols", "consulted_cols"]
+            )
+            # Some tests may have no consulted columns; ensure columns exist
+            for c in ordered_cols:
+                if c not in stitched.columns:
+                    stitched[c] = ""
+            stitched = stitched[ordered_cols]
+
+            all_unique_results.append(stitched)
+            log(
+                f"Completed test {test.id}: {len(stitched)} unique combos (affecting {int(stitched['count'].sum())} rows). API {api_duration:.2f}s"
+            )
+
         total_duration = time.time() - start_time
-        if all_results_dfs:
-            all_results_df = pd.concat(all_results_dfs, ignore_index=True)
-            log(f"Completed all tests: {len(all_results_df)} total results, with a total of {len(applicable_tests)} tests run (total time: {total_duration:.2f}s)")
-            return all_results_df
+        if all_unique_results:
+            all_unique_df = pd.concat(all_unique_results, ignore_index=True)
+            log(
+                f"Completed all tests: {len(all_unique_df)} unique results across {len(applicable_tests)} tests (total {total_duration:.2f}s)"
+            )
+            return all_unique_df
         else:
-            log(f"No tests were successfully completed (total time: {total_duration:.2f}s)", "ERROR")
+            log(
+                f"No tests were successfully completed or applicable (total time: {total_duration:.2f}s)",
+                "ERROR",
+            )
             return pd.DataFrame()

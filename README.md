@@ -19,13 +19,12 @@ All local development should be done in Docker containers.
 7. Test Execution: Runs tests on unique data combinations via external BDQ API
    - Deduplicates test candidates to avoid redundant API calls
    - Calls `/api/v1/tests/run/batch` endpoint with unique parameter combinations
-   - Tries a single bulk request first with a total watchdog deadline (420s) and 30s heartbeat logs; on failure or timeout falls back to chunked requests (up to 3000 items per chunk, 300s per-chunk timeout) with progress logging
    - External API handles all BDQ test execution logic
-8. Result Processing: Expands test results to all matching rows
+8. Result Processing: Keeps results at the unique-combination level with a `count` of affected rows (no per-row expansion)
 9. Summary Generation: Creates intelligent summaries using LLM
 10. Email Reply: Sends results with summary and attachments via Google Apps Script
-   - CSV of Raw results: per row × per applicable test → `occurrenceID or taxonID`, `status`, `result`, `comment`, `amendment` (if any)
-   - CSV of Amended dataset: applies proposed changes from Amendment results
+   - CSV of Unique results: one row per unique combination tested including actedUpon/consulted values, `status`, `result`, and `count`
+   - CSV of Amended dataset: applies proposed changes from Amendment/FILLED_IN results to original data using value-based matching (no row IDs)
 
 ## BDQ API 
 

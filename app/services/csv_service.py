@@ -116,66 +116,97 @@ class CSVService:
         df.to_csv(csv_buffer, index=False)
         return csv_buffer.getvalue()
     
-    def generate_amended_dataset(self, original_df: pd.DataFrame, results_df: pd.DataFrame, core_type: str) -> pd.DataFrame:
-        """Generate amended dataset with proposed changes applied"""
+    def generate_amended_dataset(self, original_df: pd.DataFrame, unique_results_df: pd.DataFrame, core_type: str) -> pd.DataFrame:
+        """Generate amended dataset by applying AMENDED/FILLED_IN results using value-based masks.
+
+        Expects unique results where each row represents a unique combination of actedUpon+consulted values
+        with a 'count' column, and includes the raw test columns used to produce the result (one column per
+        actedUpon/consulted field), plus:
+          - 'status', 'result', 'test_id', 'test_type'
+          - 'actedUpon_cols', 'consulted_cols' (pipe-separated column name lists)
+        """
         amended_df = original_df.copy()
-        id_column = f'dwc:{core_type}ID'
-        amendment_results = results_df[results_df['test_type'] == 'Amendment'].copy()
-        
-        if amendment_results.empty:
-            log("No amendment results found")
-        else:
-            log(f"Applying {len(amendment_results)} amendments to dataset")
-        
-        # Filter to only AMENDED status amendments
-        amended_only = amendment_results[amendment_results['status'] == 'AMENDED'].copy()
-        
-        if amended_only.empty:
-            log("No amendments to apply (all amendments have status other than AMENDED)")
-        else:
-            # Use the original working method for now
-            amendments_applied = self._apply_amendments_original(amended_df, amended_only, id_column)
-            log(f"Applied {amendments_applied} amendments to dataset")
-        
-        return amended_df
-    
-    def _apply_amendments_original(self, df: pd.DataFrame, amendments_df: pd.DataFrame, id_column: str) -> int:
-        """Apply amendments using optimized version of the original method"""
+
+        if unique_results_df is None or unique_results_df.empty:
+            log("No test results supplied; returning original dataset")
+            return amended_df
+
+        # Only apply actionable amendments
+        actionable = unique_results_df[unique_results_df['status'].isin(['AMENDED', 'FILLED_IN'])].copy()
+        if actionable.empty:
+            log("No AMENDED/FILLED_IN results to apply")
+            return amended_df
+
+        # Build set of all columns that appear in any test's key set to normalize once
+        def _split_cols(s: str) -> list:
+            if pd.isna(s) or not s:
+                return []
+            return [c for c in str(s).split('|') if c]
+
+        all_key_cols = set()
+        for _, r in actionable.iterrows():
+            all_key_cols.update(_split_cols(r.get('actedUpon_cols', '')))
+            all_key_cols.update(_split_cols(r.get('consulted_cols', '')))
+        existing_key_cols = [c for c in all_key_cols if c in amended_df.columns]
+
+        # Precompute normalized views for matching on key columns
+        normalized = {c: amended_df[c].astype(str).fillna('') if c in amended_df.columns else None for c in existing_key_cols}
+
+        def _parse_result_pairs(result_str: str) -> list:
+            pairs = []
+            if not isinstance(result_str, str) or result_str == '':
+                return pairs
+            for part in result_str.split('|'):
+                if '=' not in part:
+                    continue
+                col, val = part.split('=', 1)
+                col = col.strip()
+                val = val.strip().strip('"\'')
+                pairs.append((col, val))
+            return pairs
+
         amendments_applied = 0
-        
-        # Create a mapping of ID to row index for O(1) lookups - this is the key optimization
-        id_to_index = {id_val: idx for idx, id_val in enumerate(df[id_column])}
-        
-        # Group by ID to handle multiple amendments per row
-        for id_value, group in amendments_df.groupby(id_column):
-            if id_value not in id_to_index:
-                log(f"Warning: Could not find row with {id_column}={id_value} for amendment", "WARNING")
+        rows_touched = 0
+
+        for _, res in actionable.iterrows():
+            key_cols = _split_cols(res.get('actedUpon_cols', '')) + _split_cols(res.get('consulted_cols', ''))
+            key_cols = [c for c in key_cols if c in amended_df.columns]
+            if not key_cols:
+                # Nothing to match on safely
                 continue
-                
-            row_idx = id_to_index[id_value]
-            
-            # Apply each amendment in the group
-            for _, amendment in group.iterrows():
-                if amendment['status'] == 'AMENDED':
-                    amendments_applied += self._apply_single_amendment_count(df, row_idx, amendment)
-        
-        return amendments_applied
-    
-    def _apply_single_amendment_count(self, df: pd.DataFrame, row_idx: int, amendment: pd.Series) -> int:
-        """Apply a single amendment and return count of fields amended"""
-        result = amendment['result']
-        amendments_applied = 0
-    
-        amendments = result.split('|')
-        for amendment_part in amendments:
-            col, amended_value = amendment_part.split('=', 1)
-            amended_value = amended_value.strip().strip('"\'')
-            
-            if col in df.columns:
-                df.at[row_idx, col] = amended_value
-                amendments_applied += 1
-            else:
-                log(f"ERROR: Column {col} not found for amendment in test {amendment['test_id']}", "WARNING")
-        
-        return amendments_applied
+
+            # Build mask matching the original values used in the unique test (normalized string compare)
+            mask = None
+            for c in key_cols:
+                expected_val = str(res.get(c, '') if pd.notna(res.get(c, '')) else '')
+                col_series = normalized.get(c)
+                if col_series is None:
+                    # Column missing in original dataset; skip
+                    mask = None
+                    break
+                cond = (col_series == expected_val)
+                mask = cond if mask is None else (mask & cond)
+
+            if mask is None:
+                continue
+
+            target_pairs = _parse_result_pairs(res.get('result', ''))
+            if not target_pairs:
+                continue
+
+            matched_count = int(mask.sum())
+            if matched_count == 0:
+                continue
+
+            # Apply all target assignments
+            for col, new_value in target_pairs:
+                if col not in amended_df.columns:
+                    log(f"WARNING: Column {col} not found in dataset for amendment from {res.get('test_id','')} ", "WARNING")
+                    continue
+                amended_df.loc[mask, col] = new_value
+                amendments_applied += matched_count
+            rows_touched += matched_count
+
+        log(f"Applied amendments: {amendments_applied} field updates across {rows_touched} rows")
+        return amended_df
     
