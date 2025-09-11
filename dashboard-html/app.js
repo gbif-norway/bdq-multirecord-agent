@@ -300,19 +300,35 @@ function renderNeedsAttentionChart(uniqueResultsWithTestContext) {
         ieClassCounts[ieClass] = (ieClassCounts[ieClass] || 0) + parseInt(result.count || 1);
     });
     
+    // Convert labels to include "fields" suffix
+    const ieClassLabels = {};
+    Object.keys(ieClassCounts).forEach(ieClass => {
+        const label = ieClass === 'Unknown' ? 'Unknown' : ieClass + ' fields';
+        ieClassLabels[label] = ieClassCounts[ieClass];
+    });
+    
     console.log('IE Class counts:', ieClassCounts);
 
+    // Calculate total records for percentage calculation
+    const totalRecords = summaryStats.number_of_records_in_dataset || uniqueResults.length;
+    
+    // Convert counts to percentages
+    const ieClassPercentages = {};
+    Object.keys(ieClassLabels).forEach(label => {
+        ieClassPercentages[label] = (ieClassLabels[label] / totalRecords) * 100;
+    });
+
     // Create gradient colors between yellow and yellow-green
-    const colors = generateGradientColors(Object.keys(ieClassCounts).length);
+    const colors = generateGradientColors(Object.keys(ieClassPercentages).length);
 
     const ctx = document.getElementById('needsAttentionChart').getContext('2d');
     new Chart(ctx, {
         type: 'bar',
         data: {
-            labels: Object.keys(ieClassCounts),
+            labels: Object.keys(ieClassPercentages),
             datasets: [{
-                label: 'Issues Count',
-                data: Object.values(ieClassCounts),
+                label: 'Issues Percentage',
+                data: Object.values(ieClassPercentages),
                 backgroundColor: colors,
                 borderColor: colors.map(color => color.replace('0.8', '1')),
                 borderWidth: 1
@@ -325,6 +341,9 @@ function renderNeedsAttentionChart(uniqueResultsWithTestContext) {
             plugins: {
                 legend: {
                     display: false
+                },
+                tooltip: {
+                    enabled: false
                 }
             },
             scales: {
@@ -339,12 +358,8 @@ function renderNeedsAttentionChart(uniqueResultsWithTestContext) {
                         display: false
                     },
                     ticks: {
-                        stepSize: 1,
                         callback: function(value) {
-                            if (value >= 1000) {
-                                return (value / 1000).toFixed(0) + 'k';
-                            }
-                            return value;
+                            return value.toFixed(0) + '%';
                         }
                     }
                 }
@@ -706,7 +721,9 @@ function formatTestTitle(testId) {
         .replace(/_/g, ' ')
         .split(' ')
         .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-        .join(' ');
+        .join(' ')
+        .replace(/^Amendment\s+/i, '')
+        .replace(/^Validation\s+/i, '');
 }
 
 function parseIEList(value) {
