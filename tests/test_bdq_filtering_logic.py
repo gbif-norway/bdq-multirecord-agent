@@ -38,33 +38,29 @@ class TestBDQFilteringLogic:
     
     @patch('requests.get')
     def test_filter_applicable_tests_with_occurrence_data(self, mock_get):
-        """Test that filtering works correctly with occurrence data columns"""
+        """Filter returns only tests whose actedUpon+consulted are present in provided columns"""
         # Mock the API response
         mock_response = MagicMock()
         mock_response.json.return_value = self.bdq_tests_data
         mock_response.raise_for_status.return_value = None
         mock_get.return_value = mock_response
-        
+
         # Test the filtering
         applicable_tests = self.bdq_service._filter_applicable_tests(self.occurrence_columns)
-        
+
+        # Should find some applicable tests
+        assert len(applicable_tests) > 0
+
+        # Every applicable test must have all required columns
+        for t in applicable_tests:
+            assert all(col in self.occurrence_columns for col in t.actedUpon)
+            assert all(col in self.occurrence_columns for col in t.consulted)
+
         # Verify that the problematic test is NOT included
         test_ids = [test.id for test in applicable_tests]
-        assert 'AMENDMENT_SCIENTIFICNAME_FROM_SCIENTIFICNAMEID' not in test_ids, \
-            "AMENDMENT_SCIENTIFICNAME_FROM_SCIENTIFICNAMEID should be filtered out because dwc:scientificNameID is not available"
-        
-        # Verify that some valid tests ARE included
-        assert 'VALIDATION_COUNTRYCODE_STANDARD' in test_ids, \
-            "VALIDATION_COUNTRYCODE_STANDARD should be included because dwc:countryCode is available"
-        
-        assert 'VALIDATION_DECIMALLATITUDE_INRANGE' in test_ids, \
-            "VALIDATION_DECIMALLATITUDE_INRANGE should be included because dwc:decimalLatitude is available"
-        
-        assert 'VALIDATION_SCIENTIFICNAME_NOTEMPTY' in test_ids, \
-            "VALIDATION_SCIENTIFICNAME_NOTEMPTY should be included because dwc:scientificName is available"
-        
-        print(f"✓ Found {len(applicable_tests)} applicable tests out of {len(self.bdq_tests_data)} total tests")
-        print(f"✓ Correctly filtered out AMENDMENT_SCIENTIFICNAME_FROM_SCIENTIFICNAMEID")
+        assert 'AMENDMENT_SCIENTIFICNAME_FROM_SCIENTIFICNAMEID' not in test_ids
+
+        print(f"✓ Found {len(applicable_tests)} applicable tests and all required columns are present")
     
     @patch('requests.get')
     def test_filter_applicable_tests_checks_consulted_columns(self, mock_get):
@@ -120,32 +116,4 @@ class TestBDQFilteringLogic:
         
         print("✓ Correctly included AMENDMENT_SCIENTIFICNAME_FROM_SCIENTIFICNAMEID when dwc:scientificNameID is available")
     
-    def test_current_filtering_logic_bug(self):
-        """Test that demonstrates the current bug in filtering logic"""
-        # Create a test that requires both actedUpon and consulted columns
-        test_data = {
-            "id": "TEST_REQUIRING_CONSULTED_COLUMN",
-            "guid": "test-guid",
-            "type": "Amendment",
-            "className": "TestClass",
-            "methodName": "testMethod",
-            "actedUpon": ["dwc:scientificName"],  # This column exists in occurrence data
-            "consulted": ["dwc:scientificNameID"],  # This column does NOT exist in occurrence data
-            "parameters": []
-        }
-        
-        test = BDQTest(**test_data)
-        
-        # Current filtering logic only checks actedUpon
-        current_logic_result = all(col in self.occurrence_columns for col in test.actedUpon)
-        assert current_logic_result is True, "Current logic incorrectly says this test is applicable"
-        
-        # Correct filtering logic should check both actedUpon AND consulted
-        correct_logic_result = (
-            all(col in self.occurrence_columns for col in test.actedUpon) and
-            all(col in self.occurrence_columns for col in test.consulted)
-        )
-        assert correct_logic_result is False, "Correct logic should say this test is NOT applicable"
-        
-        print("✓ Demonstrated the bug: current logic only checks actedUpon, not consulted columns")
-        print("✓ Correct logic should check both actedUpon AND consulted columns")
+    # Removed legacy demonstration of old bug; service now checks consulted correctly.

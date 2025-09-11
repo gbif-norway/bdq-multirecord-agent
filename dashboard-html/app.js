@@ -6,6 +6,13 @@ let currentValidationsPage = 1;
 let currentUseCaseFilter = 'all';
 const itemsPerPage = 10;
 
+// Modal pagination and search state
+let modalCurrentPage = 1;
+const modalItemsPerPage = 20;
+let modalSearchTerm = '';
+let modalFilteredCombos = [];
+let modalAllCombos = [];
+
 // Utility function to format numbers with space separators
 function formatNumber(num) {
     if (num === null || num === undefined || isNaN(num)) return '0';
@@ -14,6 +21,28 @@ function formatNumber(num) {
 
 // Cache for efficient lookups
 let amendmentLookupMap = new Map(); // key: "test_id||result" -> {test_id, result, actedUpon, count}
+
+// Helpers for counts from unique results
+function sumCounts(filterFn) {
+    return uniqueResults
+        .filter(filterFn)
+        .reduce((sum, r) => sum + (parseInt(r.count || 0) || 0), 0);
+}
+
+function getDatasetSize() {
+    // For any single test_id, sum(count) equals dataset size (inclusive candidate generation)
+    const byTest = new Map();
+    uniqueResults.forEach(r => {
+        const id = r.test_id || '';
+        const c = parseInt(r.count || 0) || 0;
+        byTest.set(id, (byTest.get(id) || 0) + c);
+    });
+    let maxSum = 0;
+    for (const v of byTest.values()) {
+        if (v > maxSum) maxSum = v;
+    }
+    return maxSum;
+}
 
 // Initialize the dashboard
 document.addEventListener('DOMContentLoaded', function() {
@@ -25,7 +54,6 @@ async function initializeDashboard() {
         // Get filenames from URL parameters
         const urlParams = new URLSearchParams(window.location.search);
         const uniqueTestResultsFile = urlParams.get('unique_test_results');
-        const rawResultsFile = urlParams.get('raw_results');
         const amendedDatasetFile = urlParams.get('amended_dataset');
         
         if (!uniqueTestResultsFile) {
@@ -37,7 +65,7 @@ async function initializeDashboard() {
         setFileName(uniqueTestResultsFile);
         
         // Set up download buttons
-        setupDownloadButtons(rawResultsFile, amendedDatasetFile);
+        setupDownloadButtons(uniqueTestResultsFile, amendedDatasetFile);
 
         // Load data files
         await Promise.all([
@@ -98,23 +126,21 @@ function setFileName(filename) {
     fileNameElement.textContent = `for ${displayName} file`;
 }
 
-function setupDownloadButtons(rawResultsFile, amendedDatasetFile) {
+function setupDownloadButtons(uniqueTestResultsFile, amendedDatasetFile) {
     const headerNav = document.querySelector('.bd-navbar .container-xxl');
     
     // Create download buttons container
     const downloadButtonsContainer = document.createElement('div');
     downloadButtonsContainer.className = 'd-flex gap-2';
     
-    // Add raw results button if file is provided
-    if (rawResultsFile) {
-        const rawResultsButton = document.createElement('a');
-        rawResultsButton.type = 'button';
-        rawResultsButton.className = 'btn btn-outline-light';
-        rawResultsButton.href = `results/${rawResultsFile}`;
-        rawResultsButton.download = rawResultsFile;
-        rawResultsButton.innerHTML = '<i class="fas fa-download me-1"></i>Raw test results';
-        downloadButtonsContainer.appendChild(rawResultsButton);
-    }
+    // Add unique test results button (always present since it's required)
+    const uniqueResultsButton = document.createElement('a');
+    uniqueResultsButton.type = 'button';
+    uniqueResultsButton.className = 'btn btn-outline-light';
+    uniqueResultsButton.href = `results/${uniqueTestResultsFile}`;
+    uniqueResultsButton.download = uniqueTestResultsFile;
+    uniqueResultsButton.innerHTML = '<i class="fas fa-download me-1"></i>Test results';
+    downloadButtonsContainer.appendChild(uniqueResultsButton);
     
     // Add amended dataset button if file is provided
     if (amendedDatasetFile) {
@@ -234,30 +260,22 @@ function buildAmendmentLookupMap() {
 function renderSummaryCards() {
     const cardsContainer = document.getElementById('summary-cards');
     
-    // Calculate values from uniqueResults data
+    // Calculate values from uniqueResults data (using counts)
     const uniqueTestIds = new Set(uniqueResults.map(r => r.test_id)).size;
-    const amendments = uniqueResults
-        .filter(r => r.status === 'AMENDED')
-        .reduce((sum, r) => sum + parseInt(r.count || 1), 0);
-    const filledIn = uniqueResults
-        .filter(r => r.status === 'FILLED_IN')
-        .reduce((sum, r) => sum + parseInt(r.count || 1), 0);
-    const nonCompliantValidations = uniqueResults.filter(r => r.result === 'NOT_COMPLIANT').length;
-    const potentialIssues = uniqueResults.filter(r => r.result === 'POTENTIAL_ISSUE').length;
+    const datasetSize = getDatasetSize();
+    const amendments = sumCounts(r => r.status === 'AMENDED');
+    const filledIn = sumCounts(r => r.status === 'FILLED_IN');
+    const nonCompliantValidations = sumCounts(r => r.result === 'NOT_COMPLIANT');
+    const potentialIssues = sumCounts(r => r.result === 'POTENTIAL_ISSUE');
+    const totalResults = sumCounts(() => true);
     
     const cards = [
-        {
-            number: uniqueResults.length,
-            label: 'records in dataset'
-        },
+        { number: datasetSize, label: 'records in dataset' },
         {
             number: uniqueTestIds,
             label: 'tests across dataset'
         },
-        {
-            number: uniqueResults.length * uniqueTestIds,
-            label: 'results'
-        },
+        { number: totalResults, label: 'results' },
         {
             number: nonCompliantValidations,
             label: 'corrections needing attention'
@@ -328,8 +346,8 @@ function renderNeedsAttentionChart(uniqueResultsWithTestContext) {
         });
     });
     
-    // Calculate total records for percentage calculation
-    const totalRecords = uniqueResults.length;
+    // Calculate total records for percentage calculation (dataset size)
+    const totalRecords = getDatasetSize() || 1;
     
     // Generate darker green to yellow gradient colors
     const testColors = generateStackedGradientColors(testsWithData.length);
