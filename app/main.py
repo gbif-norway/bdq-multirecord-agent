@@ -260,6 +260,10 @@ def _get_summary_stats_from_unique_results(unique_results_df, core_type, origina
         # Handle any remaining NaN, inf, or -inf values in count column
         df_clean['count'] = df_clean['count'].replace([float('inf'), float('-inf')], 0)
         df_clean['count'] = df_clean['count'].fillna(0).astype(int)
+        # Handle NaN values in string columns by replacing with empty string
+        df_clean['actedUpon'] = df_clean['actedUpon'].fillna('')
+        df_clean['consulted'] = df_clean['consulted'].fillna('')
+        df_clean['test_id'] = df_clean['test_id'].fillna('')
         return (df_clean.sort_values('count', ascending=False)
                 .head(n)
                 [['actedUpon', 'consulted', 'test_id', 'count']]
