@@ -163,7 +163,9 @@ async def debug_llm_analysis(
         # Parse unique results to get summary stats (same logic as _handle_email_processing)
         unique_results_df = pd.read_csv(io.StringIO(unique_results_csv), dtype=str)
         # Convert count column to numeric, handling any non-numeric values
-        unique_results_df['count'] = pd.to_numeric(unique_results_df['count'], errors='coerce').fillna(0).astype(int)
+        unique_results_df['count'] = pd.to_numeric(unique_results_df['count'], errors='coerce')
+        # Replace any inf or -inf values with 0, then fill NaN with 0, then convert to int
+        unique_results_df['count'] = unique_results_df['count'].replace([float('inf'), float('-inf')], 0).fillna(0).astype(int)
         summary_stats = _get_summary_stats_from_unique_results(unique_results_df, core_type, len(df))
         
         # Create mock email data for the prompt (similar to _handle_email_processing)
@@ -255,24 +257,36 @@ def _get_summary_stats_from_unique_results(unique_results_df, core_type, origina
             return []
         # Fill NaN values in count column with 0 and convert to int
         df_clean = df.copy()
+        # Handle any remaining NaN, inf, or -inf values in count column
+        df_clean['count'] = df_clean['count'].replace([float('inf'), float('-inf')], 0)
         df_clean['count'] = df_clean['count'].fillna(0).astype(int)
         return (df_clean.sort_values('count', ascending=False)
                 .head(n)
                 [['actedUpon', 'consulted', 'test_id', 'count']]
                 .to_dict('records'))
 
+    # Helper function to safely get numeric values
+    def safe_int(value, default=0):
+        """Safely convert value to int, handling NaN, inf, and other edge cases"""
+        if pd.isna(value) or value == float('inf') or value == float('-inf'):
+            return default
+        try:
+            return int(value)
+        except (ValueError, TypeError):
+            return default
+    
     summary = {
         'number_of_records_in_dataset': original_dataset_length,
         'list_of_all_columns_tested': all_cols_tested,
-        'no_of_tests_results': int(unique_results_df['count'].sum() or 0),
-        'no_of_tests_run': unique_results_df['test_id'].nunique(),
-        'no_of_non_compliant_validations': int(non_compliant_validations['count'].sum() or 0),
+        'no_of_tests_results': safe_int(unique_results_df['count'].sum()),
+        'no_of_tests_run': safe_int(unique_results_df['test_id'].nunique()),
+        'no_of_non_compliant_validations': safe_int(non_compliant_validations['count'].sum()),
         'no_of_unique_non_compliant_validations': len(non_compliant_validations),
-        'no_of_amendments': int(amendments['count'].sum() or 0),
+        'no_of_amendments': safe_int(amendments['count'].sum()),
         'no_of_unique_amendments': len(amendments),
-        'no_of_filled_in': int(filled_in['count'].sum() or 0),
+        'no_of_filled_in': safe_int(filled_in['count'].sum()),
         'no_of_unique_filled_in': len(filled_in),
-        'no_of_issues': int(issues['count'].sum() or 0),
+        'no_of_issues': safe_int(issues['count'].sum()),
         'no_of_unique_issues': len(issues),
         'top_issues': _get_top_grouped(issues),
         'top_filled_in': _get_top_grouped(filled_in),
