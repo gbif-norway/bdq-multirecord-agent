@@ -158,6 +158,8 @@ async def debug_llm_analysis(
         if not core_type:
             raise HTTPException(status_code=400, detail="Original dataset must contain either 'occurrenceID' or 'taxonID' column")
         
+        log("Debugging email processing...")
+
         # Parse unique results to get summary stats (same logic as _handle_email_processing)
         unique_results_df = pd.read_csv(io.StringIO(unique_results_csv), dtype=str)
         summary_stats = _get_summary_stats_from_unique_results(unique_results_df, core_type, len(df))
@@ -249,7 +251,8 @@ def _get_summary_stats_from_unique_results(unique_results_df, core_type, origina
         """Helper to get top n grouped counts sorted descending using the count column."""
         return (df.sort_values('count', ascending=False)
                 .head(n)
-                [['actedUpon', 'consulted', 'test_id', 'count']])
+                [['actedUpon', 'consulted', 'test_id', 'count']]
+                .to_dict('records'))
 
     summary = {
         'number_of_records_in_dataset': original_dataset_length,
