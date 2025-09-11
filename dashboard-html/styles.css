@@ -98,6 +98,7 @@ h2 small { font-size: 0.8rem;  color: var(--grey); }
 }
 
 /* List group styling */
+.filter-by-use-case { font-size: 0.8rem; color: var(--grey); font-weight: bold; padding-top: 0.5em; }
 .list-group-item {
     cursor: pointer;
     font-size: 0.8rem;

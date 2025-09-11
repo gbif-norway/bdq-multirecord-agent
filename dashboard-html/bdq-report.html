@@ -61,7 +61,29 @@
         <!-- Validations and Issues Section -->
         <div class="row mb-3">
             <div class="col-12">
-                <h2><i class="fa-regular fa-flag" style="color: #f59e0b;"></i> Validations and issues [validation and issue filter by  here]</h2>
+                <h2><i class="fa-regular fa-flag" style="color: #f59e0b;"></i> Validations and issues</h2>
+                <div class="mb-3">
+                    <div class="btn-group btn-group-sm" role="group" aria-label="Use case filters"> <span class="filter-by-use-case">Filter by use case:</span> &nbsp;
+                        <button type="button" class="btn btn-outline-secondary active" id="filter-all" data-use-case="all">
+                            <i class="fa-solid fa-list"></i> Show All
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary" id="filter-record-management" data-use-case="bdq:Record-Management" data-bs-toggle="tooltip" data-bs-placement="top" title="Keeps records tidy and usable: key fields filled, formats standard (dates, IDs), values consistent, and identifiers stable/unique.">
+                            <i class="fa-solid fa-database"></i> Record Management
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary" id="filter-spatial-temporal" data-use-case="bdq:Spatial-Temporal_Patterns" data-bs-toggle="tooltip" data-bs-placement="top" title="Makes places and dates map-ready: coordinates in range, correct datum/uncertainty, and event dates valid and interpretable.">
+                            <i class="fa-solid fa-map-location-dot"></i> Spatial-Temporal
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary" id="filter-taxon-management" data-use-case="bdq:Taxon-Management" data-bs-toggle="tooltip" data-bs-placement="top" title="Ensures names make sense: scientific names and ranks match an authority, accepted spellings used, and IDs link to the right taxon.">
+                            <i class="fa-solid fa-leaf"></i> Taxon Management
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary" id="filter-alien-species" data-use-case="bdq:Alien-Species" data-bs-toggle="tooltip" data-bs-placement="top" title="Supports tracking species outside their native range: names and locations must be interpretable so possible alien occurrences can be trusted.">
+                            <i class="fa-solid fa-globe"></i> Alien Species
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary" id="filter-biotic-relationships" data-use-case="bdq:Biotic-Relationships" data-bs-toggle="tooltip" data-bs-placement="top" title="Clarifies interactions (e.g., host–parasite, predator–prey): relationship terms are valid, linked taxa are identifiable, and directions are clear.">
+                            <i class="fa-solid fa-link"></i> Biotic Relationships
+                        </button>
+                    </div>
+                </div>
                 <div id="validations-list">
                     <!-- Validations will be populated by JavaScript -->
                 </div>

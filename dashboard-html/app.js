@@ -4,6 +4,7 @@ let tg2Tests = [];
 let summaryStats = {};
 let currentAmendmentsPage = 1;
 let currentValidationsPage = 1;
+let currentUseCaseFilter = 'all';
 const itemsPerPage = 10;
 
 // Cache for efficient lookups
@@ -72,6 +73,9 @@ async function initializeDashboard() {
         
         // Initialize tooltips
         initializeTooltips();
+        
+        // Initialize use case filters
+        initializeUseCaseFilters();
 
     } catch (error) {
         console.error('Error initializing dashboard:', error);
@@ -159,6 +163,7 @@ async function loadTG2Tests(filePath) {
                     .replace(/^Description$/i, 'description')
                     .replace(/^Notes$/i, 'notes')
                     .replace(/^Type$/i, 'type')
+                    .replace(/^UseCases$/i, 'usecases')
                     .replace(/\r$/, ''); // Remove trailing \r
             },
             complete: function(results) {
@@ -220,7 +225,8 @@ function joinResultsWithTestContext() {
                 ie_class: testInfo ? testInfo.ie_class : 'Unknown',
                 ie_acted_upon: testInfo ? (testInfo.ie_acted_upon || '') : '',
                 ie_consulted: testInfo ? (testInfo.ie_consulted || '') : '',
-                test_kind: testInfo ? (testInfo.type || '') : ''
+                test_kind: testInfo ? (testInfo.type || '') : '',
+                use_cases: testInfo ? (testInfo.usecases || '') : ''
             };
         });
 }
@@ -405,10 +411,18 @@ function updateValidationsHeading(validations) {
 }
 
 function renderValidationsList(uniqueResultsWithTestContext) {
-    const validations = uniqueResultsWithTestContext.filter(result => 
+    let validations = uniqueResultsWithTestContext.filter(result => 
         (result.status === 'RUN_HAS_RESULT' && result.result === 'NOT_COMPLIANT') ||
         (result.status === 'RUN_HAS_RESULT' && result.result === 'POTENTIAL_ISSUE')
     );
+
+    // Apply use case filter if not 'all'
+    if (currentUseCaseFilter !== 'all') {
+        validations = validations.filter(result => {
+            const useCases = result.use_cases || '';
+            return useCases.includes(currentUseCaseFilter);
+        });
+    }
 
     // Update the heading with dynamic counts
     updateValidationsHeading(validations);
@@ -914,6 +928,30 @@ function initializeTooltips() {
     const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
     tooltipTriggerList.map(function (tooltipTriggerEl) {
         return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+}
+
+function initializeUseCaseFilters() {
+    // Add event listeners to all filter buttons
+    const filterButtons = document.querySelectorAll('[data-use-case]');
+    filterButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            // Remove active class from all buttons
+            filterButtons.forEach(btn => btn.classList.remove('active'));
+            
+            // Add active class to clicked button
+            this.classList.add('active');
+            
+            // Update current filter
+            currentUseCaseFilter = this.getAttribute('data-use-case');
+            
+            // Reset to first page when filtering
+            currentValidationsPage = 1;
+            
+            // Re-render validations list with new filter
+            const uniqueResultsWithTestContext = joinResultsWithTestContext();
+            renderValidationsList(uniqueResultsWithTestContext);
+        });
     });
 }
 
