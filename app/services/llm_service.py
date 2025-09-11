@@ -53,7 +53,13 @@ class LLMService:
             if part.text is not None:
                 text_parts.append(part.text)
         
-        return "\n".join(text_parts)
+        response_text = "\n".join(text_parts)
+        
+        # Check if response contains HTML tags, if not convert to HTML
+        if not self._contains_html_tags(response_text):
+            response_text = self._convert_to_html(response_text)
+            
+        return response_text
                 
     def generate_openai_intelligent_summary(self, prompt, test_results_csv_text, original_csv_text, api_key=None):
         client = OpenAI(api_key=api_key)
@@ -118,7 +124,11 @@ class LLMService:
                     response_parts.append(content_block.text.value)
             
             if response_parts:
-                return "\n".join(response_parts)
+                response_text = "\n".join(response_parts)
+                # Check if response contains HTML tags, if not convert to HTML
+                if not self._contains_html_tags(response_text):
+                    response_text = self._convert_to_html(response_text)
+                return response_text
             else:
                 # If no text content, return a message indicating the analysis was completed
                 return "Analysis completed successfully. The assistant has analyzed your CSV files and generated insights using the code interpreter."
@@ -128,7 +138,8 @@ class LLMService:
     def create_prompt(self, email_data, core_type, summary_stats, test_results_snapshot, original_snapshot, relevant_test_contexts):
         log("Generating the prompt for LLM...") 
         prompt = f"""# YOUR TASK
-You are BDQEmail, a biodiversity data quality analyst assistant. You are helping a user with their dataset by analysing the results of a set of Biodiversity Data Quality tests run against all the relevant fields that could be found in the dataset. Write a professional, encouraging email analysis, the email will include a link to the dashboard after your reply and be sent to the user automatically.
+You are BDQEmail, a biodiversity data quality analyst assistant. You are helping a user with their dataset by analysing the results of a set of Biodiversity Data Quality tests run against all the relevant fields that could be found in the dataset. 
+Write a professional, encouraging email analysis in HTML format, the email will include a link to the dashboard after your reply and be sent to the user automatically after you have generated it.
 The user will receive the body of your email with the summary stats prefixed to it, and the email body will include a link to a dashboard allowing the user to explore the test results interactively and download the raw results and amended dataset files. 
 
 You have access to two CSV files:
@@ -144,6 +155,7 @@ Use the code execution tool to explore these files as needed to understand the d
 - Focus on analysis and practical guidance, not repeating the summary stats
 - Be encouraging about data quality improvement
 - Keep it concise but comprehensive
+- Use HTML formatting
 
 ## YOUR RESOURCES
 
@@ -180,6 +192,27 @@ Start with the amendments - explain that the amended dataset (available for down
 Next go into the top issues - think in terms of real world practicality - which of these should the user be paying attention to? Go into detail and make suggestions.
 Look at the non-compliant validations - which are the quick and easy wins there? Which are the most critical that need paying attention to? Give a detailed analysis. Explore the full test results file and the user's original data if necessary to provide practical and actionable suggestions. For this stage it is important to be practical. What gets often automatically corrected by GBIF when the dataset gets ingested?
 
+Finally go into some guidance as to what you think fixes should be. This should be an intelligent analysis with real meat in it, you can mention general changes if you want but at the least scatter it with a few suggestions for actual fixes on their actual records. 
+For example, if they have the Validation Lifestage Standard as non compliant for records where the value was C1-C3 you can say: 
+```Darwin Core lifeStage expects a plain-text description, ideally using a controlled vocabulary but not strictly enforced.
+
+For C1-C3, the best practice would be to write it out clearly so it's understandable outside the plankton/copepod context. A good normalized value would be:
+
+copepodite stages 1-3
+
+This keeps:
+
+The taxon-specific term ("copepodite")
+
+The stage range (1-3)
+
+A human-readable format
+
+If you want to be even more precise and interoperable, you could use the WoRMS LifeStage terms (if your dataset links to WoRMS):
+
+http://marinespecies.org/aphia.php?p=lsid&lsid=copepodite%20stage%201-3```
+Another example, if their data lots of records which got amended because of a case change (e.g. male -> Male or something), mention that they can just 
+
 Summmarise and provide some key takeaways at the end. I want you to showcase your understanding of the BDQ tests and your ability to help the user with their data quality issues. 
 
 ## FORMAT
@@ -188,6 +221,13 @@ Do NOT include the summary statistics or the link to the dashboard - they are al
         log(prompt)
         return prompt
     
+    
+    def _contains_html_tags(self, text: str) -> bool:
+        """Check if text contains HTML tags"""
+        import re
+        # Look for common HTML tags
+        html_pattern = r'<[^>]+>'
+        return bool(re.search(html_pattern, text))
     
     def _convert_to_html(self, text: str) -> str:
         """Convert plain text to basic HTML"""

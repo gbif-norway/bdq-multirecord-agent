@@ -13,7 +13,12 @@ body {
 }
 
 /* Header styles */
-header { background-color: var(--green); color:var(--light-green); margin-bottom: 0.6rem; }
+header { 
+    background-color: var(--green); 
+    color:var(--light-green); 
+    margin-bottom: 0.6rem; 
+    transition: all 0.3s ease;
+}
 h1 { font-size: 1.5rem; }
 h1 small { font-size: 0.8rem;  color: var(--light-green); }
 .robot-icon {
@@ -25,6 +30,17 @@ h1 small { font-size: 0.8rem;  color: var(--light-green); }
 .robot-icon:hover {
     transform: scale(1.2) rotate(10deg);
     filter: brightness(1.2);
+}
+
+/* Header hover effects - trigger robot animation and button lift */
+header:hover .robot-icon {
+    transform: scale(1.2) rotate(10deg);
+    filter: brightness(1.2);
+}
+
+header:hover .btn {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    transition: all 0.3s ease;
 }
 p.intro {
     margin-bottom: 0.7rem;
