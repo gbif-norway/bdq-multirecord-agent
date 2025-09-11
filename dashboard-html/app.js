@@ -703,6 +703,12 @@ function openDetailModal(testId, containerType) {
     const testInfo = tg2Tests.find(test => test.test_id === testId);
     const allCombos = getTopFieldCombinations(testData, testData.length);
 
+    // Store data for pagination and search
+    modalAllCombos = allCombos;
+    modalFilteredCombos = allCombos;
+    modalCurrentPage = 1;
+    modalSearchTerm = '';
+
     const appliedAmendments = containerType === 'validations' ? getAmendmentsAppliedForValidation(testId) : [];
 
     const modalHTML = `
@@ -723,45 +729,38 @@ function openDetailModal(testId, containerType) {
             ` : ''}
         </blockquote>
         <div>
-            <h6>The following fields in your data were flagged${containerType === 'validations' && testData.length > 0 ? ` <button type="button" class="btn btn-outline-dark btn-sm btn-dl-custom" onclick="downloadValidationCSV('${testId}')"><i class="fas fa-download me-1"></i>Download</button>` : ''}:</h6>
-            <div class="field-combinations">
-                ${allCombos.map(combo => {
-                    const displayText = containerType === 'amendments' ? 
-                        formatAmendmentDisplay(combo.item) : 
-                        combo.combo;
-                    
-                    // For validations, check if there are applicable amendments
-                    let amendmentInfo = '';
-                    let hasAmendments = false;
-                    if (containerType === 'validations') {
-                        const applicableAmendments = getApplicableAmendmentsForValidation(combo.item, testId);
-                        if (applicableAmendments.length > 0) {
-                            hasAmendments = true;
-                            amendmentInfo = `
-                                <div class="mt-1">
-                                    <small><i class="fas fa-check-circle text-success"></i> Automatic fix: had the ${applicableAmendments.map(a => `<span class="badge bg-secondary me-1">${formatTestTitle(a.test_id)}</span>`).join('')} amendment applied</small>
-                                    <div class="mt-1">
-                                        <small class="text-muted">${applicableAmendments.map(a => formatAmendmentResult(a.result, a.actedUpon)).join('; ')}</small>
-                                    </div>
-                                </div>
-                            `;
-                        }
-                    }
-                    
-                    const fieldComboClass = hasAmendments ? 'field-combo field-combo-amended' : 'field-combo';
-                    
-                    return `
-                    <div class="${fieldComboClass}">
-                        <span class="field-combo-count">${formatNumber(combo.count)} records flagged</span>, with ${displayText}
-                        ${combo.comment && combo.comment.trim() ? `
-                        <div class="mt-1">
-                            <small><i class="fas fa-comment"></i> ${combo.comment}</small>
-                        </div>
-                        ` : ''}
-                        ${amendmentInfo}
-                    </div>
-                `;
-                }).join('')}
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h6 class="mb-0">The following fields in your data were flagged:</h6>
+                ${containerType === 'validations' && testData.length > 0 ? `<button type="button" class="btn btn-outline-dark btn-sm btn-dl-custom" onclick="downloadValidationCSV('${testId}')"><i class="fas fa-download me-1"></i>Download</button>` : ''}
+            </div>
+            
+            <!-- Search box -->
+            <div class="input-group">
+                <span class="input-group-text"><i class="fas fa-search"></i></span>
+                <input type="text" 
+                        class="form-control" 
+                        id="modal-search-input" 
+                        placeholder="Search field combinations..." 
+                        onkeyup="filterModalCombos(this.value)"
+                        value="">
+            </div>
+            
+            <!-- Field combinations container -->
+            <div id="modal-field-combinations" 
+                 class="field-combinations" 
+                 data-container-type="${containerType}" 
+                 data-test-id="${testId}">
+                <!-- Content will be populated by renderModalFieldCombinations() -->
+            </div>
+            
+            <!-- Pagination info and controls -->
+            <div class="d-flex justify-content-between align-items-center mt-3">
+                <div id="modal-pagination-info" class="text-muted small">
+                    <!-- Pagination info will be populated by renderModalFieldCombinations() -->
+                </div>
+                <div id="modal-pagination-controls" class="btn-group">
+                    <!-- Pagination controls will be populated by renderModalFieldCombinations() -->
+                </div>
             </div>
         </div>
     `;
@@ -774,6 +773,9 @@ function openDetailModal(testId, containerType) {
     `;
     
     modal.show();
+    
+    // Initialize the field combinations display with pagination
+    renderModalFieldCombinations();
 }
 
 function getTopFieldCombinations(items, limit) {
@@ -800,6 +802,124 @@ function getTopFieldCombinations(items, limit) {
         }))
         .sort((a, b) => b.count - a.count)
         .slice(0, limit);
+}
+
+// Modal search and pagination functions
+function filterModalCombos(searchTerm) {
+    modalSearchTerm = searchTerm.toLowerCase();
+    modalFilteredCombos = modalAllCombos.filter(combo => {
+        const searchableText = `${combo.combo} ${combo.comment || ''}`.toLowerCase();
+        return searchableText.includes(modalSearchTerm);
+    });
+    modalCurrentPage = 1; // Reset to first page when searching
+    renderModalFieldCombinations();
+}
+
+function getModalPageData() {
+    const startIndex = (modalCurrentPage - 1) * modalItemsPerPage;
+    const endIndex = startIndex + modalItemsPerPage;
+    return modalFilteredCombos.slice(startIndex, endIndex);
+}
+
+function getModalTotalPages() {
+    return Math.ceil(modalFilteredCombos.length / modalItemsPerPage);
+}
+
+function renderModalFieldCombinations() {
+    const fieldCombinationsContainer = document.getElementById('modal-field-combinations');
+    if (!fieldCombinationsContainer) return;
+
+    const pageData = getModalPageData();
+    const totalPages = getModalTotalPages();
+    const totalItems = modalFilteredCombos.length;
+    const startItem = (modalCurrentPage - 1) * modalItemsPerPage + 1;
+    const endItem = Math.min(modalCurrentPage * modalItemsPerPage, totalItems);
+
+    // Get container type from the modal
+    const containerType = fieldCombinationsContainer.dataset.containerType || 'validations';
+    const testId = fieldCombinationsContainer.dataset.testId || '';
+
+    fieldCombinationsContainer.innerHTML = `
+        ${pageData.map(combo => {
+            const displayText = containerType === 'amendments' ? 
+                formatAmendmentDisplay(combo.item) : 
+                combo.combo;
+            
+            // For validations, check if there are applicable amendments
+            let amendmentInfo = '';
+            let hasAmendments = false;
+            if (containerType === 'validations') {
+                const applicableAmendments = getApplicableAmendmentsForValidation(combo.item, testId);
+                if (applicableAmendments.length > 0) {
+                    hasAmendments = true;
+                    amendmentInfo = `
+                        <div class="mt-1">
+                            <small><i class="fas fa-check-circle text-success"></i> Automatic fix: had the ${applicableAmendments.map(a => `<span class="badge bg-secondary me-1">${formatTestTitle(a.test_id)}</span>`).join('')} amendment applied</small>
+                            <div class="mt-1">
+                                <small class="text-muted">${applicableAmendments.map(a => formatAmendmentResult(a.result, a.actedUpon)).join('; ')}</small>
+                            </div>
+                        </div>
+                    `;
+                }
+            }
+            
+            const fieldComboClass = hasAmendments ? 'field-combo field-combo-amended' : 'field-combo';
+            
+            return `
+            <div class="${fieldComboClass}">
+                <span class="field-combo-count">${formatNumber(combo.count)} records flagged</span>, with ${displayText}
+                ${combo.comment && combo.comment.trim() ? `
+                <div class="mt-1">
+                    <small><i class="fas fa-comment"></i> ${combo.comment}</small>
+                </div>
+                ` : ''}
+                ${amendmentInfo}
+            </div>
+        `;
+        }).join('')}
+    `;
+
+    // Update pagination info
+    const paginationInfo = document.getElementById('modal-pagination-info');
+    if (paginationInfo) {
+        paginationInfo.textContent = `Showing ${startItem}-${endItem} of ${totalItems} field combinations`;
+    }
+
+    // Update pagination controls
+    const paginationControls = document.getElementById('modal-pagination-controls');
+    if (paginationControls) {
+        paginationControls.innerHTML = `
+            <button class="btn btn-outline-secondary btn-sm" 
+                    onclick="changeModalPage(1)" 
+                    ${modalCurrentPage === 1 ? 'disabled' : ''}>
+                <i class="fas fa-angle-double-left"></i>
+            </button>
+            <button class="btn btn-outline-secondary btn-sm" 
+                    onclick="changeModalPage(${modalCurrentPage - 1})" 
+                    ${modalCurrentPage === 1 ? 'disabled' : ''}>
+                <i class="fas fa-angle-left"></i>
+            </button>
+            <span class="mx-2">Page ${modalCurrentPage} of ${totalPages}</span>
+            <button class="btn btn-outline-secondary btn-sm" 
+                    onclick="changeModalPage(${modalCurrentPage + 1})" 
+                    ${modalCurrentPage === totalPages ? 'disabled' : ''}>
+                <i class="fas fa-angle-right"></i>
+            </button>
+            <button class="btn btn-outline-secondary btn-sm" 
+                    onclick="changeModalPage(${totalPages})" 
+                    ${modalCurrentPage === totalPages ? 'disabled' : ''}>
+                <i class="fas fa-angle-double-right"></i>
+            </button>
+        `;
+    }
+}
+
+function changeModalPage(page) {
+    const totalPages = getModalTotalPages();
+    if (page >= 1 && page <= totalPages) {
+        modalCurrentPage = page;
+        renderModalFieldCombinations();
+    }
 }
 
 function formatTestTitle(testId) {

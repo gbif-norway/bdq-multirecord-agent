@@ -5,6 +5,11 @@ This test uses the actual functions from main.py without mocking to generate
 real summaries using the simple_occurrence_dwc.csv and _RESULTS.csv files.
 """
 
+import pytest
+
+# Mark this helper script as skipped for pytest (not a unit test)
+pytestmark = pytest.mark.skip("Helper script for manual runs; skipped in CI")
+
 import os
 import sys
 import pandas as pd
