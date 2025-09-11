@@ -6,6 +6,9 @@ let currentAmendmentsPage = 1;
 let currentValidationsPage = 1;
 const itemsPerPage = 10;
 
+// Cache for efficient lookups
+let amendmentLookupMap = new Map(); // key: "test_id||result" -> {test_id, result, actedUpon, count}
+
 // Initialize the dashboard
 document.addEventListener('DOMContentLoaded', function() {
     initializeDashboard();
@@ -34,6 +37,9 @@ async function initializeDashboard() {
 
         // Process and display data
         const uniqueResultsWithTestContext = joinResultsWithTestContext();
+        
+        // Build lookup map for efficient amendment lookups
+        buildAmendmentLookupMap();
         
         // Debug: Log test IDs to help identify the Unknown issue
         const resultTestIds = [...new Set(uniqueResults.map(r => r.test_id))];
@@ -177,6 +183,22 @@ function joinResultsWithTestContext() {
                 test_kind: testInfo ? (testInfo.type || '') : ''
             };
         });
+}
+
+function buildAmendmentLookupMap() {
+    amendmentLookupMap.clear();
+    uniqueResults.forEach(result => {
+        if (result.test_type && result.test_type.toLowerCase() === 'amendment' && 
+            (result.status === 'AMENDED' || result.status === 'FILLED_IN')) {
+            const key = `${result.test_id}||${result.result || ''}`;
+            amendmentLookupMap.set(key, {
+                test_id: result.test_id,
+                result: result.result,
+                actedUpon: result.actedUpon,
+                count: parseInt(result.count || 1)
+            });
+        }
+    });
 }
 
 function renderSummaryCards() {
@@ -384,9 +406,12 @@ function renderPaginatedList(data, containerId, currentPage, paginationId) {
                         </div>
                         ` : ''}
                         <small class="text-body-secondary">
-                            ${topCombos.slice(0, 2).map(combo => 
-                                `Affected ${combo.count} records with the following values: ${combo.combo}`
-                            ).join('; ')}
+                            ${topCombos.slice(0, 2).map(combo => {
+                                const displayText = containerId === 'amendments' ? 
+                                    formatAmendmentDisplay(combo.item) : 
+                                    combo.combo;
+                                return `Affected ${combo.count} records with ${displayText}`;
+                            }).join('; ')}
                             ${topCombos.length > 2 ? '...' : ''}
                         </small>
                     </a>
@@ -490,16 +515,21 @@ function openDetailModal(testId, containerType) {
         <div>
             <h6>The following fields in your data were flagged:</h6>
             <div class="field-combinations">
-                ${allCombos.map(combo => `
+                ${allCombos.map(combo => {
+                    const displayText = containerType === 'amendments' ? 
+                        formatAmendmentDisplay(combo.item) : 
+                        combo.combo;
+                    return `
                     <div class="field-combo">
-                        <span class="field-combo-count">${combo.count} records flagged</span>, with values: ${combo.combo}
+                        <span class="field-combo-count">${combo.count} records flagged</span>, with ${displayText}
                         ${combo.comment && combo.comment.trim() ? `
                         <div class="mt-1">
                             <small><i class="fas fa-comment"></i> ${combo.comment}</small>
                         </div>
                         ` : ''}
                     </div>
-                `).join('')}
+                `;
+                }).join('')}
             </div>
         </div>
         ${containerType === 'validations' ? `
@@ -507,12 +537,17 @@ function openDetailModal(testId, containerType) {
             <h6 style="margin-top: 15px;">Applied amendments to related fields:</h6>
             ${appliedAmendments.length > 0 ? `
                 <div>
-                    ${appliedAmendments.map(a => `
+                    ${appliedAmendments.map(a => {
+                        // Use efficient lookup instead of find()
+                        const key = `${a.test_id}||${a.result || ''}`;
+                        const amendmentData = amendmentLookupMap.get(key);
+                        return `
                         <div class="field-combo">
                             <div><span class="field-combo-count">${a.count} records</span> had the <span class="badge bg-secondary">${formatTestTitle(a.test_id)}</span> amendment applied</div>
-                            <div class="text-muted small">${formatAmendmentResult(a.result)}</div>
+                            <div class="text-muted small">${formatAmendmentResult(a.result, amendmentData ? amendmentData.actedUpon : '')}</div>
                         </div>
-                    `).join('')}
+                    `;
+                    }).join('')}
                 </div>
             ` : '<p class="text-muted">No applied amendments found for this validation.</p>'}
         </div>
@@ -529,13 +564,22 @@ function getTopFieldCombinations(items, limit) {
     items.forEach(item => {
         const combo = buildNormalizedCombo(item);
         if (!comboCounts[combo]) {
-            comboCounts[combo] = { count: 0, comment: item.comment || '' };
+            comboCounts[combo] = { 
+                count: 0, 
+                comment: item.comment || '',
+                item: item // Store the original item for amendment processing
+            };
         }
         comboCounts[combo].count += parseInt(item.count || 1);
     });
 
     return Object.entries(comboCounts)
-        .map(([combo, data]) => ({ combo, count: data.count, comment: data.comment }))
+        .map(([combo, data]) => ({ 
+            combo, 
+            count: data.count, 
+            comment: data.comment,
+            item: data.item // Include the original item
+        }))
         .sort((a, b) => b.count - a.count)
         .slice(0, limit);
 }
@@ -607,16 +651,30 @@ function getAppliedAmendmentTests(appliedAmendments) {
         .sort((a, b) => b.count - a.count);
 }
 
-function formatAmendmentResult(resultStr) {
+function formatAmendmentResult(resultStr, actedUponStr) {
     if (!resultStr) return '';
     const pairs = resultStr.split('|').map(s => s.trim()).filter(Boolean);
     if (pairs.length === 0) return '';
+    
+    // Parse acted upon values if available
+    const actedUponValues = parseActedUponValues(actedUponStr || '');
+    
     const parts = pairs.map(p => {
         const idx = p.indexOf('=');
         if (idx === -1) return p;
         const key = p.slice(0, idx);
         const val = p.slice(idx + 1);
-        return `${key} → ${val}`;
+        
+        // Try to find the original value for before/after display
+        const original = actedUponValues.find(acted => acted.field === key);
+        if (original) {
+            const caseChangeType = getCaseChangeType(original.value, val);
+            const caseChangePill = caseChangeType ? 
+                `<span class="badge bg-light-green case-change-pill">${caseChangeType}</span>` : '';
+            return `${key} amended from ${original.value} → ${val} ${caseChangePill}`;
+        } else {
+            return `${key} → ${val}`;
+        }
     });
     return `Change(s): ${parts.join('; ')}`;
 }
@@ -637,6 +695,90 @@ function buildNormalizedCombo(item) {
     });
     if (parts.length === 0) return 'N/A';
     return parts.join(' · ');
+}
+
+function parseAmendmentResults(resultStr) {
+    if (!resultStr) return [];
+    return resultStr.split('|').map(s => s.trim()).filter(Boolean).map(pair => {
+        const idx = pair.indexOf('=');
+        if (idx === -1) return { field: pair, value: '' };
+        return { field: pair.slice(0, idx), value: pair.slice(idx + 1) };
+    });
+}
+
+function parseActedUponValues(actedUponStr) {
+    if (!actedUponStr) return [];
+    return actedUponStr.split('|').map(s => s.trim()).filter(Boolean).map(pair => {
+        const idx = pair.indexOf('=');
+        if (idx === -1) return { field: pair, value: '' };
+        return { field: pair.slice(0, idx), value: pair.slice(idx + 1) };
+    });
+}
+
+function isCaseOnlyChange(originalValue, newValue) {
+    if (!originalValue || !newValue) return false;
+    return originalValue.toLowerCase() === newValue.toLowerCase() && originalValue !== newValue;
+}
+
+function getCaseChangeType(originalValue, newValue) {
+    if (!isCaseOnlyChange(originalValue, newValue)) return null;
+    
+    // Check if it's a simple case change
+    const originalLower = originalValue.toLowerCase();
+    const newLower = newValue.toLowerCase();
+    
+    if (originalLower === newLower) {
+        // Determine the type of case change
+        if (originalValue === originalValue.toUpperCase() && newValue === newValue.toLowerCase()) {
+            return 'lowercase change';
+        } else if (originalValue === originalValue.toLowerCase() && newValue === newValue.toUpperCase()) {
+            return 'uppercase change';
+        } else if (originalValue !== newValue) {
+            return 'case change';
+        }
+    }
+    
+    return 'case change';
+}
+
+function formatAmendmentDisplay(item) {
+    if (item.status !== 'AMENDED' && item.status !== 'FILLED_IN') {
+        // For non-amendments, use the original format
+        return buildNormalizedCombo(item);
+    }
+    
+    const amendmentResults = parseAmendmentResults(item.result);
+    const actedUponValues = parseActedUponValues(item.actedUpon);
+    
+    if (amendmentResults.length === 0 || actedUponValues.length === 0) {
+        return buildNormalizedCombo(item);
+    }
+    
+    const amendments = [];
+    
+    // Match amendment results with acted upon values
+    amendmentResults.forEach(amendment => {
+        const original = actedUponValues.find(acted => acted.field === amendment.field);
+        if (original) {
+            const caseChangeType = getCaseChangeType(original.value, amendment.value);
+            amendments.push({
+                field: amendment.field,
+                originalValue: original.value,
+                newValue: amendment.value,
+                caseChangeType: caseChangeType
+            });
+        }
+    });
+    
+    if (amendments.length === 0) {
+        return buildNormalizedCombo(item);
+    }
+    
+    return amendments.map(amendment => {
+        const caseChangePill = amendment.caseChangeType ? 
+            `<span class="badge bg-light-green case-change-pill">${amendment.caseChangeType}</span>` : '';
+        return `${amendment.field} amended from ${amendment.originalValue} → ${amendment.newValue} ${caseChangePill}`;
+    }).join('; ');
 }
 
 function initializeTooltips() {

@@ -193,7 +193,19 @@ def test_email_service_csv_extraction():
 
 def test_summary_statistics_generation():
     """Test summary statistics generation"""
-    from app.main import _get_summary_stats
+    from app.main import _get_summary_stats_from_unique_results
+    
+    def _create_unique_results_from_test_data(test_results_df, core_type):
+        """Helper function to create unique results DataFrame from test data"""
+        group_cols = [col for col in test_results_df.columns if col != f'dwc:{core_type}ID']
+        unique_results = (
+            test_results_df
+            .groupby(group_cols, dropna=False)
+            .size()
+            .reset_index()
+            .rename(columns={0: "count"})
+        )
+        return unique_results
     
     # Create test results
     test_results = pd.DataFrame([
@@ -229,7 +241,9 @@ def test_summary_statistics_generation():
         }
     ])
     
-    summary = _get_summary_stats(test_results, 'occurrence')
+    unique_results = _create_unique_results_from_test_data(test_results, 'occurrence')
+    original_dataset_length = 3
+    summary = _get_summary_stats_from_unique_results(unique_results, 'occurrence', original_dataset_length)
     
     assert summary['no_of_tests_results'] == 3
     assert summary['no_of_tests_run'] == 2
@@ -288,7 +302,9 @@ def test_summary_statistics_common_issues():
         }
     ])
     
-    summary = _get_summary_stats(test_results, 'occurrence')
+    unique_results = _create_unique_results_from_test_data(test_results, 'occurrence')
+    original_dataset_length = 3
+    summary = _get_summary_stats_from_unique_results(unique_results, 'occurrence', original_dataset_length)
     
     # Check basic stats
     assert summary['no_of_non_compliant_validations'] == 4
@@ -324,7 +340,9 @@ def test_summary_statistics_no_validation_failures():
         }
     ])
     
-    summary = _get_summary_stats(test_results, 'occurrence')
+    unique_results = _create_unique_results_from_test_data(test_results, 'occurrence')
+    original_dataset_length = 3
+    summary = _get_summary_stats_from_unique_results(unique_results, 'occurrence', original_dataset_length)
     
     assert summary['no_of_non_compliant_validations'] == 0
     assert summary['no_of_amendments'] == 0

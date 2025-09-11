@@ -213,3 +213,15 @@ blockquote p.description { background-color: #fffdeb; padding: 3px;
     border-left: 4px solid var(--green);
     margin: 1rem 0;
 }
+
+/* Case change pill styling */
+.case-change-pill {
+    background-color: var(--light-green) !important;
+    color: #2d5a2d !important;
+    font-size: 0.7rem !important;
+    font-weight: 500 !important;
+    padding: 0.2rem 0.4rem !important;
+    margin-left: 0.3rem !important;
+    border-radius: 0.25rem !important;
+    display: inline-block !important;
+}

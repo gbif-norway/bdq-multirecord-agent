@@ -1,8 +1,8 @@
 """
-Unit tests for the _get_summary_stats method in main.py
+Unit tests for the _get_summary_stats_from_unique_results method in main.py
 
 These tests focus specifically on testing the summary statistics generation
-functionality with various test data scenarios.
+functionality with various test data scenarios using unique results approach.
 """
 
 import pytest
@@ -10,14 +10,13 @@ import pandas as pd
 import numpy as np
 
 # Import the function directly to avoid import issues with other dependencies
-def _get_summary_stats(test_results_df, coreID):
-    """Generate summary statistics from test results DataFrame"""
-    # Extract unique field names from actedUpon and consulted columns
-    # These columns contain formatted strings like "field1=value1|field2=value2"
+def _get_summary_stats_from_unique_results(unique_results_df, core_type, original_dataset_length):
+    """Generate summary statistics from unique results DataFrame - adapted from _get_summary_stats"""
+    # Extract unique field names from actedUpon and consulted columns (same as _get_summary_stats)
     acted_upon_fields = set()
     consulted_fields = set()
     
-    for acted_upon_str in test_results_df['actedUpon'].dropna():
+    for acted_upon_str in unique_results_df['actedUpon'].dropna():
         if acted_upon_str:  # Skip empty strings
             # Split by | and extract field names (before =)
             for pair in acted_upon_str.split('|'):
@@ -25,7 +24,7 @@ def _get_summary_stats(test_results_df, coreID):
                     field_name = pair.split('=')[0]
                     acted_upon_fields.add(field_name)
     
-    for consulted_str in test_results_df['consulted'].dropna():
+    for consulted_str in unique_results_df['consulted'].dropna():
         if consulted_str:  # Skip empty strings
             # Split by | and extract field names (before =)
             for pair in consulted_str.split('|'):
@@ -34,43 +33,54 @@ def _get_summary_stats(test_results_df, coreID):
                     consulted_fields.add(field_name)
     
     all_cols_tested = list(acted_upon_fields.union(consulted_fields))
-    amendments = test_results_df[test_results_df['status'] == 'AMENDED']
-    filled_in = test_results_df[test_results_df['status'] == 'FILLED_IN']
-    issues = test_results_df[test_results_df['result'] == 'POTENTIAL_ISSUE']
-    non_compliant_validations = test_results_df[test_results_df['result'] == 'NOT_COMPLIANT']
+    amendments = unique_results_df[unique_results_df['status'] == 'AMENDED']
+    filled_in = unique_results_df[unique_results_df['status'] == 'FILLED_IN']
+    issues = unique_results_df[unique_results_df['result'] == 'POTENTIAL_ISSUE']
+    non_compliant_validations = unique_results_df[unique_results_df['result'] == 'NOT_COMPLIANT']
 
-    def _get_top_grouped(df, group_cols, n=15):
-        """Helper to get top n grouped counts sorted descending."""
-        return (df.groupby(group_cols)
-                .size()
-                .reset_index(name='count')
-                .sort_values('count', ascending=False)
-                .head(n))
+    def _get_top_grouped(df, n=15):
+        """Helper to get top n grouped counts sorted descending using the count column."""
+        return (df.sort_values('count', ascending=False)
+                .head(n)
+                [['actedUpon', 'consulted', 'test_id', 'count']])
 
     summary = {
-        'number_of_records_in_dataset': len(test_results_df),
+        'number_of_records_in_dataset': original_dataset_length,
         'list_of_all_columns_tested': all_cols_tested,
-        'no_of_tests_results': len(test_results_df),
-        'no_of_tests_run': test_results_df['test_id'].nunique(),
-        'no_of_non_compliant_validations': len(non_compliant_validations),
-        'no_of_unique_non_compliant_validations': len(non_compliant_validations.drop_duplicates()),
-        'no_of_amendments': len(amendments),
-        'no_of_unique_amendments': len(amendments.drop_duplicates()), # subset=['actedUpon', 'consulted', 'test_id']
-        'no_of_filled_in': len(filled_in),
-        'no_of_unique_filled_in': len(filled_in.drop_duplicates()),
-        'no_of_issues': len(issues),
-        'no_of_unique_issues': len(issues.drop_duplicates()),
-        'top_issues': _get_top_grouped(issues, ['actedUpon', 'consulted', 'test_id']),
-        'top_filled_in': _get_top_grouped(filled_in, ['actedUpon', 'consulted', 'test_id']),
-        'top_amendments': _get_top_grouped(amendments, ['actedUpon', 'consulted', 'test_id']),
-        'top_non_compliant_validations': _get_top_grouped(non_compliant_validations, ['actedUpon', 'consulted', 'test_id']),
+        'no_of_tests_results': unique_results_df['count'].sum(),
+        'no_of_tests_run': unique_results_df['test_id'].nunique(),
+        'no_of_non_compliant_validations': non_compliant_validations['count'].sum(),
+        'no_of_unique_non_compliant_validations': len(non_compliant_validations),
+        'no_of_amendments': amendments['count'].sum(),
+        'no_of_unique_amendments': len(amendments),
+        'no_of_filled_in': filled_in['count'].sum(),
+        'no_of_unique_filled_in': len(filled_in),
+        'no_of_issues': issues['count'].sum(),
+        'no_of_unique_issues': len(issues),
+        'top_issues': _get_top_grouped(issues),
+        'top_filled_in': _get_top_grouped(filled_in),
+        'top_amendments': _get_top_grouped(amendments),
+        'top_non_compliant_validations': _get_top_grouped(non_compliant_validations),
     }
 
     return summary
 
+def _create_unique_results_from_test_data(test_results_df, core_type):
+    """Helper function to create unique results DataFrame from test data"""
+    # Group by all columns except the ID, count occurrences, and add as 'count' column
+    group_cols = [col for col in test_results_df.columns if col != f'dwc:{core_type}ID']
+    unique_results = (
+        test_results_df
+        .groupby(group_cols, dropna=False)
+        .size()
+        .reset_index()
+        .rename(columns={0: "count"})
+    )
+    return unique_results
 
-class TestGetSummaryStats:
-    """Test class for _get_summary_stats method"""
+
+class TestGetSummaryStatsFromUniqueResults:
+    """Test class for _get_summary_stats_from_unique_results method"""
 
     def test_basic_functionality_with_simple_data(self):
         """Test basic functionality with simple test data"""
@@ -93,11 +103,13 @@ class TestGetSummaryStats:
         }
         
         test_df = pd.DataFrame(test_data)
-        summary = _get_summary_stats(test_df, 'occurrence')
+        unique_results = _create_unique_results_from_test_data(test_df, 'occurrence')
+        original_dataset_length = 3  # Simulate original dataset with 3 records
+        summary = _get_summary_stats_from_unique_results(unique_results, 'occurrence', original_dataset_length)
         
         # Basic assertions
-        assert summary['number_of_records_in_dataset'] == 5
-        assert summary['no_of_tests_results'] == 5
+        assert summary['number_of_records_in_dataset'] == 3  # Original dataset length
+        assert summary['no_of_tests_results'] == 5  # Sum of count column
         assert summary['no_of_tests_run'] == 1  # Only one unique test_id
         assert 'dwc:basisOfRecord' in summary['list_of_all_columns_tested']
         assert summary['no_of_non_compliant_validations'] == 0
@@ -119,9 +131,11 @@ class TestGetSummaryStats:
         }
         
         test_df = pd.DataFrame(test_data)
-        summary = _get_summary_stats(test_df, 'occurrence')
+        unique_results = _create_unique_results_from_test_data(test_df, 'occurrence')
+        original_dataset_length = 3
+        summary = _get_summary_stats_from_unique_results(unique_results, 'occurrence', original_dataset_length)
         
-        assert summary['no_of_non_compliant_validations'] == 2
+        assert summary['no_of_non_compliant_validations'] == 2  # Sum of count for NOT_COMPLIANT
         assert summary['no_of_unique_non_compliant_validations'] == 2  # All columns are different (different occurrenceIDs)
         assert len(summary['top_non_compliant_validations']) == 1
 
@@ -139,7 +153,9 @@ class TestGetSummaryStats:
         }
         
         test_df = pd.DataFrame(test_data)
-        summary = _get_summary_stats(test_df, 'occurrence')
+        unique_results = _create_unique_results_from_test_data(test_df, 'occurrence')
+        original_dataset_length = 3
+        summary = _get_summary_stats_from_unique_results(unique_results, 'occurrence', original_dataset_length)
         
         assert summary['no_of_amendments'] == 2
         assert summary['no_of_unique_amendments'] == 2  # All columns are different (different occurrenceIDs)
@@ -159,7 +175,9 @@ class TestGetSummaryStats:
         }
         
         test_df = pd.DataFrame(test_data)
-        summary = _get_summary_stats(test_df, 'occurrence')
+        unique_results = _create_unique_results_from_test_data(test_df, 'occurrence')
+        original_dataset_length = 3
+        summary = _get_summary_stats_from_unique_results(unique_results, 'occurrence', original_dataset_length)
         
         assert summary['no_of_filled_in'] == 2
         assert summary['no_of_unique_filled_in'] == 2  # All columns are different (different occurrenceIDs and consulted values)
@@ -179,7 +197,9 @@ class TestGetSummaryStats:
         }
         
         test_df = pd.DataFrame(test_data)
-        summary = _get_summary_stats(test_df, 'occurrence')
+        unique_results = _create_unique_results_from_test_data(test_df, 'occurrence')
+        original_dataset_length = 3
+        summary = _get_summary_stats_from_unique_results(unique_results, 'occurrence', original_dataset_length)
         
         assert summary['no_of_issues'] == 2
         assert summary['no_of_unique_issues'] == 2  # All columns are different (different occurrenceIDs)
@@ -205,7 +225,9 @@ class TestGetSummaryStats:
         }
         
         test_df = pd.DataFrame(test_data)
-        summary = _get_summary_stats(test_df, 'occurrence')
+        unique_results = _create_unique_results_from_test_data(test_df, 'occurrence')
+        original_dataset_length = 2
+        summary = _get_summary_stats_from_unique_results(unique_results, 'occurrence', original_dataset_length)
         
         # Check that all field names are extracted
         expected_fields = {'dwc:decimalLatitude', 'dwc:decimalLongitude', 'dwc:countryCode'}
@@ -217,7 +239,9 @@ class TestGetSummaryStats:
             'dwc:occurrenceID', 'test_id', 'test_type', 'status', 'result', 'comment', 'actedUpon', 'consulted'
         ])
         
-        summary = _get_summary_stats(empty_df, 'occurrence')
+        unique_results = _create_unique_results_from_test_data(empty_df, 'occurrence')
+        original_dataset_length = 0
+        summary = _get_summary_stats_from_unique_results(unique_results, 'occurrence', original_dataset_length)
         
         assert summary['number_of_records_in_dataset'] == 0
         assert summary['no_of_tests_results'] == 0
@@ -256,7 +280,9 @@ class TestGetSummaryStats:
         }
         
         test_df = pd.DataFrame(test_data)
-        summary = _get_summary_stats(test_df, 'occurrence')
+        unique_results = _create_unique_results_from_test_data(test_df, 'occurrence')
+        original_dataset_length = 6
+        summary = _get_summary_stats_from_unique_results(unique_results, 'occurrence', original_dataset_length)
         
         assert summary['number_of_records_in_dataset'] == 6
         assert summary['no_of_tests_run'] == 3  # Three unique test_ids
@@ -282,7 +308,9 @@ class TestGetSummaryStats:
             })
         
         test_df = pd.DataFrame(test_data)
-        summary = _get_summary_stats(test_df, 'occurrence')
+        unique_results = _create_unique_results_from_test_data(test_df, 'occurrence')
+        original_dataset_length = 20
+        summary = _get_summary_stats_from_unique_results(unique_results, 'occurrence', original_dataset_length)
         
         assert summary['no_of_non_compliant_validations'] == 20
         assert summary['no_of_unique_non_compliant_validations'] == 20
@@ -302,7 +330,9 @@ class TestGetSummaryStats:
         }
         
         test_df = pd.DataFrame(test_data)
-        summary = _get_summary_stats(test_df, 'occurrence')
+        unique_results = _create_unique_results_from_test_data(test_df, 'occurrence')
+        original_dataset_length = 3
+        summary = _get_summary_stats_from_unique_results(unique_results, 'occurrence', original_dataset_length)
         
         # Should handle NaN values gracefully
         assert summary['number_of_records_in_dataset'] == 3
@@ -323,7 +353,9 @@ class TestGetSummaryStats:
         }
         
         test_df = pd.DataFrame(test_data)
-        summary = _get_summary_stats(test_df, 'taxon')
+        unique_results = _create_unique_results_from_test_data(test_df, 'taxon')
+        original_dataset_length = 2
+        summary = _get_summary_stats_from_unique_results(unique_results, 'taxon', original_dataset_length)
         
         assert summary['number_of_records_in_dataset'] == 2
         assert summary['no_of_non_compliant_validations'] == 1
@@ -343,7 +375,9 @@ class TestGetSummaryStats:
         }
         
         test_df = pd.DataFrame(test_data)
-        summary = _get_summary_stats(test_df, 'occurrence')
+        unique_results = _create_unique_results_from_test_data(test_df, 'occurrence')
+        original_dataset_length = 1
+        summary = _get_summary_stats_from_unique_results(unique_results, 'occurrence', original_dataset_length)
         
         expected_fields = {'dwc:decimalLatitude', 'dwc:decimalLongitude', 'dwc:countryCode'}
         assert set(summary['list_of_all_columns_tested']) == expected_fields
@@ -362,7 +396,9 @@ class TestGetSummaryStats:
         }
         
         test_df = pd.DataFrame(test_data)
-        summary = _get_summary_stats(test_df, 'occurrence')
+        unique_results = _create_unique_results_from_test_data(test_df, 'occurrence')
+        original_dataset_length = 1
+        summary = _get_summary_stats_from_unique_results(unique_results, 'occurrence', original_dataset_length)
         
         expected_fields = {'dwc:decimalLatitude', 'dwc:decimalLongitude', 'dwc:countryCode', 'dwc:coordinateUncertaintyInMeters'}
         assert set(summary['list_of_all_columns_tested']) == expected_fields
@@ -381,7 +417,9 @@ class TestGetSummaryStats:
         }
         
         test_df = pd.DataFrame(test_data)
-        summary = _get_summary_stats(test_df, 'occurrence')
+        unique_results = _create_unique_results_from_test_data(test_df, 'occurrence')
+        original_dataset_length = 4
+        summary = _get_summary_stats_from_unique_results(unique_results, 'occurrence', original_dataset_length)
         
         assert summary['no_of_non_compliant_validations'] == 3
         assert summary['no_of_unique_non_compliant_validations'] == 3  # All columns are different (different occurrenceIDs)
@@ -394,7 +432,9 @@ class TestGetSummaryStats:
         test_results_path = '/app/tests/data/simple_occurrence_dwc_RESULTS.csv'
         try:
             test_df = pd.read_csv(test_results_path)
-            summary = _get_summary_stats(test_df, 'occurrence')
+            unique_results = _create_unique_results_from_test_data(test_df, 'occurrence')
+            original_dataset_length = 3  # From the simple_occurrence_dwc.csv file
+            summary = _get_summary_stats_from_unique_results(unique_results, 'occurrence', original_dataset_length)
             
             # Basic assertions based on the known structure of the test data
             assert summary['number_of_records_in_dataset'] > 0
