@@ -44,7 +44,7 @@ def get_relevant_test_contexts(test_ids: List[str]) -> str:
     """Get relevant BDQ test contexts for the given test IDs"""
     bdq_tests_csv_path = os.path.join(os.path.dirname(__file__), '..', 'TG2_tests_small.csv')
     bdq_tests_df = pd.read_csv(bdq_tests_csv_path, dtype=str).fillna('')
-    relevant_tests = bdq_tests_df[bdq_tests_df['Label'].isin(test_ids)]
+    relevant_tests = bdq_tests_df[bdq_tests_df['test_id'].isin(test_ids)]
     relevant_tests = relevant_tests.rename(columns={'IE Class': 'Information Element Class'})
     return f"\n## BDQ TEST CONTEXT\nThe following tests were run on the dataset:\n\n{str(relevant_tests)}"
 
