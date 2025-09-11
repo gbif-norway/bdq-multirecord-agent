@@ -119,7 +119,6 @@ occ5,2023-01-05,BadCountry,ZZ,91.0,181.0,InvalidName,BadBasis""", "test_dataset.
 
     mock_minio_service = Mock()
     mock_minio_service.upload_dataframe.return_value = "test_results.csv"
-    mock_minio_service.upload_csv_string.return_value = "amended_dataset.csv"
     mock_minio_service.generate_dashboard_url.return_value = "https://example.com/dashboard"
     
     # Mock the module-level services (except CSV service)

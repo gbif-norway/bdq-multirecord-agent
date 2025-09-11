@@ -52,7 +52,7 @@ class CSVService:
         df.to_csv(csv_buffer, index=False)
         return csv_buffer.getvalue()
     
-    def generate_amended_dataset(self, original_df: pd.DataFrame, results_df: pd.DataFrame, core_type: str) -> str:
+    def generate_amended_dataset(self, original_df: pd.DataFrame, results_df: pd.DataFrame, core_type: str) -> pd.DataFrame:
         """Generate amended dataset with proposed changes applied"""
         amended_df = original_df.copy()
         id_column = f'dwc:{core_type}ID'
@@ -73,10 +73,7 @@ class CSVService:
             amendments_applied = self._apply_amendments_original(amended_df, amended_only, id_column)
             log(f"Applied {amendments_applied} amendments to dataset")
         
-        # Convert DataFrame to CSV string
-        csv_buffer = io.StringIO()
-        amended_df.to_csv(csv_buffer, index=False)
-        return csv_buffer.getvalue()
+        return amended_df
     
     def _apply_amendments_original(self, df: pd.DataFrame, amendments_df: pd.DataFrame, id_column: str) -> int:
         """Apply amendments using optimized version of the original method"""
