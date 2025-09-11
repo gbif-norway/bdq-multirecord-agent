@@ -249,7 +249,12 @@ def _get_summary_stats_from_unique_results(unique_results_df, core_type, origina
 
     def _get_top_grouped(df, n=15):
         """Helper to get top n grouped counts sorted descending using the count column."""
-        return (df.sort_values('count', ascending=False)
+        if df.empty:
+            return []
+        # Fill NaN values in count column with 0 and convert to int
+        df_clean = df.copy()
+        df_clean['count'] = df_clean['count'].fillna(0).astype(int)
+        return (df_clean.sort_values('count', ascending=False)
                 .head(n)
                 [['actedUpon', 'consulted', 'test_id', 'count']]
                 .to_dict('records'))
@@ -257,15 +262,15 @@ def _get_summary_stats_from_unique_results(unique_results_df, core_type, origina
     summary = {
         'number_of_records_in_dataset': original_dataset_length,
         'list_of_all_columns_tested': all_cols_tested,
-        'no_of_tests_results': unique_results_df['count'].sum(),
+        'no_of_tests_results': int(unique_results_df['count'].sum() or 0),
         'no_of_tests_run': unique_results_df['test_id'].nunique(),
-        'no_of_non_compliant_validations': non_compliant_validations['count'].sum(),
+        'no_of_non_compliant_validations': int(non_compliant_validations['count'].sum() or 0),
         'no_of_unique_non_compliant_validations': len(non_compliant_validations),
-        'no_of_amendments': amendments['count'].sum(),
+        'no_of_amendments': int(amendments['count'].sum() or 0),
         'no_of_unique_amendments': len(amendments),
-        'no_of_filled_in': filled_in['count'].sum(),
+        'no_of_filled_in': int(filled_in['count'].sum() or 0),
         'no_of_unique_filled_in': len(filled_in),
-        'no_of_issues': issues['count'].sum(),
+        'no_of_issues': int(issues['count'].sum() or 0),
         'no_of_unique_issues': len(issues),
         'top_issues': _get_top_grouped(issues),
         'top_filled_in': _get_top_grouped(filled_in),
