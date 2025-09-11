@@ -77,3 +77,35 @@ class MinIOService:
         base_url = "https://storage.gbif-no.sigma2.no/misc/bdqreport/bdq-report.html"
         return f"{base_url}?csv={results_csv_name}&data={original_csv_name}"
     
+    def download_csv_from_url(self, s3_url: str) -> Optional[str]:
+        """Download CSV content from S3 URL"""
+        if not self.client:
+            log("MinIO client not available - cannot download file", "WARNING")
+            return None
+        
+        try:
+            # Parse the S3 URL to extract bucket and object path
+            # Expected format: https://storage.gbif-no.sigma2.no/misc/bdqreport/results/filename.csv
+            if not s3_url.startswith("https://storage.gbif-no.sigma2.no/"):
+                log(f"Invalid S3 URL format: {s3_url}", "ERROR")
+                return None
+            
+            # Extract object path from URL
+            url_parts = s3_url.replace("https://storage.gbif-no.sigma2.no/", "").split("/", 1)
+            if len(url_parts) != 2:
+                log(f"Could not parse S3 URL: {s3_url}", "ERROR")
+                return None
+            
+            bucket_name, object_path = url_parts
+            
+            # Download the object
+            response = self.client.get_object(bucket_name, object_path)
+            csv_content = response.read().decode('utf-8')
+            
+            log(f"Downloaded CSV from S3: {s3_url} ({len(csv_content)} characters)")
+            return csv_content
+            
+        except Exception as e:
+            log(f"Error downloading CSV from S3 URL {s3_url}: {e}", "ERROR")
+            return None
+    

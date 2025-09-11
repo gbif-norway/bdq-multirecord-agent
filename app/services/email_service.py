@@ -86,7 +86,7 @@ class EmailService:
         log("All CSV-like attachments were empty or undecodable", "WARNING")
         return None, None
     
-    async def send_reply(self, email_data: dict, body: str, attachments: Optional[List[dict]] = None):
+    async def send_reply(self, email_data: dict, body: str, attachments: Optional[List[dict]] = None, to_email: Optional[str] = None):
         """Send reply email with optional attachments"""
         if not self.gmail_send_endpoint:
             log("GMAIL_SEND endpoint not configured", "ERROR")
@@ -101,6 +101,11 @@ class EmailService:
             "htmlBody": body,
             "attachments": attachments or []
         }
+        
+        # Add specific recipient if provided (for debug emails)
+        if to_email:
+            reply_data["to"] = to_email
+        
         log(f"Reply data: {reply_data}")
         
         # Convert to JSON string for HMAC
@@ -124,7 +129,7 @@ class EmailService:
         resp_text = (response.text or '')
         body_preview = resp_text[:500]
         log(
-            f"Sent reply to {email_data.get('headers').get('from')}; status={response.status_code}; content_type={resp_ct}; body={body_preview}"
+            f"Sent reply to {to_email or email_data.get('headers', {}).get('from')}; status={response.status_code}; content_type={resp_ct}; body={body_preview}"
         )
         # Expect plain text 'ok' from Apps Script on success
         if 'text/html' in resp_ct or not resp_text.strip().lower().startswith('ok'):

@@ -100,14 +100,13 @@ class BDQAPIService:
             # Filter out rows where test_id is NaN (these are rows that didn't match in the merge)
             expanded_results = expanded_results.dropna(subset=['test_id'])
             
-            # Select only the required columns: occurrenceID/taxonID, test_id, test_type, status, result, comment, actedUpon, consulted, pre_amended_value
+            # Select only the required columns: occurrenceID/taxonID, test_id, test_type, status, result, comment, actedUpon, consulted
             id_column = f'dwc:{core_type}ID'
             final_results = expanded_results[[id_column, 'test_id', 'test_type', 'status', 'result', 'comment']].copy()
             
             # Add actedUpon and consulted columns with test field names and actual values
             acted_upon_values = []
             consulted_values = []
-            pre_amended_values = []
             
             for _, row in expanded_results.iterrows():
                 # Format actedUpon: "field1=value1, field2=value2"
@@ -123,22 +122,9 @@ class BDQAPIService:
                     if field in row and pd.notna(row[field]):
                         consulted_pairs.append(f"{field}={row[field]}")
                 consulted_values.append("|".join(consulted_pairs))
-                
-                # Add pre_amended_value: original values for amendment tests with AMENDED or FILLED_IN status
-                if (test.type == 'Amendment' and 
-                    row['status'] in ['AMENDED', 'FILLED_IN']):
-                    # Extract original values from the expanded_results row (which contains original data)
-                    pre_amended_pairs = []
-                    for field in test.actedUpon:
-                        if field in row and pd.notna(row[field]):
-                            pre_amended_pairs.append(f"{field}={row[field]}")
-                    pre_amended_values.append("|".join(pre_amended_pairs))
-                else:
-                    pre_amended_values.append("")
             
             final_results['actedUpon'] = acted_upon_values
             final_results['consulted'] = consulted_values
-            final_results['pre_amended_value'] = pre_amended_values
             
             all_results_dfs.append(final_results)
             log(f"Completed test {test.id}: {len(final_results)} results (API call took {api_duration:.2f}s)")
