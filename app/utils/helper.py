@@ -31,22 +31,61 @@ def log(message: str, level: str = "INFO"):
     else:
         logger.info(message)
     
-    # Send to Discord
+    # Send to Discord (truncate to avoid exceeding limits)
     webhook_url = os.getenv("DISCORD_WEBHOOK")
     if webhook_url:
         try:
-            requests.post(webhook_url, json={"content": message}, timeout=10)
+            max_discord = 1800
+            content = message if len(message) <= max_discord else (message[:max_discord] + "\n...(truncated for Discord)")
+            requests.post(webhook_url, json={"content": content}, timeout=10)
         except Exception:
             pass  # Don't let Discord failures break logging
 
 
-def get_relevant_test_contexts(test_ids: List[str]) -> str:
-    """Get relevant BDQ test contexts for the given test IDs"""
+def get_relevant_test_contexts(test_ids: List[str], max_items: int = 40, max_desc: int = 280) -> str:
+    """Return a compact, human-readable list of relevant BDQ tests.
+
+    Produces a bullet list limited to max_items, with truncated descriptions to keep
+    downstream LLM prompts safely under size limits.
+    """
     bdq_tests_csv_path = os.path.join(os.path.dirname(__file__), '..', 'TG2_tests_small.csv')
-    bdq_tests_df = pd.read_csv(bdq_tests_csv_path, dtype=str).fillna('')
-    relevant_tests = bdq_tests_df[bdq_tests_df['test_id'].isin(test_ids)]
-    relevant_tests = relevant_tests.rename(columns={'IE Class': 'Information Element Class'})
-    return f"\n## BDQ TEST CONTEXT\nThe following tests were run on the dataset:\n\n{str(relevant_tests)}"
+    df = pd.read_csv(bdq_tests_csv_path, dtype=str).fillna('')
+
+    # Normalize expected columns
+    # We keep only a concise subset for the prompt: id, type, class, description
+    # Column names in the CSV may vary slightly; handle common variants
+    col_map = {
+        'IE Class': 'ie_class',
+        'InformationElement:ActedUpon': 'ie_acted_upon',
+        'InformationElement:Consulted': 'ie_consulted',
+        'Description': 'description',
+        'Notes': 'notes',
+        'Type': 'type',
+        'UseCases': 'usecases',
+        'test_id': 'test_id',
+    }
+    for src, dst in list(col_map.items()):
+        if src in df.columns:
+            df.rename(columns={src: dst}, inplace=True)
+
+    cols = [c for c in ['test_id', 'type', 'ie_class', 'description'] if c in df.columns]
+    if not cols:
+        return ""  # Fallback to empty if unexpected format
+
+    rel = df[df['test_id'].isin(test_ids)][cols]
+    rel = rel.drop_duplicates(subset=['test_id']).head(max_items)
+
+    lines = ["BDQ tests included (truncated):"]
+    for _, row in rel.iterrows():
+        tid = str(row.get('test_id', ''))
+        ttype = str(row.get('type', ''))
+        icls = str(row.get('ie_class', ''))
+        desc = str(row.get('description', ''))[:max_desc]
+        meta_parts = [p for p in [ttype, icls] if p]
+        meta = f" ({', '.join(meta_parts)})" if meta_parts else ""
+        lines.append(f"- {tid}{meta}: {desc}")
+
+    return "\n".join(lines)
 
 def _snapshot_df(df_obj):
     max_rows, max_columns, max_str_len = 10, 10, 70
@@ -213,4 +252,3 @@ def make_columns_unique(df):
 
     df.columns = cols
     return df
-

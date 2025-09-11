@@ -86,7 +86,7 @@ class LLMService:
         # Create a thread and run
         thread = client.beta.threads.create()
         
-        # Attach files to the thread
+        # Attach files to the thread; prompt should be compact (we sanitize inputs)
         client.beta.threads.messages.create(
             thread_id=thread.id,
             role="user",
@@ -130,7 +130,9 @@ class LLMService:
                 if not self._contains_html_tags(response_text):
                     response_text = self._convert_to_html(response_text)
                 log(f"OpenAI LLM response: {response_text}")
-                return response_text
+        return response_text
+    
+    # (Truncation helper removed from use; we rely on sanitization instead.)
             else:
                 # If no text content, return a message indicating the analysis was completed
                 return "Analysis completed successfully. The assistant has analyzed your CSV files and generated insights using the code interpreter."
@@ -139,6 +141,36 @@ class LLMService:
                 
     def create_prompt(self, email_data, core_type, summary_stats, test_results_snapshot, original_snapshot, relevant_test_contexts):
         log("Generating the prompt for LLM...") 
+        # Sanitize email metadata to avoid embedding base64 attachments or large blobs
+        def _summarize_email_meta(ed):
+            try:
+                if not isinstance(ed, (dict,)):
+                    return str(ed)
+                headers = ed.get('headers', {}) if isinstance(ed.get('headers'), dict) else {}
+                attachments = ed.get('attachments', []) or []
+                att_summary = []
+                for att in attachments:
+                    try:
+                        att_summary.append({
+                            'filename': att.get('filename'),
+                            'mimeType': att.get('mimeType'),
+                            'size': len(att.get('contentBase64', ''))
+                        })
+                    except Exception:
+                        continue
+                summary = {
+                    'from': headers.get('from', ed.get('from')),
+                    'to': headers.get('to', ed.get('to')),
+                    'subject': headers.get('subject', ed.get('subject')),
+                    'threadId': ed.get('threadId'),
+                    'attachments': att_summary,
+                }
+                return summary
+            except Exception:
+                return str(ed)
+
+        email_data = _summarize_email_meta(email_data)
+
         prompt = f"""# YOUR TASK
 You are BDQEmail, a biodiversity data quality analyst assistant. You are helping a user with their dataset by analysing the results of a set of Biodiversity Data Quality tests run against all the relevant fields that could be found in the dataset. 
 Write a professional, encouraging email analysis in HTML format, the email will include a link to the dashboard after your reply and be sent to the user automatically after you have generated it.
@@ -161,11 +193,11 @@ Use the code execution tool to explore these files as needed to understand the d
 
 ## YOUR RESOURCES
 
-### USER'S ORIGINAL EMAIL
+### USER'S ORIGINAL EMAIL (metadata)
 {email_data}
 
 ### USER'S ORIGINAL FILE ({core_type} dataset type) is attached as a CSV file.
-- Snapshot from attached original file: 
+- Snapshot from attached original file (shortened): 
 {original_snapshot}
 
 ### Biodiversity Data Quality Tests Background
@@ -173,7 +205,7 @@ The BDQ Tests (TG2) are a standardized set of machine-readable checks for biodiv
 There are four test types. Validation tests check conformance or completeness and return COMPLIANT or NOT_COMPLIANT. Issue tests flag concerns with IS_ISSUE, POTENTIAL_ISSUE, or NOT_ISSUE. Amendment tests propose changes: AMENDED means a suggested correction to an existing value, FILLED_IN means a suggested value for a blank field, and NOT_AMENDED means no safe change is proposed; the proposed changes are given as key:value pairs. Measure tests report counts or a summary status (COMPLETE/NOT_COMPLETE). Every test returns a Response.status (e.g., RUN_HAS_RESULT, INTERNAL_PREREQUISITES_NOT_MET, EXTERNAL_PREREQUISITES_NOT_MET), a Response.result (the outcome or proposed changes), and a Response.comment explaining why.
 
 ### USER'S TEST RESULTS FILE is also attached as a CSV file.
-- Snapshot from attached results file: 
+- Snapshot from attached results file (shortened): 
 {test_results_snapshot}
 Notes:
   AMENDED = a suggested correction to a value that's already there (e.g., "Australia" → "AU").
@@ -183,7 +215,7 @@ Notes:
 ### SUMMARY STATS FROM RESULTS FILE
 {summary_stats} 
 
-### BDQ TESTS CONTEXT
+### BDQ TESTS CONTEXT (shortened)
 {relevant_test_contexts} 
 
 ## YOUR PROCESS
@@ -220,7 +252,8 @@ Summmarise and provide some key takeaways at the end. I want you to showcase you
 ## FORMAT
 Write as a complete HTML email body that will appear below the summary stats box. Use clear paragraphs, bullet points and other formatting where appropriate. 
 Do NOT include the summary statistics or the link to the dashboard - they are already displayed to the user above your email body."""
-        log(prompt)
+        # Log full prompt for debugging/traceability as requested
+        log(f"LLM prompt ({len(prompt)} chars):\n{prompt}")
         return prompt
     
     

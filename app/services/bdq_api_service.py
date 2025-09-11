@@ -156,6 +156,34 @@ class BDQAPIService:
         total_duration = time.time() - start_time
         if all_unique_results:
             all_unique_df = pd.concat(all_unique_results, ignore_index=True)
+            # Reorder columns for consistency: put core metadata first, then all raw field columns
+            base_cols = [
+                "test_id",
+                "test_type",
+                "status",
+                "result",
+                "comment",
+                "actedUpon",
+                "consulted",
+                "actedUpon_cols",
+                "consulted_cols",
+                "count",
+            ]
+            raw_cols = [
+                c for c in all_unique_df.columns
+                if c not in base_cols and (":" in c)  # likely field columns like dwc:*, dc:type, etc.
+            ]
+            # Keep stable, readable order
+            ordered = base_cols + sorted(raw_cols)
+            # Ensure all columns present
+            for c in ordered:
+                if c not in all_unique_df.columns:
+                    all_unique_df[c] = ""
+            # Also carry through any leftover non-field columns (rare)
+            leftovers = [c for c in all_unique_df.columns if c not in ordered]
+            final_cols = ordered + leftovers
+            all_unique_df = all_unique_df[final_cols]
+
             log(
                 f"Completed all tests: {len(all_unique_df)} unique results across {len(applicable_tests)} tests (total {total_duration:.2f}s)"
             )
