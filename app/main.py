@@ -162,6 +162,8 @@ async def debug_llm_analysis(
 
         # Parse unique results to get summary stats (same logic as _handle_email_processing)
         unique_results_df = pd.read_csv(io.StringIO(unique_results_csv), dtype=str)
+        # Convert count column to numeric, handling any non-numeric values
+        unique_results_df['count'] = pd.to_numeric(unique_results_df['count'], errors='coerce').fillna(0).astype(int)
         summary_stats = _get_summary_stats_from_unique_results(unique_results_df, core_type, len(df))
         
         # Create mock email data for the prompt (similar to _handle_email_processing)
