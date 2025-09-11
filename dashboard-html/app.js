@@ -1,11 +1,16 @@
 // Global variables
 let uniqueResults = [];
 let tg2Tests = [];
-let summaryStats = {};
 let currentAmendmentsPage = 1;
 let currentValidationsPage = 1;
 let currentUseCaseFilter = 'all';
 const itemsPerPage = 10;
+
+// Utility function to format numbers with space separators
+function formatNumber(num) {
+    if (num === null || num === undefined || isNaN(num)) return '0';
+    return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+}
 
 // Cache for efficient lookups
 let amendmentLookupMap = new Map(); // key: "test_id||result" -> {test_id, result, actedUpon, count}
@@ -37,8 +42,7 @@ async function initializeDashboard() {
         // Load data files
         await Promise.all([
             loadUniqueResults(`results/${uniqueTestResultsFile}`),
-            loadTG2Tests('TG2_tests_small.csv'),
-            loadSummaryStats(`results/${uniqueTestResultsFile.replace('unique_test_results', 'summary_stats')}`)
+            loadTG2Tests('TG2_tests_small.csv')
         ]);
 
         // Process and display data
@@ -181,26 +185,6 @@ async function loadTG2Tests(filePath) {
     });
 }
 
-async function loadSummaryStats(filePath) {
-    return new Promise((resolve, reject) => {
-        Papa.parse(filePath, {
-            download: true,
-            header: true,
-            complete: function(results) {
-                if (results.data.length > 0) {
-                    summaryStats = results.data[0];
-                }
-                resolve();
-            },
-            error: function(error) {
-                // Summary stats might not exist, so we'll continue without it
-                console.warn('Summary stats not found, using defaults');
-                summaryStats = {};
-                resolve();
-            }
-        });
-    });
-}
 
 function joinResultsWithTestContext() {
     return uniqueResults.map(result => {
@@ -249,37 +233,49 @@ function buildAmendmentLookupMap() {
 
 function renderSummaryCards() {
     const cardsContainer = document.getElementById('summary-cards');
+    
+    // Calculate values from uniqueResults data
+    const uniqueTestIds = new Set(uniqueResults.map(r => r.test_id)).size;
+    const amendments = uniqueResults
+        .filter(r => r.status === 'AMENDED')
+        .reduce((sum, r) => sum + parseInt(r.count || 1), 0);
+    const filledIn = uniqueResults
+        .filter(r => r.status === 'FILLED_IN')
+        .reduce((sum, r) => sum + parseInt(r.count || 1), 0);
+    const nonCompliantValidations = uniqueResults.filter(r => r.result === 'NOT_COMPLIANT').length;
+    const potentialIssues = uniqueResults.filter(r => r.result === 'POTENTIAL_ISSUE').length;
+    
     const cards = [
         {
-            number: summaryStats.number_of_records_in_dataset || uniqueResults.length,
+            number: uniqueResults.length,
             label: 'records in dataset'
         },
         {
-            number: summaryStats.no_of_tests_run || new Set(uniqueResults.map(r => r.test_id)).size,
+            number: uniqueTestIds,
             label: 'tests across dataset'
         },
         {
-            number: summaryStats.no_of_test_results || uniqueResults.length,
+            number: uniqueResults.length * uniqueTestIds,
             label: 'results'
         },
         {
-            number: (summaryStats.no_of_amendments || 0) + (summaryStats.no_of_filled_in || 0),
-            label: 'changes can be applied automatically'
-        },
-        {
-            number: summaryStats.no_of_unique_non_compliant_validations || 0,
+            number: nonCompliantValidations,
             label: 'corrections needing attention'
         },
         {
-            number: summaryStats.no_of_unique_issues || 0,
-            label: 'fields with potential issues'
+            number: amendments + filledIn,
+            label: 'changes can be applied automatically'
+        },
+        {
+            number: potentialIssues,
+            label: 'fields with secondary issues'
         }
     ];
 
     cardsContainer.innerHTML = cards.map(card => `
         <div class="col-md-4 col-lg-2 mb-3"><div class="card" style="height: 130px;">
             <div class="card-body">
-                <h5 class="card-title">${card.number}</h5>
+                <h5 class="card-title">${formatNumber(card.number)}</h5>
                 <p class="card-text">${card.label}</p>
             </div>
         </div></div>
@@ -292,67 +288,126 @@ function renderNeedsAttentionChart(uniqueResultsWithTestContext) {
         result.result === 'NOT_COMPLIANT' || result.result === 'POTENTIAL_ISSUE'
     );
 
-    // Group by IE Class and count
-    const ieClassCounts = {};
+    // Group by IE Class, then by test_id within each class
+    const ieClassGroups = {};
     needsAttention.forEach(result => {
         const ieClass = result.ie_class ? result.ie_class.replace(/^[^:]+:/, '') : 'Unknown';
-        console.log(`Test ID: ${result.test_id}, IE Class: ${result.ie_class}, Processed: ${ieClass}`);
-        ieClassCounts[ieClass] = (ieClassCounts[ieClass] || 0) + parseInt(result.count || 1);
+        const testId = result.test_id;
+        const count = parseInt(result.count || 1);
+        
+        if (!ieClassGroups[ieClass]) {
+            ieClassGroups[ieClass] = {};
+        }
+        if (!ieClassGroups[ieClass][testId]) {
+            ieClassGroups[ieClass][testId] = 0;
+        }
+        ieClassGroups[ieClass][testId] += count;
     });
     
-    // Convert labels to include "fields" suffix
-    const ieClassLabels = {};
-    Object.keys(ieClassCounts).forEach(ieClass => {
-        const label = ieClass === 'Unknown' ? 'Unknown' : ieClass + ' fields';
-        ieClassLabels[label] = ieClassCounts[ieClass];
+    // Convert to stacked chart format
+    const ieClassLabels = Object.keys(ieClassGroups).map(ieClass => 
+        ieClass === 'Unknown' ? 'Unknown' : ieClass + ' fields'
+    );
+    
+    // Get all unique test IDs across all IE classes
+    const allTestIds = new Set();
+    Object.values(ieClassGroups).forEach(testGroups => {
+        Object.keys(testGroups).forEach(testId => allTestIds.add(testId));
     });
     
-    console.log('IE Class counts:', ieClassCounts);
-
+    // Create datasets for each test (each test becomes a dataset for stacking)
+    const datasets = [];
+    const testIds = Array.from(allTestIds);
+    
+    // Filter out tests that have zero counts across all IE classes
+    const testsWithData = testIds.filter(testId => {
+        return ieClassLabels.some(ieClassLabel => {
+            const ieClass = ieClassLabel.replace(' fields', '');
+            const actualIeClass = ieClass === 'Unknown' ? 'Unknown' : ieClass;
+            return ieClassGroups[actualIeClass] && ieClassGroups[actualIeClass][testId] > 0;
+        });
+    });
+    
     // Calculate total records for percentage calculation
-    const totalRecords = summaryStats.number_of_records_in_dataset || uniqueResults.length;
+    const totalRecords = uniqueResults.length;
     
-    // Convert counts to percentages
-    const ieClassPercentages = {};
-    Object.keys(ieClassLabels).forEach(label => {
-        ieClassPercentages[label] = (ieClassLabels[label] / totalRecords) * 100;
+    // Generate darker green to yellow gradient colors
+    const testColors = generateStackedGradientColors(testsWithData.length);
+    
+    testsWithData.forEach((testId, index) => {
+        const testData = ieClassLabels.map(ieClassLabel => {
+            const ieClass = ieClassLabel.replace(' fields', '');
+            const actualIeClass = ieClass === 'Unknown' ? 'Unknown' : ieClass;
+            const count = ieClassGroups[actualIeClass] && ieClassGroups[actualIeClass][testId] 
+                ? ieClassGroups[actualIeClass][testId] 
+                : 0;
+            // Convert to percentage
+            return (count / totalRecords) * 100;
+        });
+        
+        datasets.push({
+            label: formatTestTitle(testId),
+            data: testData,
+            backgroundColor: testColors[index],
+            borderColor: testColors[index].replace('0.8', '1'),
+            borderWidth: 1
+        });
     });
-
-    // Create gradient colors between yellow and yellow-green
-    const colors = generateGradientColors(Object.keys(ieClassPercentages).length);
 
     const ctx = document.getElementById('needsAttentionChart').getContext('2d');
     new Chart(ctx, {
         type: 'bar',
         data: {
-            labels: Object.keys(ieClassPercentages),
-            datasets: [{
-                label: 'Issues Percentage',
-                data: Object.values(ieClassPercentages),
-                backgroundColor: colors,
-                borderColor: colors.map(color => color.replace('0.8', '1')),
-                borderWidth: 1
-            }]
+            labels: ieClassLabels,
+            datasets: datasets
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            aspectRatio: 2, // This sets the width/height ratio
+            aspectRatio: 2,
             plugins: {
                 legend: {
-                    display: false
+                    display: true,
+                    position: 'right',
+                    labels: {
+                        usePointStyle: true,
+                        padding: 10,
+                        font: {
+                            size: 10
+                        }
+                    }
                 },
                 tooltip: {
-                    enabled: false
+                    enabled: true,
+                    mode: 'index',
+                    intersect: false,
+                    filter: function(tooltipItem) {
+                        // Only show tooltips for non-zero values
+                        return tooltipItem.parsed.y > 0;
+                    },
+                    callbacks: {
+                        title: function(context) {
+                            return context[0].label;
+                        },
+                        label: function(context) {
+                            const testName = context.dataset.label;
+                            const percentage = context.parsed.y;
+                            const totalRecords = uniqueResults.length;
+                            const count = Math.round((percentage / 100) * totalRecords);
+                            return `${testName}: ${percentage.toFixed(1)}% (${formatNumber(count)} records)`;
+                        }
+                    }
                 }
             },
             scales: {
                 x: {
+                    stacked: true,
                     grid: {
                         display: false
                     }
                 },
                 y: {
+                    stacked: true,
                     beginAtZero: true,
                     grid: {
                         display: false
@@ -375,6 +430,19 @@ function generateGradientColors(count) {
         const r = Math.round(254 * (1 - ratio) + 200 * ratio);
         const g = Math.round(222 * (1 - ratio) + 223 * ratio);
         const b = Math.round(0 * (1 - ratio) + 82 * ratio);
+        colors.push(`rgba(${r}, ${g}, ${b}, 0.8)`);
+    }
+    return colors;
+}
+
+function generateStackedGradientColors(count) {
+    const colors = [];
+    for (let i = 0; i < count; i++) {
+        const ratio = i / (count - 1);
+        // Much darker green to yellow gradient
+        const r = Math.round(0 * (1 - ratio) + 255 * ratio);    // 0 -> 255 (very dark green to yellow)
+        const g = Math.round(100 * (1 - ratio) + 255 * ratio);  // 100 -> 255 (dark green to yellow)
+        const b = Math.round(0 * (1 - ratio) + 0 * ratio);      // 0 -> 0 (dark green to yellow)
         colors.push(`rgba(${r}, ${g}, ${b}, 0.8)`);
     }
     return colors;
@@ -422,7 +490,7 @@ function updateValidationsHeading(validations) {
 
     // Update the heading
     const heading = document.querySelector('h2 i.fa-flag').parentElement;
-    heading.innerHTML = `<i class="fa-regular fa-flag" style="color: #f59e0b;"></i> Validations and issues <small>(<strong>${x}</strong> tests with results needing attention, total of <strong>${y}</strong> records affected)</small>`;
+    heading.innerHTML = `<i class="fa-regular fa-flag" style="color: #f59e0b;"></i> Validations and issues <small>(<strong>${formatNumber(x)}</strong> tests with results needing attention, total of <strong>${formatNumber(y)}</strong> records affected)</small>`;
 }
 
 function renderValidationsList(uniqueResultsWithTestContext) {
@@ -504,7 +572,7 @@ function renderPaginatedList(data, containerId, currentPage, paginationId) {
                        onclick="openDetailModal('${testId}', '${containerId}'); return false;">
                         <div class="d-flex w-100 justify-content-between">
                             <h5 class="mb-1">${formatTestTitle(testId)}</h5>
-                            <span class="badge totalcount" style="background-color: ${badgeColor}; color: #000;">${totalCount} records affected</span>
+                            <span class="badge totalcount" style="background-color: ${badgeColor}; color: #000;">${formatNumber(totalCount)} records affected</span>
                         </div>
                          <p class="mb-1">${testInfo ? testInfo.description : 'No description available'}</p>
                         ${containerId === 'validations' && appliedAmendmentTests.length > 0 ? `
@@ -522,7 +590,7 @@ function renderPaginatedList(data, containerId, currentPage, paginationId) {
                                 const displayText = containerId === 'amendments' ? 
                                     formatAmendmentDisplay(combo.item) : 
                                     combo.combo;
-                                return `Affected ${combo.count} records with ${displayText}`;
+                                return `Affected ${formatNumber(combo.count)} records with ${displayText}`;
                             }).join('; ')}
                             ${topCombos.length > 2 ? '...' : ''}
                         </small>
@@ -666,7 +734,7 @@ function openDetailModal(testId, containerType) {
                     
                     return `
                     <div class="${fieldComboClass}">
-                        <span class="field-combo-count">${combo.count} records flagged</span>, with ${displayText}
+                        <span class="field-combo-count">${formatNumber(combo.count)} records flagged</span>, with ${displayText}
                         ${combo.comment && combo.comment.trim() ? `
                         <div class="mt-1">
                             <small><i class="fas fa-comment"></i> ${combo.comment}</small>

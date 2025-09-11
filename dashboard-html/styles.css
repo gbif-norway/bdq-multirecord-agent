@@ -1,6 +1,7 @@
 /* Color scheme variables */
 :root {
     --green: #027e55;
+    --green-dark: #015b41;
     --yellow: #fede00;
     --yellow-green: #c8df52;
     --mint: #fafef5;
@@ -21,6 +22,12 @@ header {
     color:var(--light-green); 
     margin-bottom: 0.6rem; 
     transition: all 0.3s ease;
+}
+
+header.navbar.navbar-expand-lg.bd-navbar:hover,
+header.navbar:hover,
+header:hover {
+    background-color: var(--green-dark) !important; /* darker green on hover */
 }
 h1 { font-size: 1.5rem; }
 h1 small { font-size: 0.8rem;  color: var(--light-green); }
