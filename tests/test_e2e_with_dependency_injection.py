@@ -114,7 +114,7 @@ occ5,2023-01-05,BadCountry,ZZ,91.0,181.0,InvalidName,BadBasis""", "test_dataset.
     # Use real CSV service - no mocking needed
     
     mock_llm_service = Mock()
-    mock_llm_service.generate_intelligent_summary.return_value = "<p>BDQ Test Results for occurrence dataset: Found 3 test results with 2 validation failures.</p>"
+    mock_llm_service.generate_openai_intelligent_summary.return_value = "<p>BDQ Test Results for occurrence dataset: Found 3 test results with 2 validation failures.</p>"
     mock_llm_service.create_prompt.return_value = "Test prompt"
 
     mock_minio_service = Mock()
@@ -136,15 +136,13 @@ occ5,2023-01-05,BadCountry,ZZ,91.0,181.0,InvalidName,BadBasis""", "test_dataset.
         # Verify services were called correctly
         mock_email_service.extract_csv_attachment.assert_called_once_with(sample_email)
         mock_bdq_service.run_tests_on_dataset.assert_called_once()
-        mock_llm_service.generate_intelligent_summary.assert_called_once()
+        mock_llm_service.generate_openai_intelligent_summary.assert_called_once()
         mock_email_service.send_results_reply.assert_called_once()
         
         # Verify the email was sent with correct parameters
         call_args = mock_email_service.send_results_reply.call_args
         assert call_args[0][0] == sample_email  # email_data
         assert "occurrence dataset" in call_args[0][1]  # body
-        assert call_args[0][2] is not None  # raw_results_csv
-        assert call_args[0][3] is not None  # amended_dataset_csv
 
 
 @pytest.mark.asyncio
@@ -255,7 +253,7 @@ def test_csv_output_validation():
     csv_service = CSVService()
     
     # Test raw results CSV
-    raw_csv = csv_service.generate_raw_results_csv(test_results)
+    raw_csv = csv_service.dataframe_to_csv_string(test_results)
     raw_df = pd.read_csv(StringIO(raw_csv))
     
     # Verify structure

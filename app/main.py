@@ -103,7 +103,7 @@ async def _handle_email_processing(email_data: Dict[str, Any]):
         body += _format_breakdown_button_html(dashboard_url)
     
     # Send reply email
-    await email_service.send_results_reply(email_data, body, test_results_csv, amended_csv)
+    await email_service.send_results_reply(email_data, body)
     
 
 @app.post("/email/incoming")

@@ -140,19 +140,7 @@ class EmailService:
         error_body = f"<p>Error processing your request:</p><p>{error_message}</p>"
         await self.send_reply(email_data, error_body)
     
-    async def send_results_reply(self, email_data: dict, body: str, raw_results_csv: str, amended_dataset_csv: str):
-        """Send results reply email with CSV attachments"""
-        attachments = [
-            {
-                "filename": "bdq_raw_results.csv",
-                "mimeType": "text/csv",
-                "contentBase64": base64.b64encode(raw_results_csv.encode('utf-8')).decode('utf-8')
-            },
-            {
-                "filename": "amended_dataset.csv", 
-                "mimeType": "text/csv",
-                "contentBase64": base64.b64encode(amended_dataset_csv.encode('utf-8')).decode('utf-8')
-            }
-        ]
-        await self.send_reply(email_data, body, attachments)
+    async def send_results_reply(self, email_data: dict, body: str):
+        """Send results reply email without attachments (files are available via dashboard links)"""
+        await self.send_reply(email_data, body)
     

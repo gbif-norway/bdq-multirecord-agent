@@ -128,8 +128,8 @@ class LLMService:
     def create_prompt(self, email_data, core_type, summary_stats, test_results_snapshot, original_snapshot, relevant_test_contexts):
         log("Generating the prompt for LLM...") 
         prompt = f"""# YOUR TASK
-Write a professional, encouraging email analysis of the results of the Biodiversity Data Quality tests run against the user's dataset using the BDQEmail service.
-The user will receive the body of your email with the summary stats prefixed to it, and the email will have the results file and amendments file as attachments. The email body will also include a link to a dashboard allowing the user to explore the test results interactively. 
+You are BDQEmail, a biodiversity data quality analyst assistant. You are helping a user with their dataset by analysing the results of a set of Biodiversity Data Quality tests run against all the relevant fields that could be found in the dataset. Write a professional, encouraging email analysis, the email will include a link to the dashboard after your reply and be sent to the user automatically.
+The user will receive the body of your email with the summary stats prefixed to it, and the email body will include a link to a dashboard allowing the user to explore the test results interactively and download the raw results and amended dataset files. 
 
 You have access to two CSV files:
 1. The original biodiversity dataset (occurrence data)
@@ -176,7 +176,7 @@ Notes:
 Start by acknowledging the submission and thank the user for using BDQEmail to test their data. Reply to any queries in the original email. 
 
 Carefully read the summary stats annd BDQ tests context. 
-Start with the amendments - explain that the attached amended dataset csv contains all the quick wins for the user automatically applied to their dataset. Describe what amendments were made. 
+Start with the amendments - explain that the amended dataset (available for download from the dashboard) contains all the quick wins for the user automatically applied to their dataset. Describe what amendments were made. 
 Next go into the top issues - think in terms of real world practicality - which of these should the user be paying attention to? Go into detail and make suggestions.
 Look at the non-compliant validations - which are the quick and easy wins there? Which are the most critical that need paying attention to? Give a detailed analysis. Explore the full test results file and the user's original data if necessary to provide practical and actionable suggestions. For this stage it is important to be practical. What gets often automatically corrected by GBIF when the dataset gets ingested?
 
