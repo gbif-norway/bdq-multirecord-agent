@@ -31,12 +31,13 @@
     </header>
     <div class="container-xxl bd-gutter flex-wrap flex-lg-nowrap">
         <p class="intro">
-            BDQ <small>(Biodiversity Data Quality)</small> tests are small, named checks that look at one part of a biodiversity record <small>(usually a Darwin Core field)</small> and say if it's 
-            <span class="badge">okay ✅</span>,
-            <span class="badge">needs fixing 🛠️</span>,
+            <span data-bs-toggle="tooltip" title="Biodiversity Data Quality" class="tooltip-hint">BDQ</span> tests are standardised checks that look at one part of a biodiversity record <span data-bs-toggle="tooltip" title="usually a Darwin Core field" class="tooltip-hint">record</span> & say if it's 
+            <span class="badge">okay <i class="fa-solid fa-circle-check text-success"></i></span>,
+            <span class="badge">needs attention <i class="fa-solid fa-triangle-exclamation text-warning"></i></span>,
+            <span class="badge">can be auto-corrected <i class="fa-solid fa-wrench text-info"></i></span>
             or
-            <span class="badge">can't be checked ❓</span>.
-                <strong>Each test asks a simple question <small>(e.g., "Is countryCode a real ISO code?")</small> and gives a simple answer.</strong>
+            <span class="badge">can't be checked <i class="fa-solid fa-question-circle text-secondary"></i></span>.
+            <strong>Each test asks a simple <span data-bs-toggle="tooltip" title='e.g., "Is countryCode a real ISO code?"' class="tooltip-hint">question</span> & gives a simple answer.</strong>
             <a href="#" data-bs-toggle="modal" data-bs-target="#learnMoreModal">
                 Learn more about the tests
             </a>
@@ -50,7 +51,7 @@
         <div class="row mb-4">
             <div class="col-12">
                 <h2 id="needs-attention-heading">
-                    <i class="fa-regular fa-eye" style="color: #f59e0b;"></i> Needs attention (broken down by field types) <small>Values a BDQ test has flagged as non-compliant or a possible potential issue</small>
+                    <i class="fa-solid fa-triangle-exclamation text-warning"></i> Needs attention (broken down by field types) <small>Values a BDQ test has flagged as non-compliant or a possible potential issue</small>
                 </h2>
                 <canvas id="needsAttentionChart" width="400" height="200"></canvas>
             </div>
@@ -98,7 +99,7 @@
         <!-- Amendments Section -->
         <div class="row mb-3">
             <div class="col-12">
-                <h2><i class="fa-solid fa-edit" style="color: #f59e0b;"></i> Amendments automatically applied <small>(see Amended dataset csv)</small></h2>
+                <h2><i class="fa-solid fa-wrench text-info"></i> Auto-corrections <small>(see Amended dataset csv)</small></h2>
                 <div id="amendments-list">
                     <!-- Amendments will be populated by JavaScript -->
                 </div>

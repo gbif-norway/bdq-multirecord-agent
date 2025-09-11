@@ -139,7 +139,7 @@ function setupDownloadButtons(uniqueTestResultsFile, amendedDatasetFile) {
     uniqueResultsButton.className = 'btn btn-outline-light';
     uniqueResultsButton.href = `results/${uniqueTestResultsFile}`;
     uniqueResultsButton.download = uniqueTestResultsFile;
-    uniqueResultsButton.innerHTML = '<i class="fas fa-download me-1"></i>Test results';
+    uniqueResultsButton.innerHTML = '<i class="fas fa-file-csv me-1"></i>Test results';
     downloadButtonsContainer.appendChild(uniqueResultsButton);
     
     // Add amended dataset button if file is provided
@@ -149,7 +149,7 @@ function setupDownloadButtons(uniqueTestResultsFile, amendedDatasetFile) {
         amendedDatasetButton.className = 'btn btn-light';
         amendedDatasetButton.href = `results/${amendedDatasetFile}`;
         amendedDatasetButton.download = amendedDatasetFile;
-        amendedDatasetButton.innerHTML = '<i class="fas fa-file-csv me-1"></i>Amended dataset';
+        amendedDatasetButton.innerHTML = '<i class="fas fa-wrench me-1" style="color: black;"></i>Amended dataset';
         downloadButtonsContainer.appendChild(amendedDatasetButton);
     }
     
@@ -269,24 +269,38 @@ function renderSummaryCards() {
     const potentialIssues = sumCounts(r => r.result === 'POTENTIAL_ISSUE');
     const totalResults = sumCounts(() => true);
     
+    // Calculate test passes (total results minus corrections needing attention)
+    const testPasses = totalResults - nonCompliantValidations;
+    
     const cards = [
         { number: datasetSize, label: 'records in dataset' },
         {
             number: uniqueTestIds,
             label: 'tests across dataset'
         },
-        { number: totalResults, label: 'results' },
+        { 
+            number: testPasses, 
+            label: 'test passes',
+            icon: 'fa-circle-check',
+            iconClass: 'text-success'
+        },
         {
             number: nonCompliantValidations,
-            label: 'corrections needing attention'
+            label: 'needs attention',
+            icon: 'fa-triangle-exclamation',
+            iconClass: 'text-warning'
         },
         {
             number: amendments + filledIn,
-            label: 'changes can be applied automatically'
+            label: 'can be auto-corrected',
+            icon: 'fa-wrench',
+            iconClass: 'text-info'
         },
         {
             number: potentialIssues,
-            label: 'fields with secondary issues'
+            label: 'can\'t be checked',
+            icon: 'fa-question-circle',
+            iconClass: 'text-secondary'
         }
     ];
 
@@ -294,7 +308,9 @@ function renderSummaryCards() {
         <div class="col-md-4 col-lg-2 mb-3"><div class="card" style="height: 130px;">
             <div class="card-body">
                 <h5 class="card-title">${formatNumber(card.number)}</h5>
-                <p class="card-text">${card.label}</p>
+                <p class="card-text">
+                    ${card.icon ? `<i class="fa-solid ${card.icon} ${card.iconClass} me-1"></i>` : ''}${card.label}
+                </p>
             </div>
         </div></div>
     `).join('');

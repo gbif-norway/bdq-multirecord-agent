@@ -63,7 +63,7 @@ p.intro {
 p.intro:hover {
     background-color: rgba(254, 222, 0, 0.5); /* lighter, less hectic yellow */
     box-shadow: 0 4px 24px 0 rgba(2, 126, 85, 0.10), 0 1.5px 6px 0 rgba(200, 223, 82, 0.10);
-    transform: scale(1.03);
+    transform: scale(1.01);
 }
 p.intro small { font-size: 0.8em; color: var(--grey); }
 p.intro span.badge { background-color: #caebc3; color: black; font-weight: normal; font-size: 0.9em}
@@ -318,4 +318,17 @@ blockquote p.description { background-color: #fffdeb; padding: 3px;
     background-color: #e9ecef;
     border-color: #ced4da;
     color: #495057;
+}
+
+/* Tooltip hint styling */
+.tooltip-hint {
+    position: relative;
+    cursor: help;
+    border-bottom: 1px dotted var(--green);
+    color: var(--green);
+    font-weight: 500;
+}
+
+.tooltip-hint:hover {
+    background-color: rgba(2, 126, 85, 0.1);
 }
