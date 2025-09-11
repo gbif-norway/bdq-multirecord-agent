@@ -78,7 +78,8 @@ async def _handle_email_processing(email_data: Dict[str, Any]):
     
     # Get LLM analysis using unique results (more efficient and focused)
     prompt = llm_service.create_prompt(email_data, core_type, summary_stats, str_snapshot(unique_test_results), str_snapshot(df), get_relevant_test_contexts(unique_test_results['test_id'].unique().tolist()))
-    
+    log(prompt)
+
     # Convert DataFrames to CSV strings for LLM
     unique_results_csv_content = csv_service.dataframe_to_csv_string(unique_test_results)
     original_csv_content = csv_service.dataframe_to_csv_string(df)
