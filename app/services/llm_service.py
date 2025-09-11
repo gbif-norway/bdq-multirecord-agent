@@ -58,7 +58,8 @@ class LLMService:
         # Check if response contains HTML tags, if not convert to HTML
         if not self._contains_html_tags(response_text):
             response_text = self._convert_to_html(response_text)
-            
+        
+        log(f"Gemini LLM response: {response_text}")
         return response_text
                 
     def generate_openai_intelligent_summary(self, prompt, test_results_csv_text, original_csv_text, api_key=None):
@@ -128,6 +129,7 @@ class LLMService:
                 # Check if response contains HTML tags, if not convert to HTML
                 if not self._contains_html_tags(response_text):
                     response_text = self._convert_to_html(response_text)
+                log(f"OpenAI LLM response: {response_text}")
                 return response_text
             else:
                 # If no text content, return a message indicating the analysis was completed
