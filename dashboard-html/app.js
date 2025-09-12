@@ -299,7 +299,7 @@ function renderSummaryCards() {
         },
         {
             number: amendments + filledIn,
-            label: 'can be auto-corrected',
+            label: 'autocorrections',
             icon: 'fa-wrench',
             iconClass: 'text-info'
         },
@@ -312,7 +312,7 @@ function renderSummaryCards() {
     ];
 
     cardsContainer.innerHTML = cards.map(card => `
-        <div class="col-md-4 col-lg-2 mb-3"><div class="card" style="height: 130px;">
+        <div class="col-md-4 col-lg-2 mb-3"><div class="card" style="height: 100px;">
             <div class="card-body">
                 <h5 class="card-title">${formatNumber(card.number)}</h5>
                 <p class="card-text">
@@ -630,7 +630,7 @@ function renderPaginatedList(data, containerId, currentPage, paginationId) {
                         onclick="openDetailModal('${testId}', '${containerId}'); return false;">
                         <div class="d-flex w-100 justify-content-between">
                             <h5 class="mb-1">${formatTestTitleWithTypeColor(testId)}</h5>
-                            <span class="badge totalcount" style="background-color: ${badgeColor}; color: #000;">${formatNumber(totalCount)} records affected</span>
+                            <span class="badge totalcount" style="background-color: ${badgeColor};">${formatNumber(totalCount)} records affected</span>
                         </div>
                          <p class="mb-1">${testInfo ? testInfo.description : 'No description available'}</p>
                         ${containerId === 'validations' && appliedAmendmentTests.length > 0 ? `

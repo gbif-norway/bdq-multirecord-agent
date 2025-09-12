@@ -115,6 +115,73 @@ class CSVService:
         csv_buffer = io.StringIO()
         df.to_csv(csv_buffer, index=False)
         return csv_buffer.getvalue()
+
+    def build_curated_joined_results(self, unique_results_df: pd.DataFrame, max_rows: int = 500) -> pd.DataFrame:
+        """Build a curated set of results for the LLM, joined with TG2 test context.
+
+        - Include rows where status is AMENDED or FILLED_IN (actionable changes)
+          OR result is NOT_COMPLIANT or POTENTIAL_ISSUE (needs attention).
+        - Join with TG2_tests_small.csv on test_id to add description, notes, IE class, etc.
+        - Return a reduced set of columns to keep payload compact.
+        - Truncate to at most `max_rows` rows.
+        """
+        if unique_results_df is None or unique_results_df.empty:
+            return unique_results_df
+
+        df = unique_results_df.copy()
+
+        # Filter to amendments and validations/issues that need attention
+        mask_amend = df['status'].isin(['AMENDED', 'FILLED_IN'])
+        mask_val = df['result'].isin(['NOT_COMPLIANT', 'POTENTIAL_ISSUE'])
+        curated = df[mask_amend | mask_val].copy()
+        if curated.empty:
+            return curated
+
+        # Load TG2 test metadata and normalize columns to match dashboard
+        import os
+        tests_path = os.path.join(os.path.dirname(__file__), '..', 'TG2_tests_small.csv')
+        tests = pd.read_csv(tests_path, dtype=str).fillna('')
+        col_map = {
+            'IE Class': 'ie_class',
+            'InformationElement:ActedUpon': 'ie_acted_upon',
+            'InformationElement:Consulted': 'ie_consulted',
+            'Description': 'description',
+            'Notes': 'notes',
+            'Type': 'type',
+            'UseCases': 'usecases',
+            'test_id': 'test_id',
+        }
+        for src, dst in list(col_map.items()):
+            if src in tests.columns:
+                tests.rename(columns={src: dst}, inplace=True)
+
+        # Keep only columns we will attach
+        tests_keep = ['test_id', 'description', 'notes', 'type', 'ie_class', 'ie_acted_upon', 'ie_consulted', 'usecases']
+        tests_keep = [c for c in tests_keep if c in tests.columns]
+        tests_small = tests[tests_keep].drop_duplicates(subset=['test_id'])
+
+        # Join on test_id (string, trimmed)
+        curated['test_id'] = curated['test_id'].astype(str).str.strip()
+        tests_small['test_id'] = tests_small['test_id'].astype(str).str.strip()
+        joined = curated.merge(tests_small, on='test_id', how='left')
+
+        # Choose compact, meaningful columns
+        preferred_cols = [
+            'test_id', 'test_type', 'status', 'result', 'actedUpon', 'consulted', 'count',
+            'actedUpon_cols', 'consulted_cols',
+            'description', 'notes', 'type', 'ie_class', 'ie_acted_upon', 'ie_consulted', 'usecases'
+        ]
+        cols = [c for c in preferred_cols if c in joined.columns]
+        joined = joined[cols]
+
+        # Do not truncate text fields; caller may decide how to constrain payload.
+        # The service consumer is responsible for managing size limits.
+
+        # Limit number of rows
+        if len(joined) > max_rows:
+            joined = joined.head(max_rows)
+
+        return joined
     
     def generate_amended_dataset(self, original_df: pd.DataFrame, unique_results_df: pd.DataFrame, core_type: str) -> pd.DataFrame:
         """Generate amended dataset by applying AMENDED/FILLED_IN results using value-based masks.

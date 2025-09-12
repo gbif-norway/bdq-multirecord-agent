@@ -107,12 +107,12 @@ h2 small { font-size: 0.8rem;  color: var(--grey); }
 }
 
 /* List group styling */
-.filter-by-use-case { font-size: 0.8rem; color: var(--grey); font-weight: bold; padding-top: 0.5em; }
+.filter-by-use-case { font-size: 0.8rem; color: var(--grey); font-weight: bold; padding-top: 0.5em; display: inline-block;  width: 9.5em; }
 .list-group-item {
     cursor: pointer;
     font-size: 0.8rem;
 }
-.list-group-item .totalcount { height: 1.3rem; font-size: 0.8rem; font-weight: normal; }
+.list-group-item .totalcount { height: 1.3rem; font-size: 0.8rem; font-weight: normal; color: white; }
 .list-group-item h5 { font-size: 0.9rem; }
 
 /* Accent border on left for validation items (color set inline) */
@@ -175,20 +175,21 @@ blockquote p.description { background-color: #fffdeb; padding: 3px;
 }
 
 /* Pagination styling */
+.pagination { margin-top: 15px; }
 .pagination .page-link {
     color: var(--green);
-    border-color: var(--mint);
+    border-color: var(--green);
 }
 
 .pagination .page-link:hover {
-    background-color: var(--mint);
-    border-color: var(--yellow-green);
+    background-color: var(--white);
     color: var(--green);
 }
 
 .pagination .page-item.active .page-link {
     background-color: var(--green);
     border-color: var(--green);
+    color: white;
 }
 
 /* Modal styling */

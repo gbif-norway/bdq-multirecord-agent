@@ -62,7 +62,7 @@ class LLMService:
         log(f"Gemini LLM response: {response_text}")
         return response_text
                 
-    def generate_openai_intelligent_summary(self, prompt, test_results_csv_text, original_csv_text, api_key=None):
+    def generate_openai_intelligent_summary(self, prompt, test_results_csv_text, original_csv_text, curated_csv_text=None, recipient_name: str = None, api_key=None):
         client = OpenAI(api_key=api_key)
 
         # Upload files to OpenAI
@@ -74,6 +74,12 @@ class LLMService:
             file=io.BytesIO(test_results_csv_text.encode("utf-8")), 
             purpose="assistants"
         )
+        curated_file = None
+        if curated_csv_text:
+            curated_file = client.files.create(
+                file=io.BytesIO(curated_csv_text.encode("utf-8")),
+                purpose="assistants"
+            )
 
         # Use the Assistants API with file attachments
         assistant = client.beta.assistants.create(
@@ -95,14 +101,18 @@ class LLMService:
         thread = client.beta.threads.create()
         
         # Attach files to the thread; prompt should be compact (we sanitize inputs)
+        attachments = [
+            {"file_id": original_file.id, "tools": [{"type": "code_interpreter"}]},
+            {"file_id": results_file.id, "tools": [{"type": "code_interpreter"}]}
+        ]
+        if curated_file is not None:
+            attachments.append({"file_id": curated_file.id, "tools": [{"type": "code_interpreter"}]})
+
         client.beta.threads.messages.create(
             thread_id=thread.id,
             role="user",
             content=prompt,
-            attachments=[
-                {"file_id": original_file.id, "tools": [{"type": "code_interpreter"}]},
-                {"file_id": results_file.id, "tools": [{"type": "code_interpreter"}]}
-            ]
+            attachments=attachments
         )
 
         run = client.beta.threads.runs.create(
@@ -137,11 +147,14 @@ class LLMService:
                 # Check if response contains HTML tags, if not convert to HTML
                 if not self._contains_html_tags(response_text):
                     response_text = self._convert_to_html(response_text)
-                # Enforce greeting requirement if the model drifted
+                # Enforce greeting requirement if the model drifted; include recipient name when available
                 stripped = response_text.lstrip().lower()
                 starts_ok = stripped.startswith("thanks for your email") or stripped.startswith("thanks for reaching out")
                 if not starts_ok:
-                    response_text = f"<p>Thanks for your email,</p>\n" + response_text
+                    if recipient_name:
+                        response_text = f"<p>Thanks for your email, {recipient_name}.</p>\n" + response_text
+                    else:
+                        response_text = f"<p>Thanks for your email,</p>\n" + response_text
                 log(f"OpenAI LLM response: {response_text}")
             else:
                 # If no text content, return a message indicating the analysis was completed
@@ -153,7 +166,7 @@ class LLMService:
     
     # (Truncation helper removed from use; we rely on sanitization instead.)
                 
-    def create_prompt(self, email_data, core_type, summary_stats, test_results_snapshot, original_snapshot, relevant_test_contexts):
+    def create_prompt(self, email_data, core_type, summary_stats, test_results_snapshot, original_snapshot, relevant_test_contexts, curated_joined_csv_text: Optional[str] = None):
         log("Generating the prompt for LLM...") 
         # Sanitize email metadata to avoid embedding base64 attachments or large blobs
         def _summarize_email_meta(ed):
@@ -185,14 +198,17 @@ class LLMService:
 
         email_data = _summarize_email_meta(email_data)
 
+        has_curated = curated_joined_csv_text is not None and curated_joined_csv_text != ""
+
         prompt = f"""# YOUR TASK
 You are BDQEmail, a biodiversity data quality analyst assistant. You are helping a user with their dataset by analysing the results of a set of Biodiversity Data Quality tests run against all the relevant fields that could be found in the dataset. 
 Write a professional, encouraging email analysis in HTML format, the email will include a link to the dashboard after your reply and be sent to the user automatically after you have generated it.
 The user will receive the body of your email with the summary stats prefixed to it, and the email body will include a link to a dashboard allowing the user to explore the test results interactively and download the raw results and amended dataset files. 
 
-You have access to two CSV files:
+You have access to these CSV files:
 1. The original biodiversity dataset (occurrence data)
 2. The test results from running BDQ tests on that dataset
+{('- 3. A curated focus set of unique rows that either (a) were AMENDED or FILLED_IN, or (b) had results of NOT_COMPLIANT or POTENTIAL_ISSUE, joined with TG2 test definitions for rich context.' ) if has_curated else ''}
 
 Use the code execution tool to explore these files as needed to understand the data and generate insights.
 
@@ -227,6 +243,11 @@ Notes:
   FILLED IN = a suggested value for a blank field (e.g., derive coordinates from verbatim text).
   NOT_AMENDED = no safe change suggested (often because it's either actually correct and does not need amending, or the correction is ambiguous).
 
+{('### CURATED FOCUS SET (untruncated)\n' +
+'This CSV is also attached. It contains only the unique rows where status ∈ {{AMENDED, FILLED_IN}} or result ∈ {{NOT_COMPLIANT, POTENTIAL_ISSUE}}, joined with TG2 test context columns (description, notes, type, IE class, etc.).\n' +
+'Use this set to prioritise guidance without re-deriving groupings.\n' +
+'\n```csv\n' + curated_joined_csv_text + '\n```\n') if has_curated else ''}
+
 ### SUMMARY STATS FROM RESULTS FILE
 {summary_stats} 
 
@@ -260,9 +281,14 @@ A human-readable format
 If you want to be even more precise and interoperable, you could use the WoRMS LifeStage terms (if your dataset links to WoRMS):
 
 http://marinespecies.org/aphia.php?p=lsid&lsid=copepodite%20stage%201-3```
-Another example, if their data lots of records which got amended because of a case change (e.g. male -> Male or something), mention that they can just 
+ Another example: if many records were amended for simple case normalization (e.g., "male" → "Male"), note these are safe automatic fixes. Recommend adopting consistent casing in the source to avoid repeated downstream changes.
 
 Summmarise and provide some key takeaways at the end. I want you to showcase your understanding of the BDQ tests and your ability to help the user with their data quality issues. 
+
+### Additional example patterns (use when relevant)
+- Country normalization (validation NOT_COMPLIANT): If `dwc:country` has values like "UK" or "U.S.", suggest ISO country names/codes and aligning `dwc:countryCode` (e.g., `country=United Kingdom`, `countryCode=GB`). Note GBIF often normalizes country/ISO during ingestion, but advise updating source values to avoid mismatches.
+- Coordinate uncertainty (issue POTENTIAL_ISSUE or validation NOT_COMPLIANT): If `dwc:decimalLatitude/Longitude` exist without `dwc:coordinateUncertaintyInMeters`, recommend adding a reasonable uncertainty based on collection method (e.g., 30–100 m for handheld GPS) and documenting the basis.
+- License missing (NOT_COMPLIANT): For missing/invalid `dwc:license`, recommend a specific machine-readable license string (e.g., "CC BY 4.0") and link to https://creativecommons.org/licenses/by/4.0/. Explain how this improves re-use and visibility in aggregators.
 
 ## FORMAT
 Write as a complete HTML email body that will appear below the summary stats box. Use clear paragraphs, bullet points and other formatting where appropriate. 

@@ -76,14 +76,55 @@ async def _handle_email_processing(email_data: Dict[str, Any]):
     amended_dataset = csv_service.generate_amended_dataset(df, unique_test_results, core_type)
     amended_csv = minio_service.upload_dataframe(amended_dataset, original_filename, "amended")
     
+    # Build curated focus set joined with TG2 test metadata (untruncated)
+    curated_df = csv_service.build_curated_joined_results(unique_test_results)
+    curated_csv_content = csv_service.dataframe_to_csv_string(curated_df) if curated_df is not None and not curated_df.empty else None
+
+    # Get sender display name for greeting enforcement
+    def _extract_sender_name(ed: Dict[str, Any]) -> str:
+        raw_from = None
+        headers = ed.get('headers') if isinstance(ed.get('headers'), dict) else None
+        if headers:
+            raw_from = headers.get('from') or ed.get('from')
+        else:
+            raw_from = ed.get('from')
+        if not raw_from:
+            return None
+        import re
+        # Try "Name <email@example.org>"
+        m = re.match(r'\s*"?([^"<]+)"?\s*<[^>]+>', str(raw_from))
+        if m:
+            return m.group(1).strip()
+        # Fallback to local-part of email
+        m2 = re.search(r'([A-Za-z0-9_.+-]+)@', str(raw_from))
+        if m2:
+            return m2.group(1)
+        return None
+
+    recipient_name = _extract_sender_name(email_data)
+
     # Get LLM analysis using unique results (more efficient and focused)
-    prompt = llm_service.create_prompt(email_data, core_type, summary_stats, str_snapshot(unique_test_results), str_snapshot(df), get_relevant_test_contexts(unique_test_results['test_id'].unique().tolist()))
+    prompt = llm_service.create_prompt(
+        email_data,
+        core_type,
+        summary_stats,
+        str_snapshot(unique_test_results),
+        str_snapshot(df),
+        get_relevant_test_contexts(unique_test_results['test_id'].unique().tolist()),
+        curated_csv_content
+    )
     log(prompt)
 
     # Convert DataFrames to CSV strings for LLM
     unique_results_csv_content = csv_service.dataframe_to_csv_string(unique_test_results)
     original_csv_content = csv_service.dataframe_to_csv_string(df)
-    llm_analysis = llm_service.generate_openai_intelligent_summary(prompt, unique_results_csv_content, original_csv_content)
+    llm_analysis = llm_service.generate_openai_intelligent_summary(
+        prompt,
+        unique_results_csv_content,
+        original_csv_content,
+        curated_csv_text=curated_csv_content,
+        recipient_name=recipient_name
+    )
     
     # Generate dashboard URL (unique + amended only)
     dashboard_url = minio_service.generate_dashboard_url(unique_test_results_csv, amended_csv)
@@ -166,6 +207,10 @@ async def debug_llm_analysis(
             "body": "Debug analysis request"
         }
         
+        # Build curated focus set joined with TG2 test metadata (untruncated)
+        curated_df = csv_service.build_curated_joined_results(unique_results_df)
+        curated_csv_content = csv_service.dataframe_to_csv_string(curated_df) if curated_df is not None and not curated_df.empty else None
+
         # Use custom prompt if provided, otherwise use the same prompt creation as _handle_email_processing
         if prompt_override:
             prompt = prompt_override
@@ -177,13 +222,29 @@ async def debug_llm_analysis(
                 summary_stats, 
                 str_snapshot(unique_results_df), 
                 str_snapshot(df), 
-                get_relevant_test_contexts(unique_results_df['test_id'].unique().tolist()) if 'test_id' in unique_results_df.columns else []
+                get_relevant_test_contexts(unique_results_df['test_id'].unique().tolist()) if 'test_id' in unique_results_df.columns else [],
+                curated_csv_content
             )
 
         # Generate LLM analysis (same as _handle_email_processing)
         unique_results_csv_content = csv_service.dataframe_to_csv_string(unique_results_df)
         original_csv_content = csv_service.dataframe_to_csv_string(df)
-        llm_analysis = llm_service.generate_openai_intelligent_summary(prompt, unique_results_csv_content, original_csv_content)
+        # Extract a name for the greeting from the debug email
+        def _extract_sender_name(raw_from: str) -> str:
+            if not raw_from:
+                return None
+            import re
+            m = re.match(r'\s*"?([^"<]+)"?\s*<[^>]+>', str(raw_from))
+            if m:
+                return m.group(1).strip()
+            m2 = re.search(r'([A-Za-z0-9_.+-]+)@', str(raw_from))
+            return m2.group(1) if m2 else None
+
+        recipient_name = _extract_sender_name(mock_email_data.get('from', ''))
+
+        llm_analysis = llm_service.generate_openai_intelligent_summary(
+            prompt, unique_results_csv_content, original_csv_content, curated_csv_text=curated_csv_content, recipient_name=recipient_name
+        )
         
         # Create debug email data for sending
         debug_email_data = {
