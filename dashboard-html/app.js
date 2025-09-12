@@ -16,6 +16,7 @@ let modalAllCombos = [];
 
 // Color map shared between chart and list for per-test colors
 const testColorMap = new Map(); // key: test_id -> rgba color
+const typeColorMap = new Map(); // key: TYPE -> color (red→orange)
 
 // Utility function to format numbers with space separators
 function formatNumber(num) {
@@ -468,13 +469,17 @@ function renderNeedsAttentionChart(uniqueResultsWithTestContext) {
 }
 
 function generateGradientColors(count) {
+    // Pink → Purple gradient for badges (records affected)
+    // Start: hot pink (255, 105, 180), End: purple (138, 43, 226)
     const colors = [];
+    const start = { r: 255, g: 105, b: 180 };
+    const end = { r: 138, g: 43, b: 226 };
     for (let i = 0; i < count; i++) {
-        const ratio = i / (count - 1);
-        const r = Math.round(254 * (1 - ratio) + 200 * ratio);
-        const g = Math.round(222 * (1 - ratio) + 223 * ratio);
-        const b = Math.round(0 * (1 - ratio) + 82 * ratio);
-        colors.push(`rgba(${r}, ${g}, ${b}, 0.8)`);
+        const ratio = count === 1 ? 0 : i / (count - 1);
+        const r = Math.round(start.r * (1 - ratio) + end.r * ratio);
+        const g = Math.round(start.g * (1 - ratio) + end.g * ratio);
+        const b = Math.round(start.b * (1 - ratio) + end.b * ratio);
+        colors.push(`rgba(${r}, ${g}, ${b}, 0.9)`);
     }
     return colors;
 }
@@ -624,7 +629,7 @@ function renderPaginatedList(data, containerId, currentPage, paginationId) {
                     <a href="#" class="list-group-item list-group-item-action accent-left" style="border-left-color: ${accentColor};" 
                         onclick="openDetailModal('${testId}', '${containerId}'); return false;">
                         <div class="d-flex w-100 justify-content-between">
-                            <h5 class="mb-1">${formatTestTitle(testId)}</h5>
+                            <h5 class="mb-1">${formatTestTitleWithTypeColor(testId)}</h5>
                             <span class="badge totalcount" style="background-color: ${badgeColor}; color: #000;">${formatNumber(totalCount)} records affected</span>
                         </div>
                          <p class="mb-1">${testInfo ? testInfo.description : 'No description available'}</p>
@@ -717,7 +722,7 @@ function openDetailModal(testId, containerType) {
     const modalBody = document.getElementById('modal-body');
     const modalFooter = document.querySelector('#detailModal .modal-footer');
 
-    modalTitle.textContent = formatTestTitle(testId);
+    modalTitle.innerHTML = formatTestTitleWithTypeColor(testId);
 
     // Get all data for this test
     const uniqueResultsWithTestContext = joinResultsWithTestContext();
@@ -1269,12 +1274,21 @@ function initializeTestTypeFilters(uniqueResultsWithTestContext) {
     // Remove any previously injected buttons (keep Show All)
     [...container.querySelectorAll('button[data-test-type]:not(#filter-type-all)')].forEach(b => b.remove());
 
-    kindsAvailable.forEach(kind => {
+    // Assign red→orange gradient colors to kinds
+    typeColorMap.clear();
+    const kindColors = generateRedOrangeGradientColors(kindsAvailable.length);
+
+    kindsAvailable.forEach((kind, idx) => {
+        const color = kindColors[idx];
+        typeColorMap.set(kind, color);
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'btn btn-outline-secondary';
         btn.setAttribute('data-test-type', kind);
         btn.textContent = toTitleCase(kind);
+        btn.style.backgroundColor = color;
+        btn.style.borderColor = color;
+        btn.style.color = '#ffffff';
         container.appendChild(btn);
     });
 
@@ -1312,6 +1326,33 @@ function extractTestTypeFromId(testId) {
     if (parts.length === 0) return '';
     // Use last token as the type detector (fully dynamic)
     return parts[parts.length - 1];
+}
+
+function generateRedOrangeGradientColors(count) {
+    // Red (255, 59, 48) → Orange (255, 165, 0)
+    const colors = [];
+    const start = { r: 255, g: 59, b: 48 };
+    const end = { r: 255, g: 165, b: 0 };
+    for (let i = 0; i < count; i++) {
+        const ratio = count === 1 ? 0 : i / (count - 1);
+        const r = Math.round(start.r * (1 - ratio) + end.r * ratio);
+        const g = Math.round(start.g * (1 - ratio) + end.g * ratio);
+        const b = Math.round(start.b * (1 - ratio) + end.b * ratio);
+        colors.push(`rgba(${r}, ${g}, ${b}, 1)`);
+    }
+    return colors;
+}
+
+function formatTestTitleWithTypeColor(testId) {
+    const base = formatTestTitle(testId);
+    const type = extractTestTypeFromId(testId);
+    const typeWord = toTitleCase(type);
+    const color = typeColorMap.get(type) || '#d9534f';
+    const parts = base.split(' ');
+    if (parts.length > 0) {
+        parts[parts.length - 1] = `<span style="color: ${color}; font-weight: 700;">${parts[parts.length - 1]}</span>`;
+    }
+    return parts.join(' ');
 }
 
 function downloadValidationCSV(testId) {

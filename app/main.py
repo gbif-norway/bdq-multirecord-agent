@@ -91,7 +91,7 @@ async def _handle_email_processing(email_data: Dict[str, Any]):
     # Combine summary stats + LLM analysis + breakdown button
     body = _format_summary_stats_html(summary_stats, core_type, len(df)) + llm_analysis
     if dashboard_url:
-        body += _format_breakdown_button_html(dashboard_url)
+        body = _format_breakdown_button_html(dashboard_url) + body
     
     # Send reply email
     await email_service.send_results_reply(email_data, body)
@@ -312,18 +312,16 @@ def _format_summary_stats_html(summary_stats, core_type, no_of_records):
 def _format_breakdown_button_html(dashboard_url: str) -> str:
     """Format breakdown button HTML for the email"""
     return f"""
-    <div style="text-align: center; margin: 20px 0;">
+    <div style="font-size: 14px; margin: 0;">&#x2705; A breakdown of your test results has been generated. 
         <a href="{dashboard_url}" 
            style="display: inline-block; 
                   background-color: #007bff; 
                   color: white; 
-                  padding: 12px 24px; 
+                  padding: 5px 10px; 
                   text-decoration: none; 
-                  border-radius: 6px; 
-                  font-weight: bold; 
-                  font-size: 16px;
-                  box-shadow: 0 2px 4px rgba(0,123,255,0.3);">
-            &#x1F4CA; View a Breakdown
+                  border-radius: 3px; 
+                  font-weight: bold; ">
+            &#1F9FE; View your report &rarr;
         </a>
     </div>
     """
