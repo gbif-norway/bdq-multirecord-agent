@@ -294,7 +294,7 @@ Summmarise and provide some key takeaways at the end. I want you to showcase you
 Write as a complete HTML email body that will appear below the summary stats box. Use clear paragraphs, bullet points and other formatting where appropriate. 
 Return only the email body in HTML (no headings like "YOUR TASK" etc.).
 Begin with: "Thanks for your email," or "Thanks for reaching out,".
-Do NOT include the summary statistics or the link to the dashboard - they are already displayed to the user above your email body."""
+Do not include the summary statistics or the link to the dashboard - they are already displayed to the user above your email body."""
         # Log full prompt for debugging/traceability as requested
         log(f"LLM prompt ({len(prompt)} chars):\n{prompt}")
         return prompt
