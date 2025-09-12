@@ -130,14 +130,15 @@ class LLMService:
                 if not self._contains_html_tags(response_text):
                     response_text = self._convert_to_html(response_text)
                 log(f"OpenAI LLM response: {response_text}")
+            else:
+                # If no text content, return a message indicating the analysis was completed
+                response_text = "Analysis completed successfully. The assistant has analyzed your CSV files and generated insights using the code interpreter."
+        else:
+            raise Exception(f"OpenAI run failed with status: {run.status}")
+        
         return response_text
     
     # (Truncation helper removed from use; we rely on sanitization instead.)
-            else:
-                # If no text content, return a message indicating the analysis was completed
-                return "Analysis completed successfully. The assistant has analyzed your CSV files and generated insights using the code interpreter."
-        else:
-            raise Exception(f"OpenAI run failed with status: {run.status}")
                 
     def create_prompt(self, email_data, core_type, summary_stats, test_results_snapshot, original_snapshot, relevant_test_contexts):
         log("Generating the prompt for LLM...") 
