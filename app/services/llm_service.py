@@ -199,6 +199,14 @@ class LLMService:
         email_data = _summarize_email_meta(email_data)
 
         has_curated = curated_joined_csv_text is not None and curated_joined_csv_text != ""
+        
+        # Build curated section separately to avoid backslashes in f-string
+        curated_section = ""
+        if has_curated:
+            curated_section = (f"### CURATED FOCUS SET (untruncated)\n"
+                             f"This CSV is also attached. It contains only the unique rows where status ∈ {{AMENDED, FILLED_IN}} or result ∈ {{NOT_COMPLIANT, POTENTIAL_ISSUE}}, joined with TG2 test context columns (description, notes, type, IE class, etc.).\n"
+                             f"Use this set to prioritise guidance without re-deriving groupings.\n"
+                             f"\n```csv\n{curated_joined_csv_text}\n```\n")
 
         prompt = f"""# YOUR TASK
 You are BDQEmail, a biodiversity data quality analyst assistant. You are helping a user with their dataset by analysing the results of a set of Biodiversity Data Quality tests run against all the relevant fields that could be found in the dataset. 
@@ -243,10 +251,7 @@ Notes:
   FILLED IN = a suggested value for a blank field (e.g., derive coordinates from verbatim text).
   NOT_AMENDED = no safe change suggested (often because it's either actually correct and does not need amending, or the correction is ambiguous).
 
-{('### CURATED FOCUS SET (untruncated)\n' +
-'This CSV is also attached. It contains only the unique rows where status ∈ {{AMENDED, FILLED_IN}} or result ∈ {{NOT_COMPLIANT, POTENTIAL_ISSUE}}, joined with TG2 test context columns (description, notes, type, IE class, etc.).\n' +
-'Use this set to prioritise guidance without re-deriving groupings.\n' +
-'\n```csv\n' + curated_joined_csv_text + '\n```\n') if has_curated else ''}
+{curated_section if has_curated else ''}
 
 ### SUMMARY STATS FROM RESULTS FILE
 {summary_stats} 
@@ -296,7 +301,7 @@ Return only the email body in HTML (no headings like "YOUR TASK" etc.).
 Begin with: "Thanks for your email," or "Thanks for reaching out,".
 Do not include the summary statistics or the link to the dashboard - they are already displayed to the user above your email body."""
         # Log full prompt for debugging/traceability as requested
-        log(f"LLM prompt ({len(prompt)} chars):\n{prompt}")
+        log(f"LLM prompt ({len(prompt)} chars):\n" + prompt)
         return prompt
     
     
