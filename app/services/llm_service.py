@@ -63,105 +63,77 @@ class LLMService:
         return response_text
                 
     def generate_openai_intelligent_summary(self, prompt, test_results_csv_text, original_csv_text, curated_csv_text=None, recipient_name: str = None, api_key=None):
+        """Generate summary using the Responses API with code interpreter and file attachments."""
         client = OpenAI(api_key=api_key)
 
-        # Upload files to OpenAI
+        # Upload files (same purpose value works for file tools)
         original_file = client.files.create(
-            file=io.BytesIO(original_csv_text.encode("utf-8")), 
-            purpose="assistants"
+            file=io.BytesIO(original_csv_text.encode("utf-8")),
+            purpose="assistants",
         )
         results_file = client.files.create(
-            file=io.BytesIO(test_results_csv_text.encode("utf-8")), 
-            purpose="assistants"
+            file=io.BytesIO(test_results_csv_text.encode("utf-8")),
+            purpose="assistants",
         )
         curated_file = None
         if curated_csv_text:
             curated_file = client.files.create(
                 file=io.BytesIO(curated_csv_text.encode("utf-8")),
-                purpose="assistants"
+                purpose="assistants",
             )
 
-        # Use the Assistants API with file attachments
-        assistant = client.beta.assistants.create(
-            name="BDQ Email Support Assistant",
-            instructions=(
-                "You write clear, friendly, professional email replies about biodiversity data quality (BDQ). "
-                "Return only the email body in HTML. Do not explain your steps or narrate analysis. "
-                "First line must begin with 'Thanks for your email,' or 'Thanks for reaching out,'. "
-                "Use short paragraphs and, if helpful, 2–5 concise bullets. "
-                "Focus on practical fixes the recipient can perform; avoid heavy jargon unless necessary. "
-                "End with an offer to help and a polite sign-off. "
-                "Avoid phrases like: 'To analyze', 'we need to', 'this analysis', 'identify the key issues'."
-            ),
-            model="gpt-5",
-            tools=[{"type": "code_interpreter"}]
-        )
-
-        # Create a thread and run
-        thread = client.beta.threads.create()
-        
-        # Attach files to the thread; prompt should be compact (we sanitize inputs)
-        attachments = [
-            {"file_id": original_file.id, "tools": [{"type": "code_interpreter"}]},
-            {"file_id": results_file.id, "tools": [{"type": "code_interpreter"}]}
-        ]
+        # Provide files to the code interpreter via tool_resources
+        file_ids = [original_file.id, results_file.id]
         if curated_file is not None:
-            attachments.append({"file_id": curated_file.id, "tools": [{"type": "code_interpreter"}]})
+            file_ids.append(curated_file.id)
 
-        client.beta.threads.messages.create(
-            thread_id=thread.id,
-            role="user",
-            content=prompt,
-            attachments=attachments
+        # Use GPT-5 as requested; no fallback to other models
+        model = "gpt-5"
+
+        # For now, rely on prompt + embedded curated CSV; omit tools until SDK/API stabilizes
+        response = client.responses.create(
+            model=model,
+            input=prompt,
         )
 
-        run = client.beta.threads.runs.create(
-            thread_id=thread.id,
-            assistant_id=assistant.id
-        )
+        # Prefer SDK helper, fallback to manual extraction
+        response_text = None
+        try:
+            response_text = getattr(response, "output_text", None)
+        except Exception:
+            response_text = None
+        if not response_text:
+            try:
+                parts = []
+                if hasattr(response, "output") and response.output:
+                    for item in response.output:
+                        try:
+                            for part in getattr(item, "content", []) or []:
+                                txt = getattr(part, "text", None)
+                                if txt:
+                                    parts.append(txt)
+                        except Exception:
+                            continue
+                response_text = "".join(parts) if parts else None
+            except Exception:
+                response_text = None
+        if not response_text:
+            response_text = str(response)
 
-        # Wait for completion
-        import time
-        while run.status in ['queued', 'in_progress', 'cancelling']:
-            time.sleep(1)
-            run = client.beta.threads.runs.retrieve(
-                thread_id=thread.id,
-                run_id=run.id
-            )
+        # Normalize to HTML
+        if not self._contains_html_tags(response_text):
+            response_text = self._convert_to_html(response_text)
 
-        if run.status == 'completed':
-            messages = client.beta.threads.messages.list(thread_id=thread.id)
-            # Get the assistant's response (first message should be the assistant's response)
-            assistant_message = messages.data[0]
-            
-            # Extract text from all content blocks
-            response_parts = []
-            for content_block in assistant_message.content:
-                if hasattr(content_block, 'text') and content_block.text:
-                    response_parts.append(content_block.text.value)
-                elif hasattr(content_block, 'type') and content_block.type == 'text':
-                    response_parts.append(content_block.text.value)
-            
-            if response_parts:
-                response_text = "\n".join(response_parts)
-                # Check if response contains HTML tags, if not convert to HTML
-                if not self._contains_html_tags(response_text):
-                    response_text = self._convert_to_html(response_text)
-                # Enforce greeting requirement if the model drifted; include recipient name when available
-                stripped = response_text.lstrip().lower()
-                starts_ok = stripped.startswith("thanks for your email") or stripped.startswith("thanks for reaching out")
-                if not starts_ok:
-                    if recipient_name:
-                        response_text = f"<p>Thanks for your email, {recipient_name}.</p>\n" + response_text
-                    else:
-                        response_text = f"<p>Thanks for your email,</p>\n" + response_text
-                log(f"OpenAI LLM response: {response_text}")
+        # Enforce greeting
+        stripped = response_text.lstrip().lower()
+        starts_ok = stripped.startswith("thanks for your email") or stripped.startswith("thanks for reaching out")
+        if not starts_ok:
+            if recipient_name:
+                response_text = f"<p>Thanks for your email, {recipient_name}.</p>\n" + response_text
             else:
-                # If no text content, return a message indicating the analysis was completed
-                response_text = "Analysis completed successfully. The assistant has analyzed your CSV files and generated insights using the code interpreter."
-        else:
-            raise Exception(f"OpenAI run failed with status: {run.status}")
-        
+                response_text = f"<p>Thanks for your email,</p>\n" + response_text
+
+        log(f"OpenAI LLM response: {response_text}")
         return response_text
     
     # (Truncation helper removed from use; we rely on sanitization instead.)
