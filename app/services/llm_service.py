@@ -1,12 +1,7 @@
 import os
-import io
-import pandas as pd
-from google import genai
-from google.genai import types
 from openai import OpenAI
 from typing import List, Dict, Any, Optional
 from app.utils.helper import log
-import base64
 
 class LLMService:
     """Service for generating intelligent summaries using Google Gemini or OpenAI"""
@@ -17,75 +12,14 @@ class LLMService:
         # The new google.genai client uses environment variables automatically
     
     def generate_gemini_intelligent_summary(self, prompt, test_results_file, original_file):
-        """Generate intelligent summary from DataFrame-based test results using file uploads and code execution"""
-        # Use the new google.genai client with code execution
-        client = genai.Client()
-        
-        # Create the content with file uploads using inline_data
-        contents = [
-            {"text": prompt},
-            {
-                "inline_data": {
-                    "mime_type": "text/csv",
-                    "data": base64.b64encode(original_file.encode('utf-8')).decode('utf-8')
-                }
-            },
-            {
-                "inline_data": {
-                    "mime_type": "text/csv", 
-                    "data": base64.b64encode(test_results_file.encode('utf-8')).decode('utf-8')
-                }
-            }
-        ]
-        
-        # Generate content with code execution tool
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=contents,
-            config=types.GenerateContentConfig(
-                tools=[types.Tool(code_execution=types.ToolCodeExecution)]
-            )
-        )
-        
-        # Extract text from response
-        text_parts = []
-        for part in response.candidates[0].content.parts:
-            if part.text is not None:
-                text_parts.append(part.text)
-        
-        response_text = "\n".join(text_parts)
-        
-        # Check if response contains HTML tags, if not convert to HTML
-        if not self._contains_html_tags(response_text):
-            response_text = self._convert_to_html(response_text)
-        
-        log(f"Gemini LLM response: {response_text}")
-        return response_text
+        """Simplified: we no longer attach files or use code execution for Gemini in this service.
+        Delegate to the OpenAI Responses path to keep a single code path.
+        """
+        return self.generate_openai_intelligent_summary(prompt, test_results_file, original_file)
                 
     def generate_openai_intelligent_summary(self, prompt, test_results_csv_text, original_csv_text, curated_csv_text=None, recipient_name: str = None, api_key=None):
-        """Generate summary using the Responses API with code interpreter and file attachments."""
+        """Generate summary using the Responses API (prompt-only; no file attachments)."""
         client = OpenAI(api_key=api_key)
-
-        # Upload files (same purpose value works for file tools)
-        original_file = client.files.create(
-            file=io.BytesIO(original_csv_text.encode("utf-8")),
-            purpose="assistants",
-        )
-        results_file = client.files.create(
-            file=io.BytesIO(test_results_csv_text.encode("utf-8")),
-            purpose="assistants",
-        )
-        curated_file = None
-        if curated_csv_text:
-            curated_file = client.files.create(
-                file=io.BytesIO(curated_csv_text.encode("utf-8")),
-                purpose="assistants",
-            )
-
-        # Provide files to the code interpreter via tool_resources
-        file_ids = [original_file.id, results_file.id]
-        if curated_file is not None:
-            file_ids.append(curated_file.id)
 
         # Use GPT-5 as requested; no fallback to other models
         model = "gpt-5"
@@ -176,7 +110,7 @@ class LLMService:
         curated_section = ""
         if has_curated:
             curated_section = (f"### CURATED FOCUS SET (untruncated)\n"
-                             f"This CSV is also attached. It contains only the unique rows where status ∈ {{AMENDED, FILLED_IN}} or result ∈ {{NOT_COMPLIANT, POTENTIAL_ISSUE}}, joined with TG2 test context columns (description, notes, type, IE class, etc.).\n"
+                             f"This table contains only the unique rows where status ∈ {{AMENDED, FILLED_IN}} or result ∈ {{NOT_COMPLIANT, POTENTIAL_ISSUE}}, joined with TG2 test context columns (description, notes, type, IE class, etc.).\n"
                              f"Use this set to prioritise guidance without re-deriving groupings.\n"
                              f"\n```csv\n{curated_joined_csv_text}\n```\n")
 
@@ -185,12 +119,10 @@ You are BDQEmail, a biodiversity data quality analyst assistant. You are helping
 Write a professional, encouraging email analysis in HTML format, the email will include a link to the dashboard after your reply and be sent to the user automatically after you have generated it.
 The user will receive the body of your email with the summary stats prefixed to it, and the email body will include a link to a dashboard allowing the user to explore the test results interactively and download the raw results and amended dataset files. 
 
-You have access to these CSV files:
-1. The original biodiversity dataset (occurrence data)
-2. The test results from running BDQ tests on that dataset
+You have the following context within this prompt (no external files to load):
+1. A snapshot of the original biodiversity dataset
+2. A snapshot of the BDQ test results
 {('- 3. A curated focus set of unique rows that either (a) were AMENDED or FILLED_IN, or (b) had results of NOT_COMPLIANT or POTENTIAL_ISSUE, joined with TG2 test definitions for rich context.' ) if has_curated else ''}
-
-Use the code execution tool to explore these files as needed to understand the data and generate insights.
 
 ## TONE & STYLE
 - Friendly, helpful and pragmatic
@@ -207,16 +139,16 @@ Use the code execution tool to explore these files as needed to understand the d
 ### USER'S ORIGINAL EMAIL (metadata)
 {email_data}
 
-### USER'S ORIGINAL FILE ({core_type} dataset type) is attached as a CSV file.
-- Snapshot from attached original file (shortened): 
+### ORIGINAL DATASET SNAPSHOT ({core_type})
+- Snapshot (shortened): 
 {original_snapshot}
 
 ### Biodiversity Data Quality Tests Background
 The BDQ Tests (TG2) are a standardized set of machine-readable checks for biodiversity records designed to assess and improve "fitness for use." Developed by TDWG's Biodiversity Data Quality Task Group 2, they focus on common Darwin Core fields such as location, time, taxonomy, and licensing. The tests exist to detect missing or malformed values, flag potential problems, and, where safe and unambiguous, propose improvements so data can be more reliably mapped, analyzed over time, and integrated with external resources. They will probably mostly be run against GBIF datasets. 
 There are four test types. Validation tests check conformance or completeness and return COMPLIANT or NOT_COMPLIANT. Issue tests flag concerns with IS_ISSUE, POTENTIAL_ISSUE, or NOT_ISSUE. Amendment tests propose changes: AMENDED means a suggested correction to an existing value, FILLED_IN means a suggested value for a blank field, and NOT_AMENDED means no safe change is proposed; the proposed changes are given as key:value pairs. Measure tests report counts or a summary status (COMPLETE/NOT_COMPLETE). Every test returns a Response.status (e.g., RUN_HAS_RESULT, INTERNAL_PREREQUISITES_NOT_MET, EXTERNAL_PREREQUISITES_NOT_MET), a Response.result (the outcome or proposed changes), and a Response.comment explaining why.
 
-### USER'S TEST RESULTS FILE is also attached as a CSV file.
-- Snapshot from attached results file (shortened): 
+### BDQ TEST RESULTS SNAPSHOT
+- Snapshot (shortened): 
 {test_results_snapshot}
 Notes:
   AMENDED = a suggested correction to a value that's already there (e.g., "Australia" → "AU").
