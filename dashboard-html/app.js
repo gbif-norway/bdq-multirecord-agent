@@ -4,6 +4,7 @@ let tg2Tests = [];
 let currentAmendmentsPage = 1;
 let currentValidationsPage = 1;
 let currentUseCaseFilter = 'all';
+let currentTestTypeFilter = 'all';
 const itemsPerPage = 10;
 
 // Modal pagination and search state
@@ -12,6 +13,9 @@ const modalItemsPerPage = 20;
 let modalSearchTerm = '';
 let modalFilteredCombos = [];
 let modalAllCombos = [];
+
+// Color map shared between chart and list for per-test colors
+const testColorMap = new Map(); // key: test_id -> rgba color
 
 // Utility function to format numbers with space separators
 function formatNumber(num) {
@@ -100,6 +104,8 @@ async function initializeDashboard() {
         // Render dashboard components
         renderSummaryCards();
         renderNeedsAttentionChart(uniqueResultsWithTestContext);
+        // Build Test Type filters before first validations render
+        initializeTestTypeFilters(uniqueResultsWithTestContext);
         renderAmendmentsList(uniqueResultsWithTestContext);
         renderValidationsList(uniqueResultsWithTestContext);
         
@@ -379,11 +385,15 @@ function renderNeedsAttentionChart(uniqueResultsWithTestContext) {
             return (count / totalRecords) * 100;
         });
         
+        const color = testColors[index];
+        // Persist color for this test so lists can use same theme
+        testColorMap.set(testId, color);
+
         datasets.push({
             label: formatTestTitle(testId),
             data: testData,
-            backgroundColor: testColors[index],
-            borderColor: testColors[index].replace('0.8', '1'),
+            backgroundColor: color,
+            borderColor: color.replace('0.8', '1'),
             borderWidth: 1
         });
     });
@@ -541,6 +551,14 @@ function renderValidationsList(uniqueResultsWithTestContext) {
         });
     }
 
+    // Apply test type filter if not 'all'
+    if (currentTestTypeFilter !== 'all') {
+        validations = validations.filter(result => {
+            const kind = extractTestTypeFromId(result.test_id);
+            return kind === currentTestTypeFilter;
+        });
+    }
+
     // Update the heading with dynamic counts
     updateValidationsHeading(validations);
 
@@ -600,10 +618,11 @@ function renderPaginatedList(data, containerId, currentPage, paginationId) {
                 const appliedAmendments = containerId === 'validations' ? getAmendmentsAppliedForValidation(testId) : [];
                 const appliedAmendmentTests = containerId === 'validations' ? getAppliedAmendmentTests(appliedAmendments) : [];
                 const badgeColor = getColorForCount(totalCount);
+                const accentColor = testColorMap.get(testId) || badgeColor;
 
                 return `
-                    <a href="#" class="list-group-item list-group-item-action" 
-                       onclick="openDetailModal('${testId}', '${containerId}'); return false;">
+                    <a href="#" class="list-group-item list-group-item-action accent-left" style="border-left-color: ${accentColor};" 
+                        onclick="openDetailModal('${testId}', '${containerId}'); return false;">
                         <div class="d-flex w-100 justify-content-between">
                             <h5 class="mb-1">${formatTestTitle(testId)}</h5>
                             <span class="badge totalcount" style="background-color: ${badgeColor}; color: #000;">${formatNumber(totalCount)} records affected</span>
@@ -1194,15 +1213,105 @@ function initializeUseCaseFilters() {
             
             // Update current filter
             currentUseCaseFilter = this.getAttribute('data-use-case');
-            
+
             // Reset to first page when filtering
             currentValidationsPage = 1;
-            
+            currentTestTypeFilter = 'all';
+
             // Re-render validations list with new filter
             const uniqueResultsWithTestContext = joinResultsWithTestContext();
+            // Rebuild test-type filters based on the new use-case filter context
+            initializeTestTypeFilters(uniqueResultsWithTestContext);
             renderValidationsList(uniqueResultsWithTestContext);
         });
     });
+}
+
+// Build and wire up the Test Type filters dynamically
+function initializeTestTypeFilters(uniqueResultsWithTestContext) {
+    // Base pool: all validation results (not just non-compliant ones)
+    let validations = uniqueResultsWithTestContext.filter(result => 
+        (result.status === 'RUN_HAS_RESULT' && (result.result === 'NOT_COMPLIANT' || result.result === 'POTENTIAL_ISSUE'))
+    );
+    // Respect current use case filter when computing available kinds
+    if (currentUseCaseFilter !== 'all') {
+        validations = validations.filter(result => {
+            const useCases = result.use_cases || '';
+            return useCases.includes(currentUseCaseFilter);
+        });
+    }
+
+    // Compute available kinds from data by extracting last token of test_id
+    const kindCounts = new Map(); // token -> aggregated count
+    validations.forEach(v => {
+        const kind = extractTestTypeFromId(v.test_id);
+        if (!kind) return;
+        const c = parseInt(v.count || 1) || 0;
+        kindCounts.set(kind, (kindCounts.get(kind) || 0) + c);
+    });
+    // Sort by count (desc)
+    const kindsAvailable = Array.from(kindCounts.entries())
+        .sort((a, b) => b[1] - a[1])
+        .map(([k]) => k);
+
+    const container = document.getElementById('test-type-filters');
+    if (!container) return;
+
+    if (kindsAvailable.length === 0) {
+        // Hide the whole group if nothing to show
+        container.style.display = 'none';
+        return;
+    }
+
+    // Show container and append buttons
+    container.style.display = '';
+
+    // Remove any previously injected buttons (keep Show All)
+    [...container.querySelectorAll('button[data-test-type]:not(#filter-type-all)')].forEach(b => b.remove());
+
+    kindsAvailable.forEach(kind => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'btn btn-outline-secondary';
+        btn.setAttribute('data-test-type', kind);
+        btn.textContent = toTitleCase(kind);
+        container.appendChild(btn);
+    });
+
+    // Wire up clicks
+    const buttons = container.querySelectorAll('button[data-test-type]');
+    buttons.forEach(btn => {
+        btn.addEventListener('click', function() {
+            // Remove active from all
+            buttons.forEach(b => b.classList.remove('active'));
+            this.classList.add('active');
+            currentTestTypeFilter = this.getAttribute('data-test-type') || 'all';
+            currentValidationsPage = 1;
+            const data = joinResultsWithTestContext();
+            renderValidationsList(data);
+        });
+    });
+
+    // Ensure Show All is active after rebuilding
+    const showAllBtn = container.querySelector('#filter-type-all');
+    if (showAllBtn) {
+        buttons.forEach(b => b.classList.remove('active'));
+        showAllBtn.classList.add('active');
+    }
+}
+
+function toTitleCase(s) {
+    return (s || '').toLowerCase().replace(/(^|_)([a-z])/g, (_, __, c) => ' ' + c.toUpperCase()).trim();
+}
+
+// Extract test class keywords from test_id, e.g., VALIDATION_COUNTRY_FOUND -> FOUND
+function extractTestTypeFromId(testId) {
+    if (!testId) return '';
+    const id = String(testId).toUpperCase();
+    const parts = id.split('_').filter(Boolean);
+    if (parts.length === 0) return '';
+    // Use last token as the type detector (fully dynamic)
+    return parts[parts.length - 1];
 }
 
 function downloadValidationCSV(testId) {

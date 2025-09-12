@@ -115,6 +115,12 @@ h2 small { font-size: 0.8rem;  color: var(--grey); }
 .list-group-item .totalcount { height: 1.3rem; font-size: 0.8rem; font-weight: normal; }
 .list-group-item h5 { font-size: 0.9rem; }
 
+/* Accent border on left for validation items (color set inline) */
+.list-group-item.accent-left {
+    border-left-width: 8px;
+    border-left-style: solid;
+}
+
 .list-group-item:hover {
     background-color: var(--mint);
 }

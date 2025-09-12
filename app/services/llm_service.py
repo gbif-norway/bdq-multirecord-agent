@@ -75,11 +75,19 @@ class LLMService:
             purpose="assistants"
         )
 
-        # Use the Assistants API with file attachments (Responses API requires container setup)
+        # Use the Assistants API with file attachments
         assistant = client.beta.assistants.create(
-            name="BDQ Data Analyst",
-            instructions="You are a biodiversity data quality analyst. Analyze the provided CSV files and generate a comprehensive summary.",
-            model="gpt-4o",
+            name="BDQ Email Support Assistant",
+            instructions=(
+                "You write clear, friendly, professional email replies about biodiversity data quality (BDQ). "
+                "Return only the email body in HTML. Do not explain your steps or narrate analysis. "
+                "First line must begin with 'Thanks for your email,' or 'Thanks for reaching out,'. "
+                "Use short paragraphs and, if helpful, 2–5 concise bullets. "
+                "Focus on practical fixes the recipient can perform; avoid heavy jargon unless necessary. "
+                "End with an offer to help and a polite sign-off. "
+                "Avoid phrases like: 'To analyze', 'we need to', 'this analysis', 'identify the key issues'."
+            ),
+            model="gpt-5",
             tools=[{"type": "code_interpreter"}]
         )
 
@@ -129,6 +137,11 @@ class LLMService:
                 # Check if response contains HTML tags, if not convert to HTML
                 if not self._contains_html_tags(response_text):
                     response_text = self._convert_to_html(response_text)
+                # Enforce greeting requirement if the model drifted
+                stripped = response_text.lstrip().lower()
+                starts_ok = stripped.startswith("thanks for your email") or stripped.startswith("thanks for reaching out")
+                if not starts_ok:
+                    response_text = f"<p>Thanks for your email,</p>\n" + response_text
                 log(f"OpenAI LLM response: {response_text}")
             else:
                 # If no text content, return a message indicating the analysis was completed
@@ -191,6 +204,7 @@ Use the code execution tool to explore these files as needed to understand the d
 - Be encouraging about data quality improvement
 - Keep it concise but comprehensive
 - Use HTML formatting
+ - Avoid phrases like: "To analyze", "we need to", "this analysis", "identify the key issues".
 
 ## YOUR RESOURCES
 
@@ -220,7 +234,7 @@ Notes:
 {relevant_test_contexts} 
 
 ## YOUR PROCESS
-Start by acknowledging the submission and thank the user for using BDQEmail to test their data. Reply to any queries in the original email. 
+Start with a one-line thanks (e.g., "Thanks for your email,") and, if obvious, address the sender by name. Reply to any queries in the original email. 
 
 Carefully read the summary stats annd BDQ tests context. 
 Start with the amendments - explain that the amended dataset (available for download from the dashboard) contains all the quick wins for the user automatically applied to their dataset. Describe what amendments were made. 
@@ -252,6 +266,8 @@ Summmarise and provide some key takeaways at the end. I want you to showcase you
 
 ## FORMAT
 Write as a complete HTML email body that will appear below the summary stats box. Use clear paragraphs, bullet points and other formatting where appropriate. 
+Return only the email body in HTML (no headings like "YOUR TASK" etc.).
+Begin with: "Thanks for your email," or "Thanks for reaching out,".
 Do NOT include the summary statistics or the link to the dashboard - they are already displayed to the user above your email body."""
         # Log full prompt for debugging/traceability as requested
         log(f"LLM prompt ({len(prompt)} chars):\n{prompt}")
