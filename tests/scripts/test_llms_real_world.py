@@ -187,6 +187,10 @@ def main():
     test_ids = test_results['test_id'].unique().tolist()
     relevant_test_contexts = get_relevant_test_contexts(test_ids)
     
+    # Build curated focus set
+    curated_df = CSVService().build_curated_joined_results(unique_results)
+    curated_csv_text = CSVService().dataframe_to_csv_string(curated_df) if curated_df is not None and not curated_df.empty else None
+    
     # Create the prompt using the real LLM service
     log("Creating prompt...")
     prompt = llm_service.create_prompt(
@@ -195,7 +199,8 @@ def main():
         summary_stats, 
         str_snapshot(test_results), 
         str_snapshot(df), 
-        relevant_test_contexts
+        relevant_test_contexts,
+        curated_csv_text
     )
     
     # Convert DataFrames to CSV strings for LLM (following main.py exactly)

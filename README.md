@@ -112,6 +112,11 @@ All tests must be run in Docker containers as per development rules [[memory:774
 docker compose --profile test run --rm test-runner
 ```
 
+To run the live OpenAI Responses API test (requires OPENAI_API_KEY in .env.test):
+```bash
+docker compose --profile test run --rm -e OPENAI_LIVE=1 test-runner python -m pytest tests/test_openai_live.py -v -s
+```
+
 ### BDQ API Integration Tests
 
 ```bash

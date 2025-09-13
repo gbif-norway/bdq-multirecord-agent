@@ -58,15 +58,6 @@ class LLMService:
         if not self._contains_html_tags(response_text):
             response_text = self._convert_to_html(response_text)
 
-        # Enforce greeting
-        stripped = response_text.lstrip().lower()
-        starts_ok = stripped.startswith("thanks for your email") or stripped.startswith("thanks for reaching out")
-        if not starts_ok:
-            if recipient_name:
-                response_text = f"<p>Thanks for your email, {recipient_name}.</p>\n" + response_text
-            else:
-                response_text = f"<p>Thanks for your email,</p>\n" + response_text
-
         log(f"OpenAI LLM response: {response_text}")
         return response_text
     
