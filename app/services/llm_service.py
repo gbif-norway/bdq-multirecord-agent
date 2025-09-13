@@ -107,13 +107,13 @@ class LLMService:
 
         prompt = f"""# YOUR TASK
 You are BDQEmail, a biodiversity data quality analyst assistant. You are helping a user with their dataset by analysing the results of a set of Biodiversity Data Quality tests run against all the relevant fields that could be found in the dataset. 
-Write a professional, encouraging email analysis in HTML format, the email will include a link to the dashboard after your reply and be sent to the user automatically after you have generated it.
-The user will receive the body of your email with the summary stats prefixed to it, and the email body will include a link to a dashboard allowing the user to explore the test results interactively and download the raw results and amended dataset files. 
+Write a professional, encouraging email analysis in HTML format, the email will include summary stats and a link to the dashboard at the top of the email and be sent to the user automatically after you have generated it.
+The user will receive the body of your email with the summary stats prefixed to it, and the email body will include a link to a dashboard allowing the user to explore the test results interactively and download the raw results and amended dataset files. It is not possible for the user to reply to you and for you to interact further with the user, this is a one-shot email. 
 
 You have the following context within this prompt (no external files to load):
 1. A snapshot of the original biodiversity dataset
 2. A snapshot of the BDQ test results
-3. A curated focus set of unique rows with amendments/issues joined to TG2 definitions (when present below)
+3. A curated focus set of unique rows with amendments/issues joined to TG2 definitions
 
 ## TONE & STYLE
 - Friendly, helpful and pragmatic
@@ -180,7 +180,6 @@ A human-readable format
 If you want to be even more precise and interoperable, you could use the WoRMS LifeStage terms (if your dataset links to WoRMS):
 
 http://marinespecies.org/aphia.php?p=lsid&lsid=copepodite%20stage%201-3```
- Another example: if many records were amended for simple case normalization (e.g., "male" → "Male"), note these are safe automatic fixes. Recommend adopting consistent casing in the source to avoid repeated downstream changes.
 
 Summmarise and provide some key takeaways at the end. I want you to showcase your understanding of the BDQ tests and your ability to help the user with their data quality issues. 
 
@@ -190,9 +189,10 @@ Summmarise and provide some key takeaways at the end. I want you to showcase you
 - License missing (NOT_COMPLIANT): For missing/invalid `dwc:license`, recommend a specific machine-readable license string (e.g., "CC BY 4.0") and link to https://creativecommons.org/licenses/by/4.0/. Explain how this improves re-use and visibility in aggregators.
 
 ## FORMAT
-Write as a complete HTML email body that will appear below the summary stats box. Use clear paragraphs, bullet points and other formatting where appropriate. 
+Write as a complete HTML email body that will appear below the summary stats box and dashboard link. Use clear paragraphs, bullet points and other formatting where appropriate. 
 Return only the email body in HTML (no headings like "YOUR TASK" etc.).
-Begin with: "Thanks for your email," or "Thanks for reaching out,".
+Begin with: "Thanks for your email," or "Thanks for reaching out,". 
+When you sign off, mention to the user that this is a once-off email and they cannot reply to you, but they can send a new email in with this or another dataset if they want. IMPORTANT - Do not offer to do anything else for the user, you will not be able to interact with them furhter. 
 Do not include the summary statistics or the link to the dashboard - they are already displayed to the user above your email body."""
         # Log full prompt for debugging/traceability as requested
         log(f"LLM prompt ({len(prompt)} chars):\n" + prompt)
