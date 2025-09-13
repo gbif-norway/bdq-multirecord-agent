@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 from app.services.csv_service import CSVService
 from app.services.llm_service import LLMService
-from app.utils.helper import log, str_snapshot, get_relevant_test_contexts
+from app.utils.helper import log, str_snapshot
 
 def _get_summary_stats_from_unique_results(unique_results_df, core_type, original_dataset_length):
     """Generate summary statistics from unique results DataFrame - adapted from main.py"""
@@ -182,11 +182,6 @@ def main():
         "attachments": []
     }
     
-    # Get relevant test contexts
-    log("Getting relevant test contexts...")
-    test_ids = test_results['test_id'].unique().tolist()
-    relevant_test_contexts = get_relevant_test_contexts(test_ids)
-    
     # Build curated focus set
     curated_df = CSVService().build_curated_joined_results(unique_results)
     curated_csv_text = CSVService().dataframe_to_csv_string(curated_df) if curated_df is not None and not curated_df.empty else None
@@ -199,7 +194,6 @@ def main():
         summary_stats, 
         str_snapshot(test_results), 
         str_snapshot(df), 
-        relevant_test_contexts,
         curated_csv_text
     )
     

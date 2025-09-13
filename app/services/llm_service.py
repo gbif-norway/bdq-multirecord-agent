@@ -63,7 +63,7 @@ class LLMService:
     
     # (Truncation helper removed from use; we rely on sanitization instead.)
                 
-    def create_prompt(self, email_data, core_type, summary_stats, test_results_snapshot, original_snapshot, relevant_test_contexts, curated_joined_csv_text: Optional[str] = None):
+    def create_prompt(self, email_data, core_type, summary_stats, test_results_snapshot, original_snapshot, curated_joined_csv_text: Optional[str] = None):
         log("Generating the prompt for LLM...") 
         # Sanitize email metadata to avoid embedding base64 attachments or large blobs
         def _summarize_email_meta(ed):
@@ -95,15 +95,15 @@ class LLMService:
 
         email_data = _summarize_email_meta(email_data)
 
-        has_curated = curated_joined_csv_text is not None and curated_joined_csv_text != ""
-        
-        # Build curated section separately to avoid backslashes in f-string
+        # Build curated section (include only when provided)
         curated_section = ""
-        if has_curated:
+        if curated_joined_csv_text:
             curated_section = (f"### CURATED FOCUS SET (untruncated)\n"
-                             f"This table contains only the unique rows where status ∈ {{AMENDED, FILLED_IN}} or result ∈ {{NOT_COMPLIANT, POTENTIAL_ISSUE}}, joined with TG2 test context columns (description, notes, type, IE class, etc.).\n"
-                             f"Use this set to prioritise guidance without re-deriving groupings.\n"
-                             f"\n```csv\n{curated_joined_csv_text}\n```\n")
+                               f"This table contains only the unique rows where status ∈ {{AMENDED, FILLED_IN}} or result ∈ {{NOT_COMPLIANT, POTENTIAL_ISSUE}}, joined with TG2 test context columns (description, notes, type, IE class, etc.).\n"
+                               f"Use this set to prioritise guidance without re-deriving groupings.\n"
+                               f"\n```csv\n{curated_joined_csv_text}\n```\n")
+
+        # BDQ tests context section removed for simplicity; curated focus set (when present) already carries context.
 
         prompt = f"""# YOUR TASK
 You are BDQEmail, a biodiversity data quality analyst assistant. You are helping a user with their dataset by analysing the results of a set of Biodiversity Data Quality tests run against all the relevant fields that could be found in the dataset. 
@@ -113,7 +113,7 @@ The user will receive the body of your email with the summary stats prefixed to 
 You have the following context within this prompt (no external files to load):
 1. A snapshot of the original biodiversity dataset
 2. A snapshot of the BDQ test results
-{('- 3. A curated focus set of unique rows that either (a) were AMENDED or FILLED_IN, or (b) had results of NOT_COMPLIANT or POTENTIAL_ISSUE, joined with TG2 test definitions for rich context.' ) if has_curated else ''}
+3. A curated focus set of unique rows with amendments/issues joined to TG2 definitions (when present below)
 
 ## TONE & STYLE
 - Friendly, helpful and pragmatic
@@ -146,13 +146,12 @@ Notes:
   FILLED IN = a suggested value for a blank field (e.g., derive coordinates from verbatim text).
   NOT_AMENDED = no safe change suggested (often because it's either actually correct and does not need amending, or the correction is ambiguous).
 
-{curated_section if has_curated else ''}
+{curated_section}
 
 ### SUMMARY STATS FROM RESULTS FILE
 {summary_stats} 
 
-### BDQ TESTS CONTEXT (shortened)
-{relevant_test_contexts} 
+
 
 ## YOUR PROCESS
 Start with a one-line thanks (e.g., "Thanks for your email,") and, if obvious, address the sender by name. Reply to any queries in the original email. 

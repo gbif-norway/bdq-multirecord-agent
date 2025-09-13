@@ -102,7 +102,6 @@ def test_openai_live_responses_api_gpt5_generates_html_email():
         summary_stats=summary_stats,
         test_results_snapshot=str_snapshot(unique_df),
         original_snapshot=str_snapshot(original_df),
-        relevant_test_contexts=[],
         curated_joined_csv_text=curated_csv_text,
     )
 

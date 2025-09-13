@@ -18,7 +18,7 @@ from app.services.bdq_api_service import BDQAPIService
 from app.services.csv_service import CSVService
 from app.services.llm_service import LLMService
 from app.services.minio_service import MinIOService
-from app.utils.helper import log, str_snapshot, get_relevant_test_contexts
+from app.utils.helper import log, str_snapshot
 import pandas as pd
 
 # Initialize services at module level for dependency injection
@@ -103,14 +103,13 @@ async def _handle_email_processing(email_data: Dict[str, Any]):
 
     recipient_name = _extract_sender_name(email_data)
 
-    # Get LLM analysis using unique results (more efficient and focused)
+    # Get LLM analysis using unique results
     prompt = llm_service.create_prompt(
         email_data,
         core_type,
         summary_stats,
         str_snapshot(unique_test_results),
         str_snapshot(df),
-        get_relevant_test_contexts(unique_test_results['test_id'].unique().tolist()),
         curated_csv_content
     )
     log(prompt)
@@ -222,7 +221,6 @@ async def debug_llm_analysis(
                 summary_stats, 
                 str_snapshot(unique_results_df), 
                 str_snapshot(df), 
-                get_relevant_test_contexts(unique_results_df['test_id'].unique().tolist()) if 'test_id' in unique_results_df.columns else [],
                 curated_csv_content
             )
 
