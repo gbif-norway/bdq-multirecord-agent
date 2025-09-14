@@ -3,7 +3,7 @@ import io
 from datetime import datetime
 from typing import Optional
 from minio import Minio
-from app.utils.helper import log
+from app.utils.helper import log, network_retry
 
 class MinIOService:
     """Service for uploading files to MinIO S3 bucket"""
@@ -36,6 +36,7 @@ class MinIOService:
         clean_name = clean_name.replace(' ', '_')
         return f"{prefix}_{clean_name}_{timestamp}.csv"
     
+    @network_retry()
     def _upload_csv_content(self, csv_content: str, filename: str) -> Optional[str]:
         """Upload CSV content to MinIO and return filename"""
         if not self.client:
@@ -72,6 +73,7 @@ class MinIOService:
         base_url = "https://storage.gbif-no.sigma2.no/misc/bdqreport/bdq-report.html"
         return f"{base_url}?unique_test_results={unique_test_results_name}&amended_dataset={amended_name}"
     
+    @network_retry()
     def download_csv_from_url(self, s3_url: str) -> Optional[str]:
         """Download CSV content from S3 URL"""
         if not self.client:

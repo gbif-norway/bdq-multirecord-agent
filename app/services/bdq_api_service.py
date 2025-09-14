@@ -5,7 +5,7 @@ import time
 import pandas as pd
 import numpy as np
 from typing import List, Dict, Any, Optional, Tuple
-from app.utils.helper import log
+from app.utils.helper import log, http_get_with_retry, http_post_with_retry
 
 from dataclasses import dataclass, field
 
@@ -35,8 +35,7 @@ class BDQAPIService:
     
     def _filter_applicable_tests(self, csv_columns: List[str]) -> List[BDQTest]:
         """Filter tests that can be applied to the CSV columns"""
-        all_tests_response = requests.get(self.tests_endpoint, timeout=30)
-        all_tests_response.raise_for_status()
+        all_tests_response = http_get_with_retry(self.tests_endpoint, timeout=30)
         all_tests = [BDQTest(**test) for test in all_tests_response.json()]
         
         applicable_tests = [
@@ -101,10 +100,9 @@ class BDQAPIService:
 
             # Call batch endpoint (results returned in same order)
             api_start_time = time.time()
-            batch_response = requests.post(
+            batch_response = http_post_with_retry(
                 self.batch_endpoint, json=unique_test_candidates_batch_request, timeout=1800
             )
-            batch_response.raise_for_status()
             batch_results = batch_response.json()
             api_duration = time.time() - api_start_time
 

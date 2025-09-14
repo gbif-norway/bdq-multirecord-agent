@@ -1,7 +1,7 @@
 import os
 from openai import OpenAI
 from typing import List, Dict, Any, Optional
-from app.utils.helper import log
+from app.utils.helper import log, network_retry
 
 class LLMService:
     """Service for generating intelligent summaries using Google Gemini or OpenAI"""
@@ -25,10 +25,15 @@ class LLMService:
         model = "gpt-5"
 
         # For now, rely on prompt + embedded curated CSV; omit tools until SDK/API stabilizes
-        response = client.responses.create(
-            model=model,
-            input=prompt,
-        )
+
+        @network_retry()
+        def _create_response():
+            return client.responses.create(
+                model=model,
+                input=prompt,
+            )
+
+        response = _create_response()
 
         # Prefer SDK helper, fallback to manual extraction
         response_text = None

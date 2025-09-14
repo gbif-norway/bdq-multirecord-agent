@@ -1,5 +1,5 @@
 /**
- * Gmail → HTTPS forwarder (polls unprocessed emails and POSTs JSON to your endpoint).
+ * Gmail → HTTPS forwarder (polls unprocessed top-level emails and POSTs JSON to your endpoint).
  *
  * Setup:
  * 1) In Apps Script editor: Services → enable "Gmail API" (Advanced Gmail Service).
@@ -11,8 +11,7 @@
 const ENDPOINT_URL = 'https://bdq-multirecord-agent-638241344017.europe-west1.run.app/email/incoming';
 const SHARED_SECRET = ''; // optional HMAC; set '' to disable
 const LABEL_PROCESSED = 'bdq/processed';
-const MAX_PER_RUN = 50;      // safety cap per minute
-
+const MAX_PER_RUN = 50; // safety cap per minute
 
 function log() {
   try {
@@ -24,22 +23,15 @@ function log() {
 }
 
 function init() {
-  // Just ensure the processed label exists
   ensureLabel(LABEL_PROCESSED);
   log('init:processed label ensured');
 }
 
 function poll() {
   log('poll:start', new Date().toISOString());
-  
-  // Simple approach: just get unprocessed emails that aren't replies
-  const ids = findUnprocessedNonReplyIds_();
-  log('poll:found', ids.length, 'unprocessed non-reply emails');
-  
-  if (ids.length) {
-    processMessageIds_(ids);
-  }
-  
+  const ids = findUnprocessedIds_();
+  log('poll:found', ids.length, 'unprocessed emails');
+  if (ids.length) processMessageIds_(ids);
   log('poll:end');
 }
 
@@ -62,20 +54,23 @@ function processMessageIds_(ids) {
 
   for (const id of ids) {
     try {
-      const meta = Gmail.Users.Messages.get('me', id, {format: 'minimal'});
+      const meta = Gmail.Users.Messages.get('me', id, { format: 'minimal' });
       if ((meta.labelIds || []).includes(labelIdProcessed)) {
         log('process:skip already processed', id);
         continue;
       }
 
-      const full = Gmail.Users.Messages.get('me', id, {format: 'full'});
+      const full = Gmail.Users.Messages.get('me', id, { format: 'full' });
+
+      if (!isTopLevel_(full)) {
+        log('process:skip reply/non-top-level', id);
+        continue;
+      }
+
       const payload = buildPayload_(full);
       const hdr = payload.headers || {};
-      const subj = hdr.subject || '';
-      const from = hdr.from || '';
       const attCount = (payload.attachments || []).length;
-
-      log('process:msg', { id, subj, from, attCount });
+      log('process:msg', { id, subj: hdr.subject || '', from: hdr.from || '', attCount });
 
       let ok = true;
       if (attCount === 0) {
@@ -96,24 +91,39 @@ function processMessageIds_(ids) {
   log('process:end');
 }
 
-function findUnprocessedNonReplyIds_() {
-  // Query for unprocessed emails that aren't replies
-  const q = `-label:"${LABEL_PROCESSED}" -in:spam -in:trash -in:replies`;
+function findUnprocessedIds_() {
+  const q = `-label:"${LABEL_PROCESSED}" -in:spam -in:trash`;
   const out = [];
   let pageToken = null;
-  
+
   do {
-    const res = Gmail.Users.Messages.list('me', {q, maxResults: 100, pageToken});
-    if (res.messages) {
-      out.push(...res.messages.map(m => m.id));
-    }
+    const res = Gmail.Users.Messages.list('me', { q, maxResults: 100, pageToken });
+    if (res.messages) out.push(...res.messages.map(m => m.id));
     pageToken = res.nextPageToken || null;
   } while (pageToken && out.length < MAX_PER_RUN);
-  
+
   return out.slice(0, MAX_PER_RUN);
 }
 
+function isTopLevel_(full) {
+  try {
+    const headers = indexHeaders_(full.payload && full.payload.headers || []);
+    if (headers['In-Reply-To'] || headers['References']) return false;
 
+    const thr = Gmail.Users.Threads.get('me', full.threadId);
+    const msgs = thr.messages || [];
+    if (!msgs.length) return true;
+
+    let first = msgs[0];
+    for (const m of msgs) {
+      if (Number(m.internalDate) < Number(first.internalDate)) first = m;
+    }
+    return full.id === first.id;
+  } catch (e) {
+    const headers = indexHeaders_(full.payload && full.payload.headers || []);
+    return !(headers['In-Reply-To'] || headers['References']);
+  }
+}
 
 function ensureLabel(name) {
   const labelsRes = Gmail.Users.Labels.list('me');
@@ -130,7 +140,7 @@ function ensureLabel(name) {
 function buildPayload_(message) {
   const headers = indexHeaders_(message.payload.headers || []);
   const parts = flattenParts_(message.payload);
-  const {text, html} = extractBodies_(parts, message.id);
+  const { text, html } = extractBodies_(parts, message.id);
 
   const attachments = [];
   for (const p of parts) {
@@ -138,8 +148,8 @@ function buildPayload_(message) {
       const att = Gmail.Users.Messages.Attachments.get('me', message.id, p.body.attachmentId);
       let dataStr = (att && typeof att.data === 'string') ? att.data : '';
       let usedFallback = false;
+      let fallbackSize = 0;
       if (!dataStr) {
-        // Fallback to GmailApp (blobs) if Advanced Gmail API returns empty data
         try {
           const msg = GmailApp.getMessageById(String(message.id));
           const blobs = msg.getAttachments({ includeInlineImages: true, includeAttachments: true });
@@ -149,19 +159,20 @@ function buildPayload_(message) {
             } catch (e) { return false; }
           });
           if (match) {
-            dataStr = Utilities.base64Encode(match.getBytes()); // standard base64 (server can handle both)
+            dataStr = Utilities.base64Encode(match.getBytes());
+            fallbackSize = match.getBytes().length;
             usedFallback = true;
           }
         } catch (e) {
           log('attach:fallback error', String(e && e.message || e));
         }
       }
-      log('attach:get', { filename: p.filename, size: (att && att.size) || 0, hasData: !!dataStr, fallback: usedFallback });
+      log('attach:get', { filename: p.filename, size: (att && att.size) || fallbackSize || 0, hasData: !!dataStr, fallback: usedFallback });
       attachments.push({
         filename: p.filename,
         mimeType: p.mimeType || 'application/octet-stream',
-        size: (att && att.size) || (match && match.getBytes && match.getBytes().length) || 0,
-        contentBase64: dataStr // base64 or base64url
+        size: (att && att.size) || fallbackSize || 0,
+        contentBase64: dataStr
       });
     }
   }
@@ -183,10 +194,7 @@ function buildPayload_(message) {
       inReplyTo: headers['In-Reply-To'] || '',
       references: headers['References'] || ''
     },
-    body: {
-      text, // UTF-8 text if present
-      html   // HTML if present
-    },
+    body: { text, html },
     attachments
   };
 }
@@ -201,11 +209,8 @@ function flattenParts_(node) {
   const out = [];
   function walk(p) {
     if (!p) return;
-    if (p.parts && p.parts.length) {
-      p.parts.forEach(walk);
-    } else {
-      out.push(p);
-    }
+    if (p.parts && p.parts.length) p.parts.forEach(walk);
+    else out.push(p);
   }
   walk(node);
   return out;
@@ -220,12 +225,10 @@ function extractBodies_(parts, messageId) {
     if (!isText && !isHtml) continue;
 
     let dataStr = (p.body && typeof p.body.data === 'string') ? p.body.data : null;
-
     if (!dataStr && p.body && p.body.attachmentId) {
       const att = Gmail.Users.Messages.Attachments.get('me', messageId, p.body.attachmentId);
       if (att && typeof att.data === 'string') dataStr = att.data;
     }
-
     if (!dataStr) continue;
     const decoded = decodeBase64Url_(dataStr);
     if (isText) text = decoded;
@@ -278,7 +281,3 @@ function postToEndpoint_(payload) {
     return false;
   }
 }
-
-
-
-

@@ -5,7 +5,7 @@ import hmac
 import hashlib
 import json
 from typing import Optional, List
-from app.utils.helper import log
+from app.utils.helper import log, http_post_with_retry
 
 class EmailService:
     """Service for handling email operations"""
@@ -112,7 +112,7 @@ class EmailService:
         body_json = json.dumps(reply_data)
         signature = self._generate_hmac_signature(body_json)
         
-        response = requests.post(
+        response = http_post_with_retry(
             self.gmail_send_endpoint,
             params={"X-Signature": signature, "signature": signature},  # Apps Script can't reliably read headers
             data=body_json,
@@ -124,7 +124,6 @@ class EmailService:
         )
         # Even when Apps Script errors, it often returns HTTP 200 with an HTML error page.
         # Log more context and detect non-OK bodies to aid debugging in prod.
-        response.raise_for_status()
         resp_ct = (response.headers.get('Content-Type') or '').lower()
         resp_text = (response.text or '')
         body_preview = resp_text[:500]
