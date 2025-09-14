@@ -110,7 +110,8 @@ async def _handle_email_processing(email_data: Dict[str, Any]):
         summary_stats,
         str_snapshot(unique_test_results),
         str_snapshot(df),
-        curated_csv_content
+        curated_csv_content,
+        failed_tests=bdq_api_service.failed_tests if hasattr(bdq_api_service, 'failed_tests') else None
     )
     log(prompt)
 

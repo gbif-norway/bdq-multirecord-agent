@@ -139,12 +139,12 @@ def test_backoff_succeeds_on_eight_chunks(monkeypatch):
     assert [r["result"] for r in results] == list(range(n))
 
 
-def test_backoff_fails_after_eight_chunks(monkeypatch):
+def test_backoff_escalates_past_eight_to_sixteen(monkeypatch):
     svc = BDQAPIService()
     n = 16
     payload = [{"id": "T", "params": {"i": i}} for i in range(n)]
 
-    # Simulate: 1-chunk timeout; 2-chunk both timeout; 4-chunk one times out; 8-chunk one times out -> final failure
+    # Simulate: 1-chunk timeout; 2-chunk both timeout; 4-chunk one times out; 8-chunk one times out -> escalates to 16 and succeeds
     four_seen = {"n": 0}
     eight_seen = {"n": 0}
 
@@ -175,6 +175,112 @@ def test_backoff_fails_after_eight_chunks(monkeypatch):
                 for item in json
             ])
         # Fallback success
+        return _make_resp([
+            {"status": "RUN_HAS_RESULT", "result": item["params"]["i"]}
+            for item in json
+        ])
+
+    monkeypatch.setattr(
+        "app.services.bdq_api_service.http_post_with_retry", fake_post
+    )
+
+    ok, results = svc._post_batch_with_backoff(payload, timeout=1)
+    assert ok
+    assert len(results) == len(payload)
+
+
+def test_backoff_succeeds_on_sixteen_chunks(monkeypatch):
+    svc = BDQAPIService()
+    n = 33  # ensures 8-chunk sizes are 5/4; 16-chunk sizes are 3/2
+    payload = [{"id": "T", "params": {"i": i}} for i in range(n)]
+
+    four_seen = {"n": 0}
+
+    def fake_post(url, json, timeout):
+        size = len(json)
+        if size == 33:
+            raise requests.Timeout("simulate 1-chunk timeout")
+        if size in (17, 16):
+            raise requests.Timeout("simulate 2-chunk timeout")
+        if size in (9, 8):
+            # 4-chunk: succeed for all
+            return _make_resp([
+                {"status": "RUN_HAS_RESULT", "result": item["params"]["i"]}
+                for item in json
+            ])
+        if size in (5, 4):
+            # 8-chunk: one of them times out to force escalation
+            four_seen["n"] += 1
+            if four_seen["n"] == 3:
+                raise requests.Timeout("simulate 8-chunk timeout")
+            return _make_resp([
+                {"status": "RUN_HAS_RESULT", "result": item["params"]["i"]}
+                for item in json
+            ])
+        if size in (3, 2):
+            # 16-chunk: all succeed
+            return _make_resp([
+                {"status": "RUN_HAS_RESULT", "result": item["params"]["i"]}
+                for item in json
+            ])
+        # Fallback
+        return _make_resp([
+            {"status": "RUN_HAS_RESULT", "result": item["params"]["i"]}
+            for item in json
+        ])
+
+    monkeypatch.setattr(
+        "app.services.bdq_api_service.http_post_with_retry", fake_post
+    )
+
+    ok, results = svc._post_batch_with_backoff(payload, timeout=1)
+    assert ok
+    assert len(results) == len(payload)
+    assert [r["result"] for r in results] == list(range(n))
+
+
+def test_backoff_fails_after_sixteen_chunks(monkeypatch):
+    svc = BDQAPIService()
+    n = 33
+    payload = [{"id": "T", "params": {"i": i}} for i in range(n)]
+
+    four_seen = {"n": 0}
+    eight_seen = {"n": 0}
+    sixteen_seen = {"n": 0}
+
+    def fake_post(url, json, timeout):
+        size = len(json)
+        if size == 33:
+            raise requests.Timeout("simulate 1-chunk timeout")
+        if size in (17, 16):
+            raise requests.Timeout("simulate 2-chunk timeout")
+        if size in (9, 8):
+            # 4-chunk: one timeout to force escalation
+            four_seen["n"] += 1
+            if four_seen["n"] == 1:
+                raise requests.Timeout("simulate 4-chunk timeout")
+            return _make_resp([
+                {"status": "RUN_HAS_RESULT", "result": item["params"]["i"]}
+                for item in json
+            ])
+        if size in (5, 4):
+            # 8-chunk: one timeout to force escalation
+            eight_seen["n"] += 1
+            if eight_seen["n"] == 2:
+                raise requests.Timeout("simulate 8-chunk timeout")
+            return _make_resp([
+                {"status": "RUN_HAS_RESULT", "result": item["params"]["i"]}
+                for item in json
+            ])
+        if size in (3, 2):
+            # 16-chunk: third one times out
+            sixteen_seen["n"] += 1
+            if sixteen_seen["n"] == 3:
+                raise requests.Timeout("simulate 16-chunk timeout")
+            return _make_resp([
+                {"status": "RUN_HAS_RESULT", "result": item["params"]["i"]}
+                for item in json
+            ])
         return _make_resp([
             {"status": "RUN_HAS_RESULT", "result": item["params"]["i"]}
             for item in json

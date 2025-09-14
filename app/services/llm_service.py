@@ -68,7 +68,7 @@ class LLMService:
     
     # (Truncation helper removed from use; we rely on sanitization instead.)
                 
-    def create_prompt(self, email_data, core_type, summary_stats, test_results_snapshot, original_snapshot, curated_joined_csv_text: Optional[str] = None):
+    def create_prompt(self, email_data, core_type, summary_stats, test_results_snapshot, original_snapshot, curated_joined_csv_text: Optional[str] = None, failed_tests: Optional[List[str]] = None):
         log("Generating the prompt for LLM...") 
         # Sanitize email metadata to avoid embedding base64 attachments or large blobs
         def _summarize_email_meta(ed):
@@ -108,7 +108,15 @@ class LLMService:
                                f"Use this set to prioritise guidance without re-deriving groupings.\n"
                                f"\n```csv\n{curated_joined_csv_text}\n```\n")
 
-        # BDQ tests context section removed for simplicity; curated focus set (when present) already carries context.
+        # Optional note about tests that could not be run due to timeouts or other API limits
+        failed_section = ""
+        if failed_tests:
+            failed_list = ", ".join(failed_tests)
+            failed_section = (
+                f"\n### NOTE ABOUT UNRUN TESTS\n"
+                f"The following BDQ tests could not be completed due to service timeouts or limits: {failed_list}.\n"
+                f"Do not attempt to infer results for them. Simply inform the user in one short paragraph that these tests could not be run this time, and that they can try again later if they are specifically interested in those tests.\n"
+            )
 
         prompt = f"""# YOUR TASK
 You are BDQEmail, a biodiversity data quality analyst assistant. You are helping a user with their dataset by analysing the results of a set of Biodiversity Data Quality tests run against all the relevant fields that could be found in the dataset. 
@@ -152,6 +160,8 @@ Notes:
   NOT_AMENDED = no safe change suggested (often because it's either actually correct and does not need amending, or the correction is ambiguous).
 
 {curated_section}
+
+{failed_section}
 
 ### SUMMARY STATS FROM RESULTS FILE
 {summary_stats} 

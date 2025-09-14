@@ -30,6 +30,7 @@ class BDQAPIService:
         self.bdq_api_base = "https://bdq-api-638241344017.europe-west1.run.app"
         self.tests_endpoint = f"{self.bdq_api_base}/api/v1/tests"  # tests_endpoint returns an of dicts that look like BDQTest
         self.batch_endpoint = f"{self.bdq_api_base}/api/v1/tests/run/batch"  # see readme
+        self.failed_tests: List[str] = []
     
     def _post_batch_with_backoff(self, payload: List[Dict[str, Any]], timeout: int = 1800) -> Tuple[bool, Optional[List[Dict[str, Any]]]]:
         """Post the payload with escalating chunking: 1 → 2 → 4 → 8.
@@ -56,7 +57,7 @@ class BDQAPIService:
             return chunks
 
         n_total = len(payload)
-        for chunks_count in (1, 2, 4, 8):
+        for chunks_count in (1, 2, 4, 8, 16):
             slices = _partition(payload, chunks_count)
             t0 = time.time()
             results: List[Dict[str, Any]] = []
@@ -110,7 +111,7 @@ class BDQAPIService:
                 return False, None
 
         log(
-            "BDQ batch timed out even with 8 chunks; aborting for manual inspection",
+            "BDQ batch timed out even with 16 chunks; aborting for manual inspection",
             "ERROR",
         )
         return False, None
@@ -142,6 +143,8 @@ class BDQAPIService:
         """
         start_time = time.time()
         applicable_tests = self._filter_applicable_tests(df.columns.tolist())
+        # Reset failed tests for this run
+        self.failed_tests = []
         all_unique_results: List[pd.DataFrame] = []
 
         def _shorten_test_id(test_id):
@@ -188,10 +191,15 @@ class BDQAPIService:
             api_duration = time.time() - api_start_time
             if not success or batch_results is None:
                 log(
-                    f"Aborting on test {test.id}: batch requests timed out after split attempts",
+                    f"Skipping test {test.id}: batch requests timed out after 16-chunk split attempts",
                     "ERROR",
                 )
-                return pd.DataFrame()
+                # Track failed test and continue with others
+                try:
+                    self.failed_tests.append(test.id)
+                except Exception:
+                    pass
+                continue
 
             # Build results DataFrame aligned by order
             results_df = pd.DataFrame(batch_results).fillna("")
