@@ -32,91 +32,87 @@ class BDQAPIService:
         self.batch_endpoint = f"{self.bdq_api_base}/api/v1/tests/run/batch"  # see readme
     
     def _post_batch_with_backoff(self, payload: List[Dict[str, Any]], timeout: int = 1800) -> Tuple[bool, Optional[List[Dict[str, Any]]]]:
-        """Post the full payload; on timeout, fallback to 2, then 4 batches.
+        """Post the payload with escalating chunking: 1 → 2 → 4 → 8.
 
         Returns (success, results) where results is a list of dicts aligned to input order
         when success is True; otherwise (False, None).
         """
-        # Helper to post a chunk and return JSON results
         def _post_chunk(chunk: List[Dict[str, Any]]):
             resp = http_post_with_retry(self.batch_endpoint, json=chunk, timeout=timeout)
             return resp.json()
 
-        # Attempt 1 batch
-        try:
-            start = time.time()
-            results_one = _post_chunk(payload)
-            log(f"BDQ batch posted in 1 chunk: {len(payload)} items, {time.time() - start:.2f}s")
-            return True, results_one
-        except requests.Timeout:
-            log(f"BDQ batch timeout with 1 chunk for {len(payload)} items; trying 2 chunks", "WARNING")
-        except Exception as e:
-            # Non-timeout errors should surface immediately
-            log(f"BDQ batch failed with error on 1 chunk: {type(e).__name__}: {e}", "ERROR")
-            return False, None
+        def _partition(seq: List[Any], parts: int) -> List[List[Any]]:
+            n = len(seq)
+            if parts <= 1 or n == 0:
+                return [seq]
+            base, rem = divmod(n, parts)
+            chunks = []
+            start = 0
+            for i in range(parts):
+                size = base + (1 if i < rem else 0)
+                end = start + size
+                chunks.append(seq[start:end])
+                start = end
+            return chunks
 
-        # Attempt 2 batches
-        n = len(payload)
-        mid = n // 2
-        chunks_2 = [payload[:mid], payload[mid:]]
-        results_2: List[Dict[str, Any]] = []
-        t0 = time.time()
-        timeouts_2 = 0
-        for idx, ch in enumerate(chunks_2):
-            if not ch:
-                continue
+        n_total = len(payload)
+        for chunks_count in (1, 2, 4, 8):
+            slices = _partition(payload, chunks_count)
+            t0 = time.time()
+            results: List[Dict[str, Any]] = []
+            had_timeout = False
             try:
-                cstart = time.time()
-                r = _post_chunk(ch)
-                results_2.extend(r)
-                log(f"BDQ sub-batch 2/{idx+1}: {len(ch)} items, {time.time() - cstart:.2f}s")
-            except requests.Timeout:
-                timeouts_2 += 1
-                log(f"BDQ sub-batch 2/{idx+1} timed out for {len(ch)} items", "WARNING")
-            except Exception as e:
-                log(f"BDQ sub-batch 2/{idx+1} failed: {type(e).__name__}: {e}", "ERROR")
+                for idx, ch in enumerate(slices):
+                    if not ch:
+                        continue
+                    cstart = time.time()
+                    try:
+                        r = _post_chunk(ch)
+                        results.extend(r)
+                        log(
+                            f"BDQ sub-batch {chunks_count}/{idx+1}: {len(ch)} items, {time.time() - cstart:.2f}s"
+                        )
+                    except requests.Timeout:
+                        had_timeout = True
+                        log(
+                            f"BDQ sub-batch {chunks_count}/{idx+1} timed out for {len(ch)} items",
+                            "WARNING",
+                        )
+                        # No need to continue this stage; escalate
+                        break
+                if not had_timeout and len(results) == n_total:
+                    if chunks_count == 1:
+                        log(
+                            f"BDQ batch posted in 1 chunk: {n_total} items, {time.time() - t0:.2f}s"
+                        )
+                    else:
+                        log(
+                            f"BDQ batch succeeded in {chunks_count} chunks: total {n_total} items, {time.time() - t0:.2f}s"
+                        )
+                    return True, results
+                if had_timeout:
+                    # escalate to next chunk level
+                    continue
+                # If we reach here without timeouts but size mismatch, it's an error
+                log(
+                    f"BDQ {chunks_count}-chunk mismatch: expected {n_total} results, got {len(results)}",
+                    "ERROR",
+                )
                 return False, None
-        if timeouts_2 == 0 and len(results_2) == n:
-            log(f"BDQ batch succeeded in 2 chunks: total {n} items, {time.time() - t0:.2f}s")
-            return True, results_2
-        if timeouts_2 >= 2:
-            log(f"Both 2-chunk attempts timed out; trying 4 chunks", "WARNING")
-        else:
-            log(f"Partial failure in 2-chunk attempt (timeouts={timeouts_2}); trying 4 chunks", "WARNING")
+            except Exception as e:
+                if isinstance(e, requests.Timeout):
+                    # Should be captured above, but handle defensively
+                    continue
+                log(
+                    f"BDQ batch failed during {chunks_count}-chunk attempt: {type(e).__name__}: {e}",
+                    "ERROR",
+                )
+                return False, None
 
-        # Attempt 4 batches
-        quarter = max(1, n // 4)
-        slices = [
-            payload[0:quarter],
-            payload[quarter:2*quarter],
-            payload[2*quarter:3*quarter],
-            payload[3*quarter:n],
-        ]
-        results_4: List[Dict[str, Any]] = []
-        t0 = time.time()
-        timeouts_4 = 0
-        for idx, ch in enumerate(slices):
-            if not ch:
-                continue
-            try:
-                cstart = time.time()
-                r = _post_chunk(ch)
-                results_4.extend(r)
-                log(f"BDQ sub-batch 4/{idx+1}: {len(ch)} items, {time.time() - cstart:.2f}s")
-            except requests.Timeout:
-                timeouts_4 += 1
-                log(f"BDQ sub-batch 4/{idx+1} timed out for {len(ch)} items", "ERROR")
-            except Exception as e:
-                log(f"BDQ sub-batch 4/{idx+1} failed: {type(e).__name__}: {e}", "ERROR")
-                return False, None
-        if timeouts_4 == 0 and len(results_4) == n:
-            log(f"BDQ batch succeeded in 4 chunks: total {n} items, {time.time() - t0:.2f}s")
-            return True, results_4
-        # Final failure – log and return
-        if timeouts_4 > 0:
-            log("BDQ batch timed out even with 4 chunks; aborting for manual inspection", "ERROR")
-        else:
-            log(f"BDQ 4-chunk mismatch: expected {n} results, got {len(results_4)}", "ERROR")
+        log(
+            "BDQ batch timed out even with 8 chunks; aborting for manual inspection",
+            "ERROR",
+        )
         return False, None
     
     def _filter_applicable_tests(self, csv_columns: List[str]) -> List[BDQTest]:
