@@ -55,7 +55,14 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 async function initializeDashboard() {
+    const loadingSpinner = document.getElementById('loading-spinner');
+    const mainContent = document.getElementById('main-content');
+    
     try {
+        // Show loading spinner
+        loadingSpinner.style.display = 'flex';
+        mainContent.style.display = 'none';
+        
         // Get filenames from URL parameters
         const urlParams = new URLSearchParams(window.location.search);
         const uniqueTestResultsFile = urlParams.get('unique_test_results');
@@ -115,10 +122,24 @@ async function initializeDashboard() {
         
         // Initialize use case filters
         initializeUseCaseFilters();
+        
+        // Hide loading spinner and show main content with fade-in effect
+        loadingSpinner.style.display = 'none';
+        mainContent.style.display = 'block';
+        // Add a small delay to ensure the display change is processed before adding the class
+        setTimeout(() => {
+            mainContent.classList.add('loaded');
+        }, 10);
 
     } catch (error) {
         console.error('Error initializing dashboard:', error);
         showError('Failed to load dashboard data: ' + error.message);
+        // Hide loading spinner even on error
+        loadingSpinner.style.display = 'none';
+        mainContent.style.display = 'block';
+        setTimeout(() => {
+            mainContent.classList.add('loaded');
+        }, 10);
     }
 }
 

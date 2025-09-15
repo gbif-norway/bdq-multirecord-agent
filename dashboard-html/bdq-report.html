@@ -29,7 +29,15 @@
             <!-- Download buttons will be added here by JavaScript -->
         </nav>
     </header>
-    <div class="container-xxl bd-gutter flex-wrap flex-lg-nowrap">
+    <!-- Loading Spinner -->
+    <div id="loading-spinner" class="loading-container">
+        <div class="spinner-border text-success" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+        <div class="loading-text">Loading BDQ test results...</div>
+    </div>
+
+    <div class="container-xxl bd-gutter flex-wrap flex-lg-nowrap" id="main-content" style="display: none;">
         <p class="intro">
             <span data-bs-toggle="tooltip" title="Biodiversity Data Quality" class="tooltip-hint">BDQ</span> tests are standardised checks that look at one part of a biodiversity record <span data-bs-toggle="tooltip" title="usually a Darwin Core field" class="tooltip-hint">record</span> & say if it's 
             <span class="badge">okay <i class="fa-solid fa-circle-check text-success"></i></span>,
@@ -120,6 +128,7 @@
                 </nav>
             </div>
         </div>
+    </div>
     </div>
 
     <!-- Footer -->
