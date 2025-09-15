@@ -390,8 +390,10 @@ function renderNeedsAttentionChart(uniqueResultsWithTestContext) {
         });
     });
     
-    // Calculate total records for percentage calculation (dataset size)
-    const totalRecords = getDatasetSize() || 1;
+    // Calculate total "needs attention" records for percentage calculation
+    const totalNeedsAttentionRecords = needsAttention.reduce((sum, result) => {
+        return sum + (parseInt(result.count || 0) || 0);
+    }, 0);
     
     // Generate darker green to yellow gradient colors
     const testColors = generateStackedGradientColors(testsWithData.length);
@@ -403,8 +405,8 @@ function renderNeedsAttentionChart(uniqueResultsWithTestContext) {
             const count = ieClassGroups[actualIeClass] && ieClassGroups[actualIeClass][testId] 
                 ? ieClassGroups[actualIeClass][testId] 
                 : 0;
-            // Convert to percentage
-            return (count / totalRecords) * 100;
+            // Convert to percentage of needs attention records
+            return totalNeedsAttentionRecords > 0 ? (count / totalNeedsAttentionRecords) * 100 : 0;
         });
         
         const color = testColors[index];
@@ -445,8 +447,9 @@ function renderNeedsAttentionChart(uniqueResultsWithTestContext) {
                 },
                 tooltip: {
                     enabled: true,
-                    mode: 'index',
-                    intersect: false,
+                    mode: 'nearest',
+                    intersect: true,
+                    shared: false,
                     filter: function(tooltipItem) {
                         // Only show tooltips for non-zero values
                         return tooltipItem.parsed.y > 0;
@@ -458,8 +461,7 @@ function renderNeedsAttentionChart(uniqueResultsWithTestContext) {
                         label: function(context) {
                             const testName = context.dataset.label;
                             const percentage = context.parsed.y;
-                            const totalRecords = uniqueResults.length;
-                            const count = Math.round((percentage / 100) * totalRecords);
+                            const count = Math.round((percentage / 100) * totalNeedsAttentionRecords);
                             return `${testName}: ${percentage.toFixed(1)}% (${formatNumber(count)} records)`;
                         }
                     }
@@ -477,6 +479,10 @@ function renderNeedsAttentionChart(uniqueResultsWithTestContext) {
                     beginAtZero: true,
                     grid: {
                         display: false
+                    },
+                    title: {
+                        display: true,
+                        text: '% of needs attention records'
                     },
                     ticks: {
                         callback: function(value) {
