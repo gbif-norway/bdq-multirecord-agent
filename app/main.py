@@ -381,7 +381,7 @@ def _format_breakdown_button_html(dashboard_url: str) -> str:
                   text-decoration: none; 
                   border-radius: 3px; 
                   font-weight: bold; ">
-            &#x1F9FE; View your report &rarr;
+            &#x1F9FE; View your dashboard &rarr;
         </a>
     </div>
     """
