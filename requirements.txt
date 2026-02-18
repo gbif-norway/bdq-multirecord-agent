@@ -14,3 +14,4 @@ pytest-mock>=3.12.0
 httpx>=0.27.0
 tenacity>=8.2.0
 minio>=7.2.0
+google-cloud-tasks>=2.16.0

@@ -1,3 +1,4 @@
+import os
 import requests
 import logging
 import asyncio
@@ -5,7 +6,7 @@ import time
 import pandas as pd
 import numpy as np
 from typing import List, Dict, Any, Optional, Tuple
-from app.utils.helper import log, http_get_with_retry, http_post_with_retry
+from app.utils.helper import log
 
 from dataclasses import dataclass, field
 
@@ -24,106 +25,98 @@ class BDQTest:
 
 
 class BDQAPIService:
-    """Service for interacting with BDQ API"""
+    """Service for interacting with BDQ API (now running locally in the same container)"""
     
     def __init__(self):
-        self.bdq_api_base = "https://bdq-api-638241344017.europe-west1.run.app"
+        # Use localhost since BDQ API is now running in the same container
+        bdq_port = os.getenv("BDQ_API_PORT", "8081")
+        self.bdq_api_base = f"http://localhost:{bdq_port}"
         self.tests_endpoint = f"{self.bdq_api_base}/api/v1/tests"  # tests_endpoint returns an of dicts that look like BDQTest
         self.batch_endpoint = f"{self.bdq_api_base}/api/v1/tests/run/batch"  # see readme
         self.failed_tests: List[str] = []
     
-    def _post_batch_with_backoff(self, payload: List[Dict[str, Any]], timeout: int = 1800) -> Tuple[bool, Optional[List[Dict[str, Any]]]]:
-        """Post the payload with escalating chunking: 1 → 2 → 4 → 8.
+    def _post_batch(self, payload: List[Dict[str, Any]], max_retries: int = 3) -> Tuple[bool, Optional[List[Dict[str, Any]]]]:
+        """Post the payload to local BDQ API service with retry logic.
 
         Returns (success, results) where results is a list of dicts aligned to input order
         when success is True; otherwise (False, None).
         """
-        def _post_chunk(chunk: List[Dict[str, Any]]):
-            resp = http_post_with_retry(self.batch_endpoint, json=chunk, timeout=timeout)
-            return resp.json()
-
-        def _partition(seq: List[Any], parts: int) -> List[List[Any]]:
-            n = len(seq)
-            if parts <= 1 or n == 0:
-                return [seq]
-            base, rem = divmod(n, parts)
-            chunks = []
-            start = 0
-            for i in range(parts):
-                size = base + (1 if i < rem else 0)
-                end = start + size
-                chunks.append(seq[start:end])
-                start = end
-            return chunks
-
-        n_total = len(payload)
-        for chunks_count in (1, 2, 4, 8, 16):
-            slices = _partition(payload, chunks_count)
-            t0 = time.time()
-            results: List[Dict[str, Any]] = []
-            had_timeout = False
+        import time
+        
+        for attempt in range(max_retries):
             try:
-                for idx, ch in enumerate(slices):
-                    if not ch:
-                        continue
-                    cstart = time.time()
-                    try:
-                        r = _post_chunk(ch)
-                        results.extend(r)
-                        log(
-                            f"BDQ sub-batch {chunks_count}/{idx+1}: {len(ch)} items, {time.time() - cstart:.2f}s"
-                        )
-                    except requests.Timeout:
-                        had_timeout = True
-                        log(
-                            f"BDQ sub-batch {chunks_count}/{idx+1} timed out for {len(ch)} items",
-                            "WARNING",
-                        )
-                        # No need to continue this stage; escalate
-                        break
-                if not had_timeout and len(results) == n_total:
-                    if chunks_count == 1:
-                        log(
-                            f"BDQ batch posted in 1 chunk: {n_total} items, {time.time() - t0:.2f}s"
-                        )
-                    else:
-                        log(
-                            f"BDQ batch succeeded in {chunks_count} chunks: total {n_total} items, {time.time() - t0:.2f}s"
-                        )
-                    return True, results
-                if had_timeout:
-                    # escalate to next chunk level
+                # Local calls don't need timeout handling or chunking - the Java service handles concurrency
+                resp = requests.post(self.batch_endpoint, json=payload, timeout=3600)  # 1 hour max for very large batches
+                resp.raise_for_status()
+                results = resp.json()
+                if len(results) != len(payload):
+                    log(
+                        f"BDQ batch mismatch: expected {len(payload)} results, got {len(results)}",
+                        "ERROR",
+                    )
+                    return False, None
+                return True, results
+            except requests.exceptions.ConnectionError as e:
+                # BDQ API might not be ready yet (cold start)
+                wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
+                if attempt < max_retries - 1:
+                    log(
+                        f"BDQ API not ready (attempt {attempt + 1}/{max_retries}), retrying in {wait_time}s: {e}",
+                        "WARNING",
+                    )
+                    time.sleep(wait_time)
                     continue
-                # If we reach here without timeouts but size mismatch, it's an error
+                else:
+                    log(
+                        f"BDQ batch request failed after {max_retries} attempts: {type(e).__name__}: {e}",
+                        "ERROR",
+                    )
+                    return False, None
+            except requests.exceptions.RequestException as e:
                 log(
-                    f"BDQ {chunks_count}-chunk mismatch: expected {n_total} results, got {len(results)}",
+                    f"BDQ batch request failed: {type(e).__name__}: {e}",
                     "ERROR",
                 )
                 return False, None
             except Exception as e:
-                if isinstance(e, requests.Timeout):
-                    # Should be captured above, but handle defensively
-                    continue
                 log(
-                    f"BDQ batch failed during {chunks_count}-chunk attempt: {type(e).__name__}: {e}",
+                    f"BDQ batch failed: {type(e).__name__}: {e}",
                     "ERROR",
                 )
                 return False, None
-
-        log(
-            "BDQ batch timed out even with 16 chunks; aborting for manual inspection",
-            "ERROR",
-        )
+        
         return False, None
     
-    def _filter_applicable_tests(self, csv_columns: List[str]) -> List[BDQTest]:
+    def _filter_applicable_tests(self, csv_columns: List[str], max_retries: int = 3) -> List[BDQTest]:
         """Filter tests that can be applied to the CSV columns"""
-        all_tests_response = http_get_with_retry(self.tests_endpoint, timeout=30)
-        all_tests = [BDQTest(**test) for test in all_tests_response.json()]
+        import time
+        
+        for attempt in range(max_retries):
+            try:
+                resp = requests.get(self.tests_endpoint, timeout=30)
+                resp.raise_for_status()
+                all_tests = [BDQTest(**test) for test in resp.json()]
+                return all_tests
+            except requests.exceptions.ConnectionError as e:
+                # BDQ API might not be ready yet (cold start)
+                wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
+                if attempt < max_retries - 1:
+                    log(
+                        f"BDQ API not ready for tests list (attempt {attempt + 1}/{max_retries}), retrying in {wait_time}s: {e}",
+                        "WARNING",
+                    )
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    log(f"Failed to fetch BDQ tests list after {max_retries} attempts: {e}", "ERROR")
+                    raise
+            except requests.exceptions.RequestException as e:
+                log(f"Failed to fetch BDQ tests list: {e}", "ERROR")
+                raise
         
         applicable_tests = [
             test for test in all_tests
-            if (test.type != "Measure" and  # Skip measure testsl
+            if (test.type != "Measure" and  # Skip measure tests
                 all(col in csv_columns for col in test.actedUpon) and
                 all(col in csv_columns for col in test.consulted))
         ]
@@ -185,13 +178,11 @@ class BDQAPIService:
 
             # Call batch endpoint (results returned in same order)
             api_start_time = time.time()
-            success, batch_results = self._post_batch_with_backoff(
-                unique_test_candidates_batch_request, timeout=1800
-            )
+            success, batch_results = self._post_batch(unique_test_candidates_batch_request)
             api_duration = time.time() - api_start_time
             if not success or batch_results is None:
                 log(
-                    f"Skipping test {test.id}: batch requests timed out after 16-chunk split attempts",
+                    f"Skipping test {test.id}: batch request failed",
                     "ERROR",
                 )
                 # Track failed test and continue with others
