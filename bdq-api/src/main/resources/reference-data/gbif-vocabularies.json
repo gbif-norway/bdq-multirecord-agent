@@ -1,0 +1,11 @@
+{
+  "metadata": {
+    "sourceUrl": "https://api.gbif.org/v1/vocabularies",
+    "retrieved": "2025-10-22T13:40:47.315101Z"
+  },
+  "vocabularies": {
+    "basisOfRecord": [],
+    "establishmentMeans": [],
+    "degreeOfEstablishment": []
+  }
+}

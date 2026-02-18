@@ -19,6 +19,11 @@ class LLMService:
                 
     def generate_openai_intelligent_summary(self, prompt, test_results_csv_text, original_csv_text, curated_csv_text=None, recipient_name: str = None, api_key=None):
         """Generate summary using the Responses API (prompt-only; no file attachments)."""
+        api_key = api_key or self.openai_api_key
+        if not api_key:
+            log("OPENAI_API_KEY not set; skipping LLM summary generation", "WARNING")
+            return "<p><strong>Summary unavailable:</strong> language model credentials are not configured in this environment.</p>"
+
         client = OpenAI(api_key=api_key)
 
         # Use GPT-5 as requested; no fallback to other models

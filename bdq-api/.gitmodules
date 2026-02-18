@@ -1,0 +1,12 @@
+[submodule "lib/geo_ref_qc"]
+	path = lib/geo_ref_qc
+	url = https://github.com/FilteredPush/geo_ref_qc.git
+[submodule "lib/sci_name_qc"]
+	path = lib/sci_name_qc
+	url = https://github.com/FilteredPush/sci_name_qc.git
+[submodule "lib/event_date_qc"]
+	path = lib/event_date_qc
+	url = https://github.com/FilteredPush/event_date_qc.git
+[submodule "lib/rec_occur_qc"]
+	path = lib/rec_occur_qc
+	url = https://github.com/FilteredPush/rec_occur_qc.git

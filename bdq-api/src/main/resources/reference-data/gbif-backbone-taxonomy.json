@@ -1,0 +1,35 @@
+{
+  "ranks": [
+    {
+      "kingdom": "Animalia",
+      "phylum": "Chordata",
+      "clazz": "Aves",
+      "order": "Passeriformes",
+      "family": "Corvidae",
+      "genus": "Corvus",
+      "canonicalName": "Corvus brachyrhynchos"
+    },
+    {
+      "kingdom": "Animalia",
+      "phylum": "Chordata",
+      "clazz": "Mammalia",
+      "order": "Carnivora",
+      "family": "Ursidae",
+      "genus": "Ursus",
+      "canonicalName": "Ursus arctos"
+    },
+    {
+      "kingdom": "Plantae",
+      "phylum": "Tracheophyta",
+      "clazz": "Magnoliopsida",
+      "order": "Rosales",
+      "family": "Rosaceae",
+      "genus": "Rubus",
+      "canonicalName": "Rubus idaeus"
+    }
+  ],
+  "metadata": {
+    "sourceUrl": "https://hosted-datasets.org/gbif/backbone",
+    "retrieved": "2024-03-10T00:00:00Z"
+  }
+}
