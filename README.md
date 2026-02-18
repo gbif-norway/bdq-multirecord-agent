@@ -132,9 +132,8 @@ The service uses **Cloud Tasks** for reliable email processing that survives con
 - **Guaranteed delivery**: Tasks are persisted and survive container shutdowns
 - **Automatic retries**: Cloud Tasks retries failed tasks up to 3 times
 - **Cost effective**: No need for `min-instances=1` - containers can scale to zero
-- **Fallback mode**: If Cloud Tasks is not configured, falls back to async tasks
 
-See [CLOUD_TASKS_SETUP.md](CLOUD_TASKS_SETUP.md) for setup instructions.
+**Required**: Cloud Tasks must be configured before deployment. See [CLOUD_TASKS_SETUP.md](CLOUD_TASKS_SETUP.md) for setup instructions.
 
 ### How It Works
 

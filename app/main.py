@@ -5,12 +5,9 @@ from typing import Dict, Any
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request, Query
 from fastapi.exceptions import RequestValidationError
-from fastapi import BackgroundTasks
 from fastapi.responses import JSONResponse
 import uvicorn
 from dotenv import load_dotenv
-import base64
-import asyncio
 import json
 
 from app.services.email_service import EmailService
@@ -200,43 +197,53 @@ async def _handle_email_processing(email_data: Dict[str, Any]):
     
 
 @app.post("/email/incoming")
-async def process_incoming_email(request: Request, background_tasks: BackgroundTasks):
+async def process_incoming_email(request: Request):
     """
     Accept incoming email and immediately return 200. Heavy processing runs via Cloud Tasks.
-    Falls back to asyncio.create_task() if Cloud Tasks is not configured.
     """
-    # Log the raw request for debugging
     body = await request.body()
     log(f"Received request with {len(body)} bytes")
     
     try:
-        raw_data = json.loads(body.decode('utf-8'))
+        email_data = json.loads(body.decode('utf-8'))
     except json.JSONDecodeError as e:
         log(f"Invalid JSON in request: {e}", "ERROR")
-        return JSONResponse(status_code=400, content={"status": "error", "message": "Invalid JSON in request"})
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "message": "Invalid JSON in request"}
+        )
     
-    # Try to create Cloud Task first (recommended for production)
-    if cloud_tasks_service.is_enabled():
-        task_name = cloud_tasks_service.create_email_processing_task(raw_data)
-        if task_name:
-            log(f"Email processing queued via Cloud Tasks: {task_name}")
-            return JSONResponse(
-                status_code=200,
-                content={
-                    "status": "accepted",
-                    "message": "Email queued for processing via Cloud Tasks",
-                    "task_name": task_name
-                }
-            )
-        else:
-            log("Cloud Tasks creation failed, falling back to async task", "WARNING")
+    # Create Cloud Task for email processing
+    if not cloud_tasks_service.is_enabled():
+        log("Cloud Tasks not configured", "ERROR")
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "error",
+                "message": "Cloud Tasks not configured. Please set required environment variables."
+            }
+        )
     
-    # Fallback to async task if Cloud Tasks is not available
-    # Use the running loop to schedule the async handler without blocking the response
-    asyncio.create_task(_handle_email_processing(raw_data))
-    log("Email processing scheduled via async task (fallback mode)")
+    task_name = cloud_tasks_service.create_email_processing_task(email_data)
+    if not task_name:
+        log("Failed to create Cloud Task", "ERROR")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "error",
+                "message": "Failed to queue email for processing"
+            }
+        )
     
-    return JSONResponse(status_code=200, content={"status": "accepted", "message": "Email queued for processing"})
+    log(f"Email processing queued via Cloud Tasks: {task_name}")
+    return JSONResponse(
+        status_code=200,
+        content={
+            "status": "accepted",
+            "message": "Email queued for processing",
+            "task_name": task_name
+        }
+    )
 
 @app.post("/tasks/process-email")
 async def process_email_task(request: Request):
@@ -244,14 +251,12 @@ async def process_email_task(request: Request):
     Worker endpoint called by Cloud Tasks to process email.
     This endpoint is invoked by Cloud Tasks service, not directly by Apps Script.
     """
-    # Verify this is called by Cloud Tasks (optional but recommended)
-    # Cloud Tasks adds specific headers we can check
-    cloud_tasks_header = request.headers.get("X-CloudTasks-QueueName")
-    if cloud_tasks_header:
-        log(f"Received Cloud Task request from queue: {cloud_tasks_header}")
+    # Verify this is called by Cloud Tasks
+    cloud_tasks_queue = request.headers.get("X-CloudTasks-QueueName")
+    if cloud_tasks_queue:
+        log(f"Processing Cloud Task from queue: {cloud_tasks_queue}")
     else:
-        # Allow direct calls for testing/debugging, but log a warning
-        log("Warning: /tasks/process-email called without Cloud Tasks headers (direct call)", "WARNING")
+        log("Warning: /tasks/process-email called without Cloud Tasks headers", "WARNING")
     
     try:
         email_data = await request.json()
@@ -262,7 +267,7 @@ async def process_email_task(request: Request):
             content={"status": "error", "message": "Invalid JSON in request"}
         )
     
-    # Process email using the same handler
+    # Process email - errors will cause Cloud Tasks to retry
     try:
         await _handle_email_processing(email_data)
         return JSONResponse(
@@ -272,7 +277,7 @@ async def process_email_task(request: Request):
     except Exception as e:
         log(f"Error processing email task: {e}", "ERROR")
         log(f"Traceback: {traceback.format_exc()}", "ERROR")
-        # Return error so Cloud Tasks can retry
+        # Return 500 so Cloud Tasks will retry
         return JSONResponse(
             status_code=500,
             content={"status": "error", "message": str(e)}

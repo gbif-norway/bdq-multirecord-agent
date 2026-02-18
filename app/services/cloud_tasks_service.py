@@ -6,46 +6,54 @@ from app.utils.helper import log
 
 
 class CloudTasksService:
-    """Service for creating and managing Cloud Tasks"""
+    """Service for creating and managing Cloud Tasks for email processing"""
     
     def __init__(self):
         self.project_id = os.getenv("GOOGLE_CLOUD_PROJECT")
         self.location = os.getenv("CLOUD_TASKS_LOCATION", "europe-west1")
         self.queue_name = os.getenv("CLOUD_TASKS_QUEUE_NAME", "email-processing-queue")
         self.service_url = os.getenv("CLOUD_RUN_SERVICE_URL")
+        self.client: Optional[tasks_v2.CloudTasksClient] = None
         
-        # Initialize Cloud Tasks client
-        self.client = None
-        if self.project_id:
-            try:
-                self.client = tasks_v2.CloudTasksClient()
-            except Exception as e:
-                log(f"Failed to initialize Cloud Tasks client: {e}", "WARNING")
-                self.client = None
+        self._initialize_client()
+    
+    def _initialize_client(self) -> None:
+        """Initialize Cloud Tasks client if configuration is available"""
+        if not self.project_id:
+            log("GOOGLE_CLOUD_PROJECT not set, Cloud Tasks disabled", "WARNING")
+            return
+        
+        try:
+            self.client = tasks_v2.CloudTasksClient()
+        except Exception as e:
+            log(f"Failed to initialize Cloud Tasks client: {e}", "ERROR")
+            self.client = None
     
     def is_enabled(self) -> bool:
-        """Check if Cloud Tasks is properly configured"""
+        """Check if Cloud Tasks is properly configured and ready to use"""
         return (
             self.client is not None and
             self.project_id is not None and
-            self.service_url is not None
+            self.service_url is not None and
+            self.queue_name is not None
         )
     
     def create_email_processing_task(self, email_data: Dict[str, Any]) -> Optional[str]:
         """
         Create a Cloud Task for email processing.
         
-        Returns task name if successful, None otherwise.
+        Args:
+            email_data: Email data dictionary to be processed
+            
+        Returns:
+            Task name if successful, None otherwise
         """
         if not self.is_enabled():
-            log("Cloud Tasks not enabled or not configured", "WARNING")
             return None
         
         try:
-            # Construct the fully qualified queue name
             parent = self.client.queue_path(self.project_id, self.location, self.queue_name)
             
-            # Construct the task
             task = {
                 'http_request': {
                     'http_method': tasks_v2.HttpMethod.POST,
@@ -57,10 +65,8 @@ class CloudTasksService:
                 }
             }
             
-            # Create the task
             response = self.client.create_task(request={'parent': parent, 'task': task})
-            
-            log(f"Created Cloud Task: {response.name} for email processing")
+            log(f"Created Cloud Task: {response.name}")
             return response.name
             
         except Exception as e:
