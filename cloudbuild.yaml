@@ -2,12 +2,9 @@ options:
   logging: CLOUD_LOGGING_ONLY   # or your bucket option
 
 steps:
-# Initialize git submodules (root and bdq-api FilteredPush libs)
+# Initialize git submodules (needed for TDWG BDQ test specifications and FilteredPush libs)
 - name: gcr.io/cloud-builders/git
   args: ['submodule', 'update', '--init', '--recursive']
-- name: gcr.io/cloud-builders/git
-  args: ['submodule', 'update', '--init', '--recursive']
-  dir: bdq-api
 
 - name: gcr.io/cloud-builders/docker
   args: ['build',
