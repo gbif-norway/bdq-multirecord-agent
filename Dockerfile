@@ -6,17 +6,29 @@ WORKDIR /bdq-api
 # Install git (needed for submodule initialization if needed)
 RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
 
-# Copy BDQ API source and pom.xml
+# Copy BDQ API source files
 COPY bdq-api/pom.xml .
 COPY bdq-api/src ./src
 COPY bdq-api/TG2_tests.csv .
 COPY bdq-api/.mvn.settings.xml ./settings.xml
 
-# Copy FilteredPush libs from submodules (initialized by Cloud Build)
-# These submodules may have local changes, so use them instead of cloning fresh
-# If lib doesn't exist, initialize submodules and then copy
-RUN mkdir -p lib || true
-COPY bdq-api/lib ./lib
+# Copy bdq-api directory to check for lib submodules, then use them or clone
+COPY bdq-api ./bdq-api-temp
+
+# Use FilteredPush libs from submodules if they exist and are populated, otherwise clone them
+# Cloud Build should initialize submodules, but if they're empty/missing, clone from GitHub
+RUN if [ -d "bdq-api-temp/lib" ] && [ "$(ls -A bdq-api-temp/lib 2>/dev/null)" ] && [ -d "bdq-api-temp/lib/geo_ref_qc/.git" ]; then \
+      echo "Using submodules from repo..." && \
+      cp -r bdq-api-temp/lib ./lib; \
+    else \
+      echo "Submodules not found or empty, cloning FilteredPush libs from GitHub..." && \
+      mkdir -p lib && \
+      git clone --depth 1 https://github.com/FilteredPush/sci_name_qc.git lib/sci_name_qc && \
+      git clone --depth 1 https://github.com/FilteredPush/geo_ref_qc.git lib/geo_ref_qc && \
+      git clone --depth 1 https://github.com/FilteredPush/event_date_qc.git lib/event_date_qc && \
+      git clone --depth 1 https://github.com/FilteredPush/rec_occur_qc.git lib/rec_occur_qc; \
+    fi && \
+    rm -rf bdq-api-temp
 
 # Build and install FilteredPush libs into local Maven repo (dependency order: sci_name_qc first, then geo_ref_qc)
 # Use Maven settings.xml to access Sonatype OSS snapshots
