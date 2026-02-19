@@ -13,25 +13,24 @@ All local development should be done in Docker containers.
 3. Background Processing: Email processing runs asynchronously in the background using asyncio.create_task(). Errors are logged but response to Apps Script is always 200.
 4. CSV Extraction: Extracts and validates CSV attachments
 5. Core Detection: Identifies occurrence vs taxon core based on column presence
-6. Test Discovery: Finds applicable BDQ tests from external BDQ API (also hosted in cloudrun in same region)
-   - Queries `/api/v1/tests` endpoint to get available tests
+6. Test Discovery: Finds applicable BDQ tests from integrated BDQ API (runs locally in same container)
+   - Queries `/api/v1/tests` endpoint on localhost to get available tests
    - Filters tests based on CSV column availability
-7. Test Execution: Runs tests on unique data combinations via external BDQ API
+7. Test Execution: Runs tests on unique data combinations via integrated BDQ API
    - Deduplicates test candidates to avoid redundant API calls
-   - Calls `/api/v1/tests/run/batch` endpoint with unique parameter combinations
-   - Tries a single bulk request first with a total watchdog deadline (420s) and 30s heartbeat logs; on failure or timeout falls back to chunked requests (up to 3000 items per chunk, 300s per-chunk timeout) with progress logging
-   - External API handles all BDQ test execution logic
-8. Result Processing: Expands test results to all matching rows
+   - Calls `/api/v1/tests/run/batch` endpoint on localhost with unique parameter combinations
+   - Integrated Java service handles all BDQ test execution logic
+8. Result Processing: Keeps results at the unique-combination level with a `count` of affected rows (no per-row expansion)
 9. Summary Generation: Creates intelligent summaries using LLM
 10. Email Reply: Sends results with summary and attachments via Google Apps Script
-   - CSV of Raw results: per row × per applicable test → `occurrenceID or taxonID`, `status`, `result`, `comment`, `amendment` (if any)
-   - CSV of Amended dataset: applies proposed changes from Amendment results
+   - CSV of Unique results: one row per unique combination tested including actedUpon/consulted values, `status`, `result`, and `count`
+   - CSV of Amended dataset: applies proposed changes from Amendment/FILLED_IN results to original data using value-based matching (no row IDs)
 
 ## BDQ API 
 
-A separate app, a REST API wrapper for [FilteredPush](https://github.com/FilteredPush) biodiversity data quality validation libraries. FilteredPush provides implementations of BDQ (Biodiversity Data Quality) Tests via the FFDQ API. This API uses those libraries directly as github submodules (although it is possible to fork these and make custom implementations if needed by this project), mapping their responses into a simple JSON shape. The BDQ standard defines a library of Tests documented in the TDWG BDQ repository in the `TG2_tests.csv` file. 
+The BDQ API is now integrated into this service and runs as a Java Spring Boot application in the same container. It's a REST API wrapper for [FilteredPush](https://github.com/FilteredPush) biodiversity data quality validation libraries. FilteredPush provides implementations of BDQ (Biodiversity Data Quality) Tests via the FFDQ API. The BDQ API uses those libraries directly, mapping their responses into a simple JSON shape. The BDQ standard defines a library of Tests documented in the TDWG BDQ repository in the `bdq-api/TG2_tests.csv` file.
 
-The BDQ API is built by the same developer as this project and is able to be adjusted as needed based on the requirements of this project - no project uses it or depends on it.
+The BDQ API runs on port 8081 (configurable via `BDQ_API_PORT` environment variable) and communicates with the Python FastAPI service via localhost HTTP calls, eliminating network timeouts and improving performance.
 
 ### Tests List Endpoint 
 
@@ -113,13 +112,33 @@ All tests must be run in Docker containers as per development rules [[memory:774
 docker compose --profile test run --rm test-runner
 ```
 
-### BDQ API Integration Tests
-
+To run the live OpenAI Responses API test (requires OPENAI_API_KEY in .env.test):
 ```bash
-# Run the full integration test suite
-docker compose --profile test run --rm test-runner python -m pytest tests/test_bdq_api_integration.py -v -s
+docker compose --profile test run --rm -e OPENAI_LIVE=1 test-runner python -m pytest tests/test_openai_live.py -v -s
 ```
 
-Some tests use the live BDQ API at `https://bdq-api-638241344017.europe-west1.run.app` to ensure the service is working as expected.
+### Architecture
 
-Future Considerations: For production at scale, consider migrating to Cloud Tasks or Pub/Sub for more robust background processing with guaranteed delivery and retry mechanisms.
+The service is a **single unified service** deployed as one container:
+- **External-facing**: Python FastAPI (port 8080) - handles all HTTP requests
+- **Internal**: Java BDQ API (port 8081, localhost only) - handles BDQ test execution using FilteredPush libraries
+
+The Java BDQ API runs internally and is only accessed via localhost HTTP calls from Python. This eliminates network timeouts while keeping the services decoupled. Both processes start automatically when the container starts, with Python waiting for Java to be ready before accepting requests.
+
+## Cloud Tasks Integration
+
+The service uses **Cloud Tasks** for reliable email processing that survives container shutdowns:
+
+- **Guaranteed delivery**: Tasks are persisted and survive container shutdowns
+- **Automatic retries**: Cloud Tasks retries failed tasks up to 3 times
+- **Cost effective**: No need for `min-instances=1` - containers can scale to zero
+
+**Required**: Cloud Tasks must be configured before deployment. See [CLOUD_TASKS_SETUP.md](CLOUD_TASKS_SETUP.md) for setup instructions.
+
+### How It Works
+
+1. Apps Script sends email → FastAPI returns 200 immediately
+2. FastAPI creates Cloud Task with email data
+3. Cloud Tasks calls `/tasks/process-email` worker endpoint
+4. Worker processes email and sends reply
+5. If container dies, Cloud Tasks automatically retries

@@ -1,0 +1,10 @@
+test_id,test_type,status,result,comment,actedUpon,consulted,count
+VALIDATION_COUNTRYCODE_STANDARD,Validation,RUN_HAS_RESULT,NOT_COMPLIANT,Invalid country code format,dwc:countryCode=XX,dwc:countryCode=XX,5
+AMENDMENT_COUNTRYCODE_STANDARDIZED,Amendment,AMENDED,dwc:countryCode=US,Standardized country code,dwc:countryCode=United States,dwc:countryCode=United States,7
+VALIDATION_EVENTDATE_STANDARD,Validation,RUN_HAS_RESULT,NOT_COMPLIANT,Date format invalid,dwc:eventDate=01/02/03,dwc:eventDate=01/02/03,4
+AMENDMENT_EVENTDATE_STANDARDIZED,Amendment,AMENDED,dwc:eventDate=2003-02-01,Standardized date format,dwc:eventDate=01/02/03,dwc:eventDate=01/02/03,6
+VALIDATION_COORDINATESCOUNTRYCODE_CONSISTENT,Validation,RUN_HAS_RESULT,NOT_COMPLIANT,Coordinates outside country boundaries,dwc:countryCode=CL|dwc:decimalLatitude=-41.05|dwc:decimalLongitude=-71.53,dwc:countryCode=CL|dwc:decimalLatitude=-41.05|dwc:decimalLongitude=-71.53,3
+AMENDMENT_COORDINATES_FROM_VERBATIM,Amendment,FILLED_IN,dwc:decimalLatitude=-41.0526|dwc:decimalLongitude=-71.5311|dwc:geodeticDatum=EPSG:4326,Converted from verbatim,dwc:verbatimLatitude=-41.0526|dwc:verbatimLongitude=-71.5311|dwc:verbatimSRS=EPSG:4326,dwc:verbatimLatitude=-41.0526|dwc:verbatimLongitude=-71.5311|dwc:verbatimSRS=EPSG:4326,4
+VALIDATION_DECIMALLONGITUDE_INRANGE,Validation,RUN_HAS_RESULT,NOT_COMPLIANT,Longitude out of range,dwc:decimalLongitude=181.0554,dwc:decimalLongitude=181.0554,2
+VALIDATION_TAXONRANK_STANDARD,Validation,RUN_HAS_RESULT,NOT_COMPLIANT,Invalid taxonomic rank,dwc:taxonRank=sp.,dwc:taxonRank=sp.,2
+AMENDMENT_TAXONRANK_STANDARDIZED,Amendment,AMENDED,dwc:taxonRank=species,Standardized rank format,dwc:taxonRank=sp.,dwc:taxonRank=sp.,3

@@ -5,7 +5,7 @@ import hmac
 import hashlib
 import json
 from typing import Optional, List
-from app.utils.helper import log
+from app.utils.helper import log, http_post_with_retry
 
 class EmailService:
     """Service for handling email operations"""
@@ -86,7 +86,7 @@ class EmailService:
         log("All CSV-like attachments were empty or undecodable", "WARNING")
         return None, None
     
-    async def send_reply(self, email_data: dict, body: str, attachments: Optional[List[dict]] = None):
+    async def send_reply(self, email_data: dict, body: str, attachments: Optional[List[dict]] = None, to_email: Optional[str] = None):
         """Send reply email with optional attachments"""
         if not self.gmail_send_endpoint:
             log("GMAIL_SEND endpoint not configured", "ERROR")
@@ -101,13 +101,18 @@ class EmailService:
             "htmlBody": body,
             "attachments": attachments or []
         }
+        
+        # Add specific recipient if provided (for debug emails)
+        if to_email:
+            reply_data["to"] = to_email
+        
         log(f"Reply data: {reply_data}")
         
         # Convert to JSON string for HMAC
         body_json = json.dumps(reply_data)
         signature = self._generate_hmac_signature(body_json)
         
-        response = requests.post(
+        response = http_post_with_retry(
             self.gmail_send_endpoint,
             params={"X-Signature": signature, "signature": signature},  # Apps Script can't reliably read headers
             data=body_json,
@@ -117,29 +122,24 @@ class EmailService:
             },
             timeout=30
         )
-        response.raise_for_status()
+        # Even when Apps Script errors, it often returns HTTP 200 with an HTML error page.
+        # Log more context and detect non-OK bodies to aid debugging in prod.
+        resp_ct = (response.headers.get('Content-Type') or '').lower()
+        resp_text = (response.text or '')
+        body_preview = resp_text[:500]
         log(
-            f"Sent reply to {email_data.get('headers').get('from')}; status={response.status_code}; body={(response.text or '')[:200]}"
+            f"Sent reply to {to_email or email_data.get('headers', {}).get('from')}; status={response.status_code}; content_type={resp_ct}; body={body_preview}"
         )
+        # Expect plain text 'ok' from Apps Script on success
+        if 'text/html' in resp_ct or not resp_text.strip().lower().startswith('ok'):
+            log("Gmail send webapp returned non-ok response; likely misconfig or script error", "ERROR")
     
     async def send_error_reply(self, email_data: dict, error_message: str):
         """Send error reply email"""
         error_body = f"<p>Error processing your request:</p><p>{error_message}</p>"
         await self.send_reply(email_data, error_body)
     
-    async def send_results_reply(self, email_data: dict, body: str, raw_results_csv: str, amended_dataset_csv: str):
-        """Send results reply email with CSV attachments"""
-        attachments = [
-            {
-                "filename": "bdq_raw_results.csv",
-                "mimeType": "text/csv",
-                "contentBase64": base64.b64encode(raw_results_csv.encode('utf-8')).decode('utf-8')
-            },
-            {
-                "filename": "amended_dataset.csv", 
-                "mimeType": "text/csv",
-                "contentBase64": base64.b64encode(amended_dataset_csv.encode('utf-8')).decode('utf-8')
-            }
-        ]
-        await self.send_reply(email_data, body, attachments)
+    async def send_results_reply(self, email_data: dict, body: str):
+        """Send results reply email without attachments (files are available via dashboard links)"""
+        await self.send_reply(email_data, body)
     

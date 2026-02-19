@@ -1,10 +1,23 @@
 
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Callable
 import pandas as pd
 import logging
 import requests
 import os
 from pydantic import BaseModel
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential_jitter,
+    before_sleep_log,
+)
+
+class RetryableHTTPError(Exception):
+    """Raised to signal that an HTTP response should be retried (e.g., 429/5xx)."""
+    def __init__(self, status_code: int, message: str = ""):
+        super().__init__(f"Retryable HTTP {status_code}: {message}")
+        self.status_code = status_code
 
 # Minimal root logger config so Cloud Run captures logs
 _LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -31,24 +44,156 @@ def log(message: str, level: str = "INFO"):
     else:
         logger.info(message)
     
-    # Send to Discord
+    # Send to Discord (truncate to avoid exceeding limits)
     webhook_url = os.getenv("DISCORD_WEBHOOK")
     if webhook_url:
         try:
-            requests.post(webhook_url, json={"content": message}, timeout=10)
+            max_discord = 1800
+            content = message if len(message) <= max_discord else (message[:max_discord] + "\n...(truncated for Discord)")
+            requests.post(webhook_url, json={"content": content}, timeout=10)
         except Exception:
             pass  # Don't let Discord failures break logging
 
 
-def get_relevant_test_contexts(test_ids: List[str]) -> str:
-    """Get relevant BDQ test contexts for the given test IDs"""
-    bdq_tests_csv_path = os.path.join(os.path.dirname(__file__), '..', 'TG2_tests.csv')
-    bdq_tests_df = pd.read_csv(bdq_tests_csv_path, dtype=str).fillna('')
-    relevant_tests = bdq_tests_df[bdq_tests_df['Label'].isin(test_ids)]
-    columns_needed = ['Label', 'InformationElement:ActedUpon', 'InformationElement:Consulted', 'ExpectedResponse', 'Description', 'Examples', 'Notes', 'IE Class', 'UseCases']
-    tests = relevant_tests[columns_needed].copy()
-    tests = tests.rename(columns={'IE Class': 'Information Element Class'})
-    return f"\n## BDQ TEST CONTEXT\nThe following tests were run on the dataset:\n\n{str(tests)}"
+# ---------- Tenacity-backed HTTP helpers ----------
+
+def _should_retry_status(status_code: int) -> bool:
+    # Retry on HTTP 429 (rate limit) and all 5xx
+    return status_code == 429 or 500 <= status_code < 600
+
+
+def _requests_retry_decorator():
+    # Backoff with jitter; cap attempts to keep latency reasonable
+    return retry(
+        reraise=True,
+        stop=stop_after_attempt(5),
+        wait=wait_exponential_jitter(initial=1, max=30),
+        retry=retry_if_exception_type((
+            requests.Timeout,
+            requests.ConnectionError,
+            RetryableHTTPError,
+        )),
+        before_sleep=before_sleep_log(logging.getLogger(__name__), logging.WARNING),
+    )
+
+
+@_requests_retry_decorator()
+def http_get_with_retry(url: str, **kwargs) -> requests.Response:
+    resp = requests.get(url, **kwargs)
+    # Coerce status_code to int when possible to avoid issues with MagicMock in tests
+    status_raw = getattr(resp, "status_code", None)
+    status = None
+    try:
+        status = int(status_raw) if status_raw is not None else None
+    except Exception:
+        status = None
+    if status is not None and _should_retry_status(status):
+        # Include a snippet of body for diagnostics when available
+        try:
+            snippet = (getattr(resp, "text", "") or "")[:200]
+        except Exception:
+            snippet = ""
+        raise RetryableHTTPError(status, snippet)
+    # Raise for other errors (e.g., 4xx that we don't want to retry)
+    try:
+        resp.raise_for_status()
+    except AttributeError:
+        # If mocked without raise_for_status, skip
+        pass
+    return resp
+
+
+@_requests_retry_decorator()
+def http_post_with_retry(url: str, **kwargs) -> requests.Response:
+    resp = requests.post(url, **kwargs)
+    status_raw = getattr(resp, "status_code", None)
+    status = None
+    try:
+        status = int(status_raw) if status_raw is not None else None
+    except Exception:
+        status = None
+    if status is not None and _should_retry_status(status):
+        try:
+            snippet = (getattr(resp, "text", "") or "")[:200]
+        except Exception:
+            snippet = ""
+        raise RetryableHTTPError(status, snippet)
+    try:
+        resp.raise_for_status()
+    except AttributeError:
+        pass
+    return resp
+
+
+# ---------- Generic retry decorator for SDK/clients (e.g., OpenAI/MinIO) ----------
+
+def network_retry(exceptions: Optional[tuple] = None, attempts: int = 5):
+    """Return a tenacity retry decorator for transient network/HTTP errors.
+
+    exceptions: tuple of exception classes to retry on. If None, uses a broad default.
+    attempts: max attempts before giving up.
+    """
+    if exceptions is None:
+        # Default broad set; callers can narrow by passing their own tuple
+        exceptions = (
+            requests.Timeout,
+            requests.ConnectionError,
+            RetryableHTTPError,
+            Exception,  # Fallback for client libs without granular exceptions
+        )
+    return retry(
+        reraise=True,
+        stop=stop_after_attempt(attempts),
+        wait=wait_exponential_jitter(initial=1, max=30),
+        retry=retry_if_exception_type(exceptions),
+        before_sleep=before_sleep_log(logging.getLogger(__name__), logging.WARNING),
+    )
+
+
+def get_relevant_test_contexts(test_ids: List[str], max_items: int = 40, max_desc: int = 280) -> str:
+    """Return a compact, human-readable list of relevant BDQ tests.
+
+    Produces a bullet list limited to max_items, with truncated descriptions to keep
+    downstream LLM prompts safely under size limits.
+    """
+    bdq_tests_csv_path = os.path.join(os.path.dirname(__file__), '..', 'TG2_tests_small.csv')
+    df = pd.read_csv(bdq_tests_csv_path, dtype=str).fillna('')
+
+    # Normalize expected columns
+    # We keep only a concise subset for the prompt: id, type, class, description
+    # Column names in the CSV may vary slightly; handle common variants
+    col_map = {
+        'IE Class': 'ie_class',
+        'InformationElement:ActedUpon': 'ie_acted_upon',
+        'InformationElement:Consulted': 'ie_consulted',
+        'Description': 'description',
+        'Notes': 'notes',
+        'Type': 'type',
+        'UseCases': 'usecases',
+        'test_id': 'test_id',
+    }
+    for src, dst in list(col_map.items()):
+        if src in df.columns:
+            df.rename(columns={src: dst}, inplace=True)
+
+    cols = [c for c in ['test_id', 'type', 'ie_class', 'description'] if c in df.columns]
+    if not cols:
+        return ""  # Fallback to empty if unexpected format
+
+    rel = df[df['test_id'].isin(test_ids)][cols]
+    rel = rel.drop_duplicates(subset=['test_id']).head(max_items)
+
+    lines = ["BDQ tests included (truncated):"]
+    for _, row in rel.iterrows():
+        tid = str(row.get('test_id', ''))
+        ttype = str(row.get('type', ''))
+        icls = str(row.get('ie_class', ''))
+        desc = str(row.get('description', ''))[:max_desc]
+        meta_parts = [p for p in [ttype, icls] if p]
+        meta = f" ({', '.join(meta_parts)})" if meta_parts else ""
+        lines.append(f"- {tid}{meta}: {desc}")
+
+    return "\n".join(lines)
 
 def _snapshot_df(df_obj):
     max_rows, max_columns, max_str_len = 10, 10, 70
@@ -215,4 +360,3 @@ def make_columns_unique(df):
 
     df.columns = cols
     return df
-

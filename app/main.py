@@ -3,14 +3,11 @@ import io
 import traceback
 from typing import Dict, Any
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Query
 from fastapi.exceptions import RequestValidationError
-from fastapi import BackgroundTasks
 from fastapi.responses import JSONResponse
 import uvicorn
 from dotenv import load_dotenv
-import base64
-import asyncio
 import json
 
 from app.services.email_service import EmailService
@@ -18,7 +15,8 @@ from app.services.bdq_api_service import BDQAPIService
 from app.services.csv_service import CSVService
 from app.services.llm_service import LLMService
 from app.services.minio_service import MinIOService
-from app.utils.helper import log, str_snapshot, get_relevant_test_contexts
+from app.services.cloud_tasks_service import CloudTasksService
+from app.utils.helper import log, str_snapshot
 import pandas as pd
 
 # Initialize services at module level for dependency injection
@@ -27,6 +25,7 @@ bdq_api_service = BDQAPIService()
 csv_service = CSVService()
 llm_service = LLMService()
 minio_service = MinIOService()
+cloud_tasks_service = CloudTasksService()
 
 # Load environment variables
 load_dotenv()
@@ -50,81 +49,363 @@ async def root():
     """Health check endpoint"""
     return {"message": "BDQ Email Report Service is running"}
 
+@app.get("/health")
+async def health_check():
+    """Health check endpoint that verifies BDQ API is ready"""
+    import requests
+    bdq_port = os.getenv("BDQ_API_PORT", "8081")
+    bdq_health_url = f"http://localhost:{bdq_port}/actuator/health"
+    
+    try:
+        resp = requests.get(bdq_health_url, timeout=2)
+        if resp.status_code == 200:
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "status": "healthy",
+                    "python_service": "ready",
+                    "bdq_api": "ready"
+                }
+            )
+        else:
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "status": "unhealthy",
+                    "python_service": "ready",
+                    "bdq_api": "not_ready",
+                    "bdq_api_status": resp.status_code
+                }
+            )
+    except requests.exceptions.RequestException as e:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "unhealthy",
+                "python_service": "ready",
+                "bdq_api": "not_ready",
+                "error": str(e)
+            }
+        )
+
 async def _handle_email_processing(email_data: Dict[str, Any]):
-    log(str(email_data))
-    csv_data, original_filename = email_service.extract_csv_attachment(email_data)
-    if not csv_data:
-        await email_service.send_error_reply(email_data, "No CSV attachment found. Please attach a CSV file with biodiversity data.")
-        return
+    try:
+        log(str(email_data))
+        csv_data, original_filename = email_service.extract_csv_attachment(email_data)
+        if not csv_data:
+            await email_service.send_error_reply(email_data, "No CSV attachment found. Please attach a CSV file with biodiversity data.")
+            return
 
-    df, core_type = csv_service.parse_csv_and_detect_core(csv_data)
-    if not core_type:
-        await email_service.send_error_reply(email_data, "CSV must contain either 'occurrenceID' or 'taxonID' column to identify the core type.")
-        return
+        df, core_type = csv_service.parse_csv_and_detect_core(csv_data)
+        if not core_type:
+            await email_service.send_error_reply(email_data, "CSV must contain either 'occurrenceID' or 'taxonID' column to identify the core type.")
+            return
 
-    # Upload original processed DataFrame to MinIO
-    original_csv = minio_service.upload_dataframe(df, original_filename, "original")
+        # Upload original processed DataFrame to MinIO
+        original_csv = minio_service.upload_dataframe(df, original_filename, "original")
 
-    # Run tests on dataset - note that at this point test_results will never be empty because the CSV has either occurrenceID or taxonID and the API will run tests on these at least
-    test_results = await bdq_api_service.run_tests_on_dataset(df, core_type)
-    summary_stats = _get_summary_stats(test_results, core_type)
+        # Run tests on dataset; returns unique results with counts
+        try:
+            unique_test_results = await bdq_api_service.run_tests_on_dataset(df, core_type)
+        except Exception as bdq_error:
+            log(f"BDQ API error during test execution: {bdq_error}", "ERROR")
+            await email_service.send_error_reply(
+                email_data,
+                f"Error running BDQ tests: {str(bdq_error)}. Please try again in a few moments."
+            )
+            return
 
-    # Upload test results, unique test results (for the dashboard), and amended dataset to MinIO
-    test_results_csv = minio_service.upload_dataframe(test_results, original_filename, "test_results")
-    unique_test_results = test_results.drop(columns=[f'dwc:{core_type}ID']).drop_duplicates()
-    minio_service.upload_dataframe(unique_test_results, original_filename, "test_results_unique")
-    amended_dataset = csv_service.generate_amended_dataset(df, test_results, core_type)
-    amended_csv = minio_service.upload_csv_string(amended_dataset, original_filename, "amended")
-    
-    # Get LLM analysis
-    prompt = llm_service.create_prompt(email_data, core_type, summary_stats, str_snapshot(test_results), str_snapshot(df), get_relevant_test_contexts(test_results['test_id'].unique().tolist()))
-    
-    # Convert DataFrames to CSV strings for LLM
-    test_results_csv_content = csv_service.dataframe_to_csv_string(test_results)
-    original_csv_content = csv_service.dataframe_to_csv_string(df)
-    llm_analysis = llm_service.generate_openai_intelligent_summary(prompt, test_results_csv_content, original_csv_content)
-    
-    # Generate dashboard URL
-    dashboard_url = minio_service.generate_dashboard_url(test_results_csv, original_csv)
-    
-    # Combine summary stats + LLM analysis + breakdown button
-    body = _format_summary_stats_html(summary_stats, core_type, len(df)) + llm_analysis
-    if dashboard_url:
-        body += _format_breakdown_button_html(dashboard_url)
-    
-    # Send reply email
-    await email_service.send_results_reply(email_data, body, test_results_csv, amended_csv)
+        # Upload unique results (for the dashboard) and amended dataset to MinIO
+        unique_test_results_csv = minio_service.upload_dataframe(unique_test_results, original_filename, "test_results_unique")
+        
+        # Generate summary stats using unique results (more efficient and accurate)
+        summary_stats = _get_summary_stats_from_unique_results(unique_test_results, core_type, len(df))
+        amended_dataset = csv_service.generate_amended_dataset(df, unique_test_results, core_type)
+        amended_csv = minio_service.upload_dataframe(amended_dataset, original_filename, "amended")
+        
+        # Build curated focus set joined with TG2 test metadata (untruncated)
+        curated_df = csv_service.build_curated_joined_results(unique_test_results)
+        curated_csv_content = csv_service.dataframe_to_csv_string(curated_df) if curated_df is not None and not curated_df.empty else None
+
+        # Get sender display name for greeting enforcement
+        def _extract_sender_name(ed: Dict[str, Any]) -> str:
+            raw_from = None
+            headers = ed.get('headers') if isinstance(ed.get('headers'), dict) else None
+            if headers:
+                raw_from = headers.get('from') or ed.get('from')
+            else:
+                raw_from = ed.get('from')
+            if not raw_from:
+                return None
+            import re
+            # Try "Name <email@example.org>"
+            m = re.match(r'\s*"?([^"<]+)"?\s*<[^>]+>', str(raw_from))
+            if m:
+                return m.group(1).strip()
+            # Fallback to local-part of email
+            m2 = re.search(r'([A-Za-z0-9_.+-]+)@', str(raw_from))
+            if m2:
+                return m2.group(1)
+            return None
+
+        recipient_name = _extract_sender_name(email_data)
+
+        # Get LLM analysis using unique results
+        prompt = llm_service.create_prompt(
+            email_data,
+            core_type,
+            summary_stats,
+            str_snapshot(unique_test_results),
+            str_snapshot(df),
+            curated_csv_content,
+            failed_tests=bdq_api_service.failed_tests if hasattr(bdq_api_service, 'failed_tests') else None
+        )
+        log(prompt)
+
+        # Convert DataFrames to CSV strings for LLM
+        unique_results_csv_content = csv_service.dataframe_to_csv_string(unique_test_results)
+        original_csv_content = csv_service.dataframe_to_csv_string(df)
+        llm_analysis = llm_service.generate_openai_intelligent_summary(
+            prompt,
+            unique_results_csv_content,
+            original_csv_content,
+            curated_csv_text=curated_csv_content,
+            recipient_name=recipient_name
+        )
+        
+        # Generate dashboard URL (unique + amended only)
+        dashboard_url = minio_service.generate_dashboard_url(unique_test_results_csv, amended_csv)
+        
+        # Combine summary stats + LLM analysis + breakdown button
+        body = _format_summary_stats_html(summary_stats, core_type, len(df)) + llm_analysis
+        if dashboard_url:
+            body = _format_breakdown_button_html(dashboard_url) + body
+        
+        # Send reply email
+        await email_service.send_results_reply(email_data, body)
+    except Exception as e:
+        log(f"Error in email processing: {e}", "ERROR")
+        log(f"Traceback: {traceback.format_exc()}", "ERROR")
+        # Try to send error email, but don't fail if that also fails
+        try:
+            await email_service.send_error_reply(
+                email_data,
+                f"An unexpected error occurred while processing your request: {str(e)}"
+            )
+        except Exception as email_error:
+            log(f"Failed to send error email: {email_error}", "ERROR")
     
 
 @app.post("/email/incoming")
-async def process_incoming_email(request: Request, background_tasks: BackgroundTasks):
+async def process_incoming_email(request: Request):
     """
-    Accept incoming email and immediately return 200. Heavy processing runs in background.
+    Accept incoming email and immediately return 200. Heavy processing runs via Cloud Tasks.
     """
-    # Log the raw request for debugging
     body = await request.body()
     log(f"Received request with {len(body)} bytes")
     
     try:
-        raw_data = json.loads(body.decode('utf-8'))
+        email_data = json.loads(body.decode('utf-8'))
     except json.JSONDecodeError as e:
         log(f"Invalid JSON in request: {e}", "ERROR")
-        return JSONResponse(status_code=400, content={"status": "error", "message": "Invalid JSON in request"})
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "message": "Invalid JSON in request"}
+        )
     
-    # Schedule background processing and return immediately
-    # Use the running loop to schedule the async handler without blocking the response
-    asyncio.create_task(_handle_email_processing(raw_data))
+    # Create Cloud Task for email processing
+    if not cloud_tasks_service.is_enabled():
+        log("Cloud Tasks not configured", "ERROR")
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "error",
+                "message": "Cloud Tasks not configured. Please set required environment variables."
+            }
+        )
     
-    return JSONResponse(status_code=200, content={"status": "accepted", "message": "Email queued for processing"})
+    task_name = cloud_tasks_service.create_email_processing_task(email_data)
+    if not task_name:
+        log("Failed to create Cloud Task", "ERROR")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "status": "error",
+                "message": "Failed to queue email for processing"
+            }
+        )
+    
+    log(f"Email processing queued via Cloud Tasks: {task_name}")
+    return JSONResponse(
+        status_code=200,
+        content={
+            "status": "accepted",
+            "message": "Email queued for processing",
+            "task_name": task_name
+        }
+    )
 
-def _get_summary_stats(test_results_df, coreID):
-    """Generate summary statistics from test results DataFrame"""
-    # Extract unique field names from actedUpon and consulted columns
-    # These columns contain formatted strings like "field1=value1|field2=value2"
+@app.post("/tasks/process-email")
+async def process_email_task(request: Request):
+    """
+    Worker endpoint called by Cloud Tasks to process email.
+    This endpoint is invoked by Cloud Tasks service, not directly by Apps Script.
+    """
+    # Verify this is called by Cloud Tasks
+    cloud_tasks_queue = request.headers.get("X-CloudTasks-QueueName")
+    if cloud_tasks_queue:
+        log(f"Processing Cloud Task from queue: {cloud_tasks_queue}")
+    else:
+        log("Warning: /tasks/process-email called without Cloud Tasks headers", "WARNING")
+    
+    try:
+        email_data = await request.json()
+    except json.JSONDecodeError as e:
+        log(f"Invalid JSON in Cloud Task request: {e}", "ERROR")
+        return JSONResponse(
+            status_code=400,
+            content={"status": "error", "message": "Invalid JSON in request"}
+        )
+    
+    # Process email - errors will cause Cloud Tasks to retry
+    try:
+        await _handle_email_processing(email_data)
+        return JSONResponse(
+            status_code=200,
+            content={"status": "processed", "message": "Email processed successfully"}
+        )
+    except Exception as e:
+        log(f"Error processing email task: {e}", "ERROR")
+        log(f"Traceback: {traceback.format_exc()}", "ERROR")
+        # Return 500 so Cloud Tasks will retry
+        return JSONResponse(
+            status_code=500,
+            content={"status": "error", "message": str(e)}
+        )
+
+@app.get("/debug/llm-analysis")
+async def debug_llm_analysis(
+    unique_results: str = Query(..., description="Filename of CSV file with unique test results (e.g., 'test_results_unique_occurrencetxt_20250910_114343.csv')"),
+    original_email: str = Query(..., description="Filename of CSV file with original dataset (e.g., 'simple_occurrence_dwc.csv')"),
+    prompt_override: str = Query(None, description="Optional custom prompt to override default")
+):
+    """
+    Debug endpoint to test LLM analysis with CSV files from S3.
+    Automatically constructs S3 URLs from filenames.
+    Sends analysis results to rukayasj@uio.no for debugging purposes.
+    """
+    try:
+        # Construct full S3 URLs from filenames
+        s3_base_url = "https://storage.gbif-no.sigma2.no/misc/bdqreport/results"
+        unique_results_url = f"{s3_base_url}/{unique_results}"
+        original_email_url = f"{s3_base_url}/{original_email}"
+        
+        # Download CSV files from S3 URLs
+        unique_results_csv = minio_service.download_csv_from_url(unique_results_url)
+        if not unique_results_csv:
+            raise HTTPException(status_code=400, detail=f"Failed to download unique_results CSV from S3: {unique_results_url}")
+        
+        original_email_csv = minio_service.download_csv_from_url(original_email_url)
+        if not original_email_csv:
+            raise HTTPException(status_code=400, detail=f"Failed to download original_email CSV from S3: {original_email_url}")
+        
+        # Parse the original dataset to detect core type (same as _handle_email_processing)
+        df, core_type = csv_service.parse_csv_and_detect_core(original_email_csv)
+        if not core_type:
+            raise HTTPException(status_code=400, detail="Original dataset must contain either 'occurrenceID' or 'taxonID' column")
+        
+        log("Debugging email processing...")
+
+        # Parse unique results to get summary stats (same logic as _handle_email_processing)
+        unique_results_df = pd.read_csv(io.StringIO(unique_results_csv), dtype=str)
+        # Convert count column to numeric, handling any non-numeric values
+        unique_results_df['count'] = pd.to_numeric(unique_results_df['count'], errors='coerce')
+        # Replace any inf or -inf values with 0, then fill NaN with 0, then convert to int
+        unique_results_df['count'] = unique_results_df['count'].replace([float('inf'), float('-inf')], 0).fillna(0).astype(int)
+        summary_stats = _get_summary_stats_from_unique_results(unique_results_df, core_type, len(df))
+        
+        # Create mock email data for the prompt (similar to _handle_email_processing)
+        mock_email_data = {
+            "headers": {"from": "debug@test.com"},
+            "subject": f"Debug LLM Analysis - {original_email}",
+            "body": "Debug analysis request"
+        }
+        
+        # Build curated focus set joined with TG2 test metadata (untruncated)
+        curated_df = csv_service.build_curated_joined_results(unique_results_df)
+        curated_csv_content = csv_service.dataframe_to_csv_string(curated_df) if curated_df is not None and not curated_df.empty else None
+
+        # Use custom prompt if provided, otherwise use the same prompt creation as _handle_email_processing
+        if prompt_override:
+            prompt = prompt_override
+        else:
+            # Use the same prompt creation logic as _handle_email_processing
+            prompt = llm_service.create_prompt(
+                mock_email_data, 
+                core_type, 
+                summary_stats, 
+                str_snapshot(unique_results_df), 
+                str_snapshot(df), 
+                curated_csv_content
+            )
+
+        # Generate LLM analysis (same as _handle_email_processing)
+        unique_results_csv_content = csv_service.dataframe_to_csv_string(unique_results_df)
+        original_csv_content = csv_service.dataframe_to_csv_string(df)
+        # Extract a name for the greeting from the debug email
+        def _extract_sender_name(raw_from: str) -> str:
+            if not raw_from:
+                return None
+            import re
+            m = re.match(r'\s*"?([^"<]+)"?\s*<[^>]+>', str(raw_from))
+            if m:
+                return m.group(1).strip()
+            m2 = re.search(r'([A-Za-z0-9_.+-]+)@', str(raw_from))
+            return m2.group(1) if m2 else None
+
+        recipient_name = _extract_sender_name(mock_email_data.get('from', ''))
+
+        llm_analysis = llm_service.generate_openai_intelligent_summary(
+            prompt, unique_results_csv_content, original_csv_content, curated_csv_text=curated_csv_content, recipient_name=recipient_name
+        )
+        
+        # Create debug email data for sending
+        debug_email_data = {
+            "headers": {"from": "debug@bdq-service.com"},
+            "threadId": "debug-thread",    # will fall back to direct send if invalid
+            "to": "rukayasj@uio.no",
+            "subject": f"Debug LLM Analysis Results - {original_email.split('/')[-1]}",
+        }
+        
+        # Send analysis to debug email
+        await email_service.send_reply(debug_email_data, llm_analysis, to_email="rukayasj@uio.no")
+        
+        return JSONResponse(
+            status_code=200, 
+            content={
+                "status": "success", 
+                "message": f"LLM analysis completed and sent to rukayasj@uio.no",
+                "core_type": core_type,
+                "summary_stats": summary_stats,
+                "unique_results_file": unique_results,
+                "original_email_file": original_email,
+                "unique_results_url": unique_results_url,
+                "original_email_url": original_email_url
+            }
+        )
+        
+    except Exception as e:
+        log(f"Error in debug LLM analysis: {e}", "ERROR")
+        log(f"Traceback: {traceback.format_exc()}", "ERROR")
+        raise HTTPException(status_code=500, detail=f"Error processing files: {str(e)}")
+
+def _get_summary_stats_from_unique_results(unique_results_df, core_type, original_dataset_length):
+    """Generate summary statistics from unique results DataFrame - adapted from _get_summary_stats"""
+    # Extract unique field names from actedUpon and consulted columns (same as _get_summary_stats)
     acted_upon_fields = set()
     consulted_fields = set()
     
-    for acted_upon_str in test_results_df['actedUpon'].dropna():
+    for acted_upon_str in unique_results_df['actedUpon'].dropna():
         if acted_upon_str:  # Skip empty strings
             # Split by | and extract field names (before =)
             for pair in acted_upon_str.split('|'):
@@ -132,7 +413,7 @@ def _get_summary_stats(test_results_df, coreID):
                     field_name = pair.split('=')[0]
                     acted_upon_fields.add(field_name)
     
-    for consulted_str in test_results_df['consulted'].dropna():
+    for consulted_str in unique_results_df['consulted'].dropna():
         if consulted_str:  # Skip empty strings
             # Split by | and extract field names (before =)
             for pair in consulted_str.split('|'):
@@ -141,40 +422,61 @@ def _get_summary_stats(test_results_df, coreID):
                     consulted_fields.add(field_name)
     
     all_cols_tested = list(acted_upon_fields.union(consulted_fields))
-    amendments = test_results_df[test_results_df['status'] == 'AMENDED']
-    filled_in = test_results_df[test_results_df['status'] == 'FILLED_IN']
-    issues = test_results_df[test_results_df['result'] == 'POTENTIAL_ISSUE']
-    non_compliant_validations = test_results_df[test_results_df['result'] == 'NOT_COMPLIANT']
+    amendments = unique_results_df[unique_results_df['status'] == 'AMENDED']
+    filled_in = unique_results_df[unique_results_df['status'] == 'FILLED_IN']
+    issues = unique_results_df[unique_results_df['result'] == 'POTENTIAL_ISSUE']
+    non_compliant_validations = unique_results_df[unique_results_df['result'] == 'NOT_COMPLIANT']
 
-    def _get_top_grouped(df, group_cols, n=15):
-        """Helper to get top n grouped counts sorted descending."""
-        return (df.groupby(group_cols)
-                .size()
-                .reset_index(name='count')
-                .sort_values('count', ascending=False)
-                .head(n))
+    def _get_top_grouped(df, n=15):
+        """Helper to get top n grouped counts sorted descending using the count column."""
+        if df.empty:
+            return []
+        # Fill NaN values in count column with 0 and convert to int
+        df_clean = df.copy()
+        # Handle any remaining NaN, inf, or -inf values in count column
+        df_clean['count'] = df_clean['count'].replace([float('inf'), float('-inf')], 0)
+        df_clean['count'] = df_clean['count'].fillna(0).astype(int)
+        # Handle NaN values in string columns by replacing with empty string
+        df_clean['actedUpon'] = df_clean['actedUpon'].fillna('')
+        df_clean['consulted'] = df_clean['consulted'].fillna('')
+        df_clean['test_id'] = df_clean['test_id'].fillna('')
+        return (df_clean.sort_values('count', ascending=False)
+                .head(n)
+                [['actedUpon', 'consulted', 'test_id', 'count']]
+                .to_dict('records'))
 
+    # Helper function to safely get numeric values
+    def safe_int(value, default=0):
+        """Safely convert value to int, handling NaN, inf, and other edge cases"""
+        if pd.isna(value) or value == float('inf') or value == float('-inf'):
+            return default
+        try:
+            return int(value)
+        except (ValueError, TypeError):
+            return default
+    
     summary = {
-        'number_of_records_in_dataset': len(test_results_df),
+        'number_of_records_in_dataset': original_dataset_length,
         'list_of_all_columns_tested': all_cols_tested,
-        'no_of_tests_results': len(test_results_df),
-        'no_of_tests_run': test_results_df['test_id'].nunique(),
-        'no_of_non_compliant_validations': len(non_compliant_validations),
-        'no_of_unique_non_compliant_validations': len(non_compliant_validations.drop_duplicates()),
-        'no_of_amendments': len(amendments),
-        'no_of_unique_amendments': len(amendments.drop_duplicates()), # subset=['actedUpon', 'consulted', 'test_id']
-        'no_of_filled_in': len(filled_in),
-        'no_of_unique_filled_in': len(filled_in.drop_duplicates()),
-        'no_of_issues': len(issues),
-        'no_of_unique_issues': len(issues.drop_duplicates()),
-        'top_issues': _get_top_grouped(issues, ['actedUpon', 'consulted', 'test_id']),
-        'top_filled_in': _get_top_grouped(filled_in, ['actedUpon', 'consulted', 'test_id']),
-        'top_amendments': _get_top_grouped(amendments, ['actedUpon', 'consulted', 'test_id']),
-        'top_non_compliant_validations': _get_top_grouped(non_compliant_validations, ['actedUpon', 'consulted', 'test_id']),
+        'no_of_tests_results': safe_int(unique_results_df['count'].sum()),
+        'no_of_tests_run': safe_int(unique_results_df['test_id'].nunique()),
+        'no_of_non_compliant_validations': safe_int(non_compliant_validations['count'].sum()),
+        'no_of_unique_non_compliant_validations': len(non_compliant_validations),
+        'no_of_amendments': safe_int(amendments['count'].sum()),
+        'no_of_unique_amendments': len(amendments),
+        'no_of_filled_in': safe_int(filled_in['count'].sum()),
+        'no_of_unique_filled_in': len(filled_in),
+        'no_of_issues': safe_int(issues['count'].sum()),
+        'no_of_unique_issues': len(issues),
+        'top_issues': _get_top_grouped(issues),
+        'top_filled_in': _get_top_grouped(filled_in),
+        'top_amendments': _get_top_grouped(amendments),
+        'top_non_compliant_validations': _get_top_grouped(non_compliant_validations),
     }
 
-    log(f"Generated summary: {summary}")
+    log(f"Generated summary from unique results: {summary}")
     return summary
+
 
 def _format_summary_stats_html(summary_stats, core_type, no_of_records):
     """Format summary statistics as a nice HTML list for the top of the email"""
@@ -184,10 +486,9 @@ def _format_summary_stats_html(summary_stats, core_type, no_of_records):
         <ul style="margin: 0; padding-left: 20px;">
             <li><strong>Dataset:</strong> {core_type.title()} core with {no_of_records} records</li>
             <li><strong>Tests Run:</strong> {summary_stats['no_of_tests_results']} tests across {summary_stats['no_of_tests_run']} types of BDQ Tests</li>
-            <li><strong>Non-Compliant Validations:</strong> {summary_stats['no_of_non_compliant_validations']}, most commonly: {summary_stats['top_non_compliant_validations']}</li>
-            <li><strong>Amendments:</strong> {summary_stats['no_of_amendments']}, most commonly: {summary_stats['top_amendments']}</li>
-            <li><strong>Filled In:</strong> {summary_stats['no_of_filled_in']}, most commonly: {summary_stats['top_filled_in']}</li>
-            <li><strong>Issues:</strong> {summary_stats['no_of_issues']}, most commonly: {summary_stats['top_issues']}</li>
+            <li><strong>Possible problems found (Non-Compliant Validations):</strong> {summary_stats['no_of_non_compliant_validations']}</li>
+            <li><strong>Amendments automatically applied:</strong> {summary_stats['no_of_amendments'] + summary_stats['no_of_filled_in']}</li>
+            <li><strong>Other possible issues found:</strong> {summary_stats['no_of_issues']}</li>
         </ul>
     </div>
     """
@@ -195,18 +496,16 @@ def _format_summary_stats_html(summary_stats, core_type, no_of_records):
 def _format_breakdown_button_html(dashboard_url: str) -> str:
     """Format breakdown button HTML for the email"""
     return f"""
-    <div style="text-align: center; margin: 20px 0;">
+    <div style="font-size: 14px; margin: 0;">&#x2705; A breakdown of your test results has been generated. 
         <a href="{dashboard_url}" 
            style="display: inline-block; 
                   background-color: #007bff; 
                   color: white; 
-                  padding: 12px 24px; 
+                  padding: 5px 10px; 
                   text-decoration: none; 
-                  border-radius: 6px; 
-                  font-weight: bold; 
-                  font-size: 16px;
-                  box-shadow: 0 2px 4px rgba(0,123,255,0.3);">
-            📊 View a Breakdown
+                  border-radius: 3px; 
+                  font-weight: bold; ">
+            &#x1F9FE; View your dashboard &rarr;
         </a>
     </div>
     """

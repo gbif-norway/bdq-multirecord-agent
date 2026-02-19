@@ -1,0 +1,380 @@
+/* Color scheme variables */
+:root {
+    --green: #027e55;
+    --green-dark: #015b41;
+    --yellow: #fede00;
+    --yellow-green: #c8df52;
+    --mint: #fafef5;
+    --grey: #6c757d;
+    --light-green: #e5ffdf;
+    --gbif-green: #027e55;
+}
+
+/* Loading spinner styles */
+.loading-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 60vh;
+    padding: 2rem;
+}
+
+.loading-container .spinner-border {
+    width: 3rem;
+    height: 3rem;
+    border-width: 0.3em;
+    margin-bottom: 1rem;
+}
+
+.loading-text {
+    color: var(--green);
+    font-size: 1.1rem;
+    font-weight: 500;
+    text-align: center;
+}
+
+/* Fade-in animation for main content */
+#main-content {
+    opacity: 0;
+    transition: opacity 0.5s ease-in-out;
+}
+
+#main-content.loaded {
+    opacity: 1;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+strong { font-weight: bold; }
+
+/* Header styles */
+header { 
+    background-color: var(--green); 
+    color:var(--light-green); 
+    margin-bottom: 0.6rem; 
+    transition: all 0.3s ease;
+}
+
+header.navbar.navbar-expand-lg.bd-navbar:hover,
+header.navbar:hover,
+header:hover {
+    background-color: var(--green-dark) !important; /* darker green on hover */
+}
+h1 { font-size: 1.5rem; }
+h1 small { font-size: 0.8rem;  color: var(--light-green); }
+.robot-icon {
+    font-size: 2rem;
+    margin: 0 0.5rem;
+    transition: all 0.3s ease;
+    cursor: pointer;
+}
+.robot-icon:hover {
+    transform: scale(1.2) rotate(10deg);
+    filter: brightness(1.2);
+}
+
+/* Header hover effects - trigger robot animation and button lift */
+header:hover .robot-icon {
+    transform: scale(1.2) rotate(10deg);
+    filter: brightness(1.2);
+}
+
+header:hover .btn {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    transition: all 0.3s ease;
+}
+p.intro {
+    margin-bottom: 0.7rem;
+    padding: 15px;
+    background-color: #E5FFDF;
+}
+p.intro {
+    transition: background-color 0.4s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.4s cubic-bezier(0.4, 0, 0.2, 1), transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+p.intro:hover {
+    background-color: rgba(254, 222, 0, 0.5); /* lighter, less hectic yellow */
+    box-shadow: 0 4px 24px 0 rgba(2, 126, 85, 0.10), 0 1.5px 6px 0 rgba(200, 223, 82, 0.10);
+    transform: scale(1.01);
+}
+p.intro small { font-size: 0.8em; color: var(--grey); }
+p.intro span.badge { background-color: #caebc3; color: black; font-weight: normal; font-size: 0.9em}
+p.intro span.badge:hover { background-color: #a4e398; color: black; }
+
+/* Card hover effects */
+.card {
+    transition: all 0.3s ease;
+    text-align: center;
+}
+.card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+    background-color: var(--mint);
+}
+
+h2 { font-size: 1.2rem; }
+h2 small { font-size: 0.8rem;  color: var(--grey); }
+
+
+/* Summary cards styling */
+.summary-card {
+    text-align: center;
+    padding: 1.5rem;
+    border-radius: 10px;
+    border-left: 4px solid var(--green);
+}
+
+.card-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--green);
+    margin-bottom: 0.5rem;
+}
+
+.summary-label {
+    color: var(--grey);
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* List group styling */
+.filter-by-use-case { font-size: 0.8rem; color: var(--grey); font-weight: bold; padding-top: 0.5em; display: inline-block;  width: 9.5em; }
+.list-group-item {
+    cursor: pointer;
+    font-size: 0.8rem;
+}
+.list-group-item .totalcount { height: 1.3rem; font-size: 0.8rem; font-weight: normal; color: white; }
+.list-group-item h5 { font-size: 0.9rem; }
+
+/* Accent border on left for validation items (color set inline) */
+.list-group-item.accent-left {
+    border-left-width: 8px;
+    border-left-style: solid;
+}
+
+.list-group-item:hover {
+    background-color: var(--mint);
+}
+blockquote { font-size: 0.9rem; border-bottom: 1px solid var(--bs-modal-header-border-color) }
+blockquote p { margin-bottom: 5px; color: black; margin-bottom: 1em; }
+blockquote p.description { background-color: #fffdeb; padding: 3px; 
+    margin-top: 0;
+    color: var(--grey);
+}
+
+/* Test header styling - now handled by Bootstrap d-flex */
+.test-title {
+    font-weight: 600;
+    color: var(--green);
+    margin: 0;
+}
+
+.test-description {
+    color: var(--grey);
+    font-size: 0.9rem;
+    margin-bottom: 1rem;
+}
+
+/* Field combinations styling */
+.field-combinations {
+    margin-top: 1rem;
+}
+
+.field-combo {
+    background-color: #e8f4ff;
+    padding: 0.5rem;
+    margin: 0.25rem 0;
+    font-size: 0.85rem;
+}
+.field-combo .mt-1 { color: var(--grey); }
+
+.field-combo-amended {
+    background-color: #e0ffe0 !important;
+    border-left: 3px solid var(--green) !important;
+}
+
+.field-combo-count {
+    font-weight: bold;
+    color: var(--green);
+}
+.btn-dl-custom { font-size: 0.6rem; color: black; padding: 3px; }
+
+/* Chart styling */
+#needsAttentionChart {
+    height: 250px !important;
+    max-height: 400px;
+}
+
+/* Pagination styling */
+.pagination { margin-top: 15px; }
+.pagination .page-link {
+    color: var(--green);
+    border-color: var(--green);
+}
+
+.pagination .page-link:hover {
+    background-color: var(--white);
+    color: var(--green);
+}
+
+.pagination .page-item.active .page-link {
+    background-color: var(--green);
+    border-color: var(--green);
+    color: white;
+}
+
+/* Modal styling */
+
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .robot-icon {
+        font-size: 1.5rem;
+        margin: 0 0.25rem;
+    }
+    
+    .header-title {
+        font-size: 1.5rem;
+    }
+    
+    .summary-number {
+        font-size: 2rem;
+    }
+    
+    .d-flex.w-100.justify-content-between {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    
+}
+
+/* Loading animation */
+.loading {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border: 3px solid var(--mint);
+    border-radius: 50%;
+    border-top-color: var(--green);
+    animation: spin 1s ease-in-out infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Error styling */
+.error-message {
+    background-color: #f8d7da;
+    color: #721c24;
+    padding: 1rem;
+    border-radius: 5px;
+    border-left: 4px solid #dc3545;
+    margin: 1rem 0;
+}
+
+/* Success styling */
+.success-message {
+    background-color: #d1edff;
+    color: #0c5460;
+    padding: 1rem;
+    border-radius: 5px;
+    border-left: 4px solid var(--green);
+    margin: 1rem 0;
+}
+
+/* Case change pill styling */
+.case-change-pill {
+    background-color: var(--light-green) !important;
+    color: #2d5a2d !important;
+    font-size: 0.7rem !important;
+    font-weight: 500 !important;
+    padding: 0.2rem 0.4rem !important;
+    margin-left: 0.3rem !important;
+    border-radius: 0.25rem !important;
+    display: inline-block !important;
+}
+
+/* GBIF auto-fix section styling */
+.gbif-autofix-section {
+    margin-top: 1rem;
+    padding: 1rem;
+    background-color: var(--mint);
+    border-radius: 0.375rem;
+    border-left: 4px solid var(--green);
+}
+
+.gbif-logo-icon {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+    margin-top: 0.1rem;
+}
+
+.gbif-logo-svg {
+    fill: var(--gbif-green);
+}
+
+/* Modal pagination and search styling */
+#modal-search-input {
+    border-radius: 0.375rem 0 0 0.375rem;
+}
+
+#modal-search-input:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+}
+
+#modal-pagination-info {
+    font-size: 0.875rem;
+    color: #6c757d;
+}
+
+#modal-pagination-controls .btn {
+    border-radius: 0.25rem;
+    margin: 0 1px;
+}
+
+#modal-pagination-controls .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+#modal-pagination-controls .btn:not(:disabled):hover {
+    background-color: var(--primary-color);
+    border-color: var(--primary-color);
+    color: white;
+}
+
+/* Ensure field combinations container has proper spacing */
+#modal-field-combinations {
+    max-height: 400px;
+    overflow-y: auto;
+    border: 1px solid #dee2e6;
+    border-radius: 0.375rem;
+    padding: 1rem;
+    background-color: #f8f9fa;
+}
+
+/* Search input group styling */
+.input-group .input-group-text {
+    background-color: #e9ecef;
+    border-color: #ced4da;
+    color: #495057;
+}
+
+/* Tooltip hint styling */
+.tooltip-hint {
+    position: relative;
+    cursor: help;
+    border-bottom: 1px dotted var(--green);
+    color: var(--green);
+    font-weight: 500;
+}
+
+.tooltip-hint:hover {
+    background-color: rgba(2, 126, 85, 0.1);
+}

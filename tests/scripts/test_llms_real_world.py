@@ -5,6 +5,11 @@ This test uses the actual functions from main.py without mocking to generate
 real summaries using the simple_occurrence_dwc.csv and _RESULTS.csv files.
 """
 
+import pytest
+
+# Mark this helper script as skipped for pytest (not a unit test)
+pytestmark = pytest.mark.skip("Helper script for manual runs; skipped in CI")
+
 import os
 import sys
 import pandas as pd
@@ -15,16 +20,15 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 from app.services.csv_service import CSVService
 from app.services.llm_service import LLMService
-from app.utils.helper import log, str_snapshot, get_relevant_test_contexts
+from app.utils.helper import log, str_snapshot
 
-def _get_summary_stats(test_results_df, coreID):
-    """Generate summary statistics from test results DataFrame - copied from main.py"""
+def _get_summary_stats_from_unique_results(unique_results_df, core_type, original_dataset_length):
+    """Generate summary statistics from unique results DataFrame - adapted from main.py"""
     # Extract unique field names from actedUpon and consulted columns
-    # These columns contain formatted strings like "field1=value1|field2=value2"
     acted_upon_fields = set()
     consulted_fields = set()
     
-    for acted_upon_str in test_results_df['actedUpon'].dropna():
+    for acted_upon_str in unique_results_df['actedUpon'].dropna():
         if acted_upon_str:  # Skip empty strings
             # Split by | and extract field names (before =)
             for pair in acted_upon_str.split('|'):
@@ -32,7 +36,7 @@ def _get_summary_stats(test_results_df, coreID):
                     field_name = pair.split('=')[0]
                     acted_upon_fields.add(field_name)
     
-    for consulted_str in test_results_df['consulted'].dropna():
+    for consulted_str in unique_results_df['consulted'].dropna():
         if consulted_str:  # Skip empty strings
             # Split by | and extract field names (before =)
             for pair in consulted_str.split('|'):
@@ -41,35 +45,50 @@ def _get_summary_stats(test_results_df, coreID):
                     consulted_fields.add(field_name)
     
     all_cols_tested = list(acted_upon_fields.union(consulted_fields))
-    amendments = test_results_df[test_results_df['status'] == 'AMENDED']
-    filled_in = test_results_df[test_results_df['status'] == 'FILLED_IN']
-    issues = test_results_df[test_results_df['result'] == 'POTENTIAL_ISSUE']
-    non_compliant_validations = test_results_df[test_results_df['result'] == 'NOT_COMPLIANT']
+    amendments = unique_results_df[unique_results_df['status'] == 'AMENDED']
+    filled_in = unique_results_df[unique_results_df['status'] == 'FILLED_IN']
+    issues = unique_results_df[unique_results_df['result'] == 'POTENTIAL_ISSUE']
+    non_compliant_validations = unique_results_df[unique_results_df['result'] == 'NOT_COMPLIANT']
 
-    def _get_top_grouped(df, group_cols, n=15):
-        """Helper to get top n grouped counts sorted descending."""
-        return (df.groupby(group_cols)
-                .size()
-                .reset_index(name='count')
-                .sort_values('count', ascending=False)
-                .head(n))
+    def _get_top_grouped(df, n=15):
+        """Helper to get top n grouped counts sorted descending using the count column."""
+        return (df.sort_values('count', ascending=False)
+                .head(n)
+                [['actedUpon', 'consulted', 'test_id', 'count']])
 
     summary = {
+        'number_of_records_in_dataset': original_dataset_length,
         'list_of_all_columns_tested': all_cols_tested,
-        'no_of_tests_results': len(test_results_df),
-        'no_of_tests_run': test_results_df['test_id'].nunique(),
-        'no_of_non_compliant_validations': len(non_compliant_validations),
-        'no_of_amendments': len(amendments),
-        'no_of_filled_in': len(filled_in),
-        'no_of_issues': len(issues),
-        'top_issues': _get_top_grouped(issues, ['actedUpon', 'consulted', 'test_id']),
-        'top_filled_in': _get_top_grouped(filled_in, ['actedUpon', 'consulted', 'test_id']),
-        'top_amendments': _get_top_grouped(amendments, ['actedUpon', 'consulted', 'test_id']),
-        'top_non_compliant_validations': _get_top_grouped(non_compliant_validations, ['actedUpon', 'consulted', 'test_id']),
+        'no_of_tests_results': unique_results_df['count'].sum(),
+        'no_of_tests_run': unique_results_df['test_id'].nunique(),
+        'no_of_non_compliant_validations': non_compliant_validations['count'].sum(),
+        'no_of_unique_non_compliant_validations': len(non_compliant_validations),
+        'no_of_amendments': amendments['count'].sum(),
+        'no_of_unique_amendments': len(amendments),
+        'no_of_filled_in': filled_in['count'].sum(),
+        'no_of_unique_filled_in': len(filled_in),
+        'no_of_issues': issues['count'].sum(),
+        'no_of_unique_issues': len(issues),
+        'top_issues': _get_top_grouped(issues),
+        'top_filled_in': _get_top_grouped(filled_in),
+        'top_amendments': _get_top_grouped(amendments),
+        'top_non_compliant_validations': _get_top_grouped(non_compliant_validations),
     }
 
     log(f"Generated summary: {summary}")
     return summary
+
+def _create_unique_results_from_test_data(test_results_df, core_type):
+    """Helper function to create unique results DataFrame from test data"""
+    group_cols = [col for col in test_results_df.columns if col != f'dwc:{core_type}ID']
+    unique_results = (
+        test_results_df
+        .groupby(group_cols, dropna=False)
+        .size()
+        .reset_index()
+        .rename(columns={0: "count"})
+    )
+    return unique_results
 
 def test_llm_model(llm_service, model_name, test_data_dir, prompt, test_results_csv_content, original_csv_content):
     """Test a specific LLM model and save the results"""
@@ -151,7 +170,9 @@ def main():
     
     # Generate summary stats using the real function from main.py
     log("Generating summary statistics...")
-    summary_stats = _get_summary_stats(test_results, core_type)
+    unique_results = _create_unique_results_from_test_data(test_results, core_type)
+    original_dataset_length = len(pd.read_csv(f"{test_data_dir}/simple_occurrence_dwc.csv"))
+    summary_stats = _get_summary_stats_from_unique_results(unique_results, core_type, original_dataset_length)
     
     # Create mock email data (simulating what would come from Gmail)
     email_data = {
@@ -161,10 +182,9 @@ def main():
         "attachments": []
     }
     
-    # Get relevant test contexts
-    log("Getting relevant test contexts...")
-    test_ids = test_results['test_id'].unique().tolist()
-    relevant_test_contexts = get_relevant_test_contexts(test_ids)
+    # Build curated focus set
+    curated_df = CSVService().build_curated_joined_results(unique_results)
+    curated_csv_text = CSVService().dataframe_to_csv_string(curated_df) if curated_df is not None and not curated_df.empty else None
     
     # Create the prompt using the real LLM service
     log("Creating prompt...")
@@ -174,7 +194,7 @@ def main():
         summary_stats, 
         str_snapshot(test_results), 
         str_snapshot(df), 
-        relevant_test_contexts
+        curated_csv_text
     )
     
     # Convert DataFrames to CSV strings for LLM (following main.py exactly)

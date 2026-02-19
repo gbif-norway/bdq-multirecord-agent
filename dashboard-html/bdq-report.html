@@ -1,15 +1,248 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>BDQEmail report</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
-  </head>
-  <body>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BDQ Test Results Dashboard</title>
     
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.8/dist/umd/popper.min.js" integrity="sha384-I7E8VVD/ismYTF4hNIPjVp/Zjvgyol6VFvRkX/vR+Vc4jQkC+hVqc2pM8ODewa9r" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.min.js" integrity="sha384-G/EV+4j2dNv+tEPo3++6LCgdCROaejBqfUeNjuKAiuXbjrxilcCdDz6ZAVfHWe1Y" crossorigin="anonymous"></script>
-  </body>
+    <!-- Bootstrap 5.3 -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- PapaParse -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    
+    <!-- Custom Styles -->
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <header class="navbar navbar-expand-lg bd-navbar sticky-top"> 
+        <nav class="container-xxl bd-gutter d-flex justify-content-between align-items-center" aria-label="Main navigation"> 
+            <div class="bd-navbar-toggle"> 
+                <h1><i class="fa-solid fa-robot robot-icon"></i> &nbsp;BDQEmail Report <small id="file-name"></small></h1>
+            </div>
+            <!-- Download buttons will be added here by JavaScript -->
+        </nav>
+    </header>
+    <!-- Loading Spinner -->
+    <div id="loading-spinner" class="loading-container">
+        <div class="spinner-border text-success" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+        <div class="loading-text">Loading BDQ test results...</div>
+    </div>
+
+    <div class="container-xxl bd-gutter flex-wrap flex-lg-nowrap" id="main-content" style="display: none;">
+        <p class="intro">
+            <span data-bs-toggle="tooltip" title="Biodiversity Data Quality" class="tooltip-hint">BDQ</span> tests are standardised checks that look at one part of a biodiversity record <span data-bs-toggle="tooltip" title="usually a Darwin Core field" class="tooltip-hint">record</span> & say if it's 
+            <span class="badge">okay <i class="fa-solid fa-circle-check text-success"></i></span>,
+            <span class="badge">need attention <i class="fa-solid fa-triangle-exclamation text-warning"></i></span>,
+            <span class="badge">autocorrections <i class="fa-solid fa-wrench text-info"></i></span>
+            or
+            <span class="badge">can't be checked <i class="fa-solid fa-question-circle text-secondary"></i></span>.
+            <strong>Each test asks a simple <span data-bs-toggle="tooltip" title='e.g., "Is countryCode a real ISO code?"' class="tooltip-hint">question</span> & gives a simple answer.</strong>
+            <a href="#" data-bs-toggle="modal" data-bs-target="#learnMoreModal">
+                Learn more about the tests
+            </a>
+        </p>
+        <!-- Summary Cards -->
+        <div class="row mb-1" id="summary-cards">
+            <!-- Cards will be populated by JavaScript -->
+        </div>
+        
+        <!-- Needs Attention Chart -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <h2 id="needs-attention-heading">
+                    <i class="fa-solid fa-triangle-exclamation text-warning"></i> Needs attention (broken down by field types) <small>Values a BDQ test has flagged as non-compliant or a possible potential issue</small>
+                </h2>
+                <canvas id="needsAttentionChart" width="400" height="200"></canvas>
+            </div>
+        </div>
+
+        
+
+        <!-- Validations and Issues Section -->
+        <div class="row mb-3">
+            <div class="col-12">
+                <h2><i class="fa-regular fa-flag" style="color: #f59e0b;"></i> Validations and issues</h2>
+                <div class="mb-1">
+                    <div class="btn-group btn-group-sm" role="group" aria-label="Use case filters"> <span class="filter-by-use-case">Filter by use case:</span> &nbsp;
+                        <button type="button" class="btn btn-outline-secondary active" id="filter-all" data-use-case="all">
+                            <i class="fa-solid fa-list"></i> Show All
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary" id="filter-record-management" data-use-case="bdq:Record-Management" data-bs-toggle="tooltip" data-bs-placement="top" title="Keeps records tidy and usable: key fields filled, formats standard (dates, IDs), values consistent, and identifiers stable/unique.">
+                            <i class="fa-solid fa-database"></i> Record Management
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary" id="filter-spatial-temporal" data-use-case="bdq:Spatial-Temporal_Patterns" data-bs-toggle="tooltip" data-bs-placement="top" title="Makes places and dates map-ready: coordinates in range, correct datum/uncertainty, and event dates valid and interpretable.">
+                            <i class="fa-solid fa-map-location-dot"></i> Spatial-Temporal
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary" id="filter-taxon-management" data-use-case="bdq:Taxon-Management" data-bs-toggle="tooltip" data-bs-placement="top" title="Ensures names make sense: scientific names and ranks match an authority, accepted spellings used, and IDs link to the right taxon.">
+                            <i class="fa-solid fa-leaf"></i> Taxon Management
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary" id="filter-alien-species" data-use-case="bdq:Alien-Species" data-bs-toggle="tooltip" data-bs-placement="top" title="Supports tracking species outside their native range: names and locations must be interpretable so possible alien occurrences can be trusted.">
+                            <i class="fa-solid fa-globe"></i> Alien Species
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary" id="filter-biotic-relationships" data-use-case="bdq:Biotic-Relationships" data-bs-toggle="tooltip" data-bs-placement="top" title="Clarifies interactions (e.g., host–parasite, predator–prey): relationship terms are valid, linked taxa are identifiable, and directions are clear.">
+                            <i class="fa-solid fa-link"></i> Biotic Relationships
+                        </button>
+                    </div>
+                </div>
+                <!-- Test type filters will be populated by JavaScript on a new line -->
+                <div class="mb-3">
+                    <div class="btn-group btn-group-sm" role="group" aria-label="Test type filters" id="test-type-filters" style="display: none;">
+                        <span class="filter-by-use-case">Filter by test type:</span> &nbsp;
+                        <button type="button" class="btn btn-outline-secondary active" data-test-type="all" id="filter-type-all">
+                            <i class="fa-solid fa-list"></i> Show All
+                        </button>
+                        <!-- Dynamic buttons inserted here -->
+                    </div>
+                </div>
+                <div id="validations-list">
+                    <!-- Validations will be populated by JavaScript -->
+                </div>
+                <nav aria-label="Validations pagination">
+                    <ul class="pagination justify-content-center" id="validations-pagination">
+                        <!-- Pagination will be populated by JavaScript -->
+                    </ul>
+                </nav>
+            </div>
+        </div>
+
+        <!-- Amendments Section -->
+        <div class="row mb-3">
+            <div class="col-12">
+                <h2><i class="fa-solid fa-wrench text-info"></i> Auto-corrections <small>(see Amended dataset csv)</small></h2>
+                <div id="amendments-list">
+                    <!-- Amendments will be populated by JavaScript -->
+                </div>
+                <nav aria-label="Amendments pagination">
+                    <ul class="pagination justify-content-center" id="amendments-pagination">
+                        <!-- Pagination will be populated by JavaScript -->
+                    </ul>
+                </nav>
+            </div>
+        </div>
+    </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer mt-5 py-4 bg-light border-top">
+        <div class="container-xxl bd-gutter">
+            <div class="row">
+                <div class="col-12">
+                    <div class="text-center">
+                        <p class="mb-2 text-muted">
+                            <i class="fa-solid fa-code-branch me-2"></i>
+                            The tests run by this service use 
+                            <a href="https://github.com/FilteredPush" target="_blank" class="text-decoration-none">
+                                <strong>Paul J. Morris and David Lowery's FilteredPush</strong>
+                                <i class="fa-solid fa-external-link-alt ms-1" style="font-size: 0.8em;"></i>
+                            </a> 
+                            opensource code, available on GitHub.
+                        </p>
+                        <p class="mb-0 text-muted">
+                            <i class="fa-solid fa-envelope me-2"></i>
+                            <strong>BDQEmail</strong> (by Rukaya Johaadien) provides the 
+                            <a href="https://github.com/gbif-norway/bdq-api" target="_blank" class="text-decoration-none">
+                                email ingestion & test runner services
+                                <i class="fa-solid fa-external-link-alt ms-1" style="font-size: 0.8em;"></i>
+                            </a> 
+                            and the 
+                            <a href="https://github.com/gbif-norway/bdq-multirecord-agent" target="_blank" class="text-decoration-none">
+                                dashboard & email analysis report service
+                                <i class="fa-solid fa-external-link-alt ms-1" style="font-size: 0.8em;"></i>
+                            </a>.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Modal for detailed view -->
+    <div class="modal fade" id="detailModal" tabindex="-1" aria-labelledby="detailModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="detailModalLabel">Test Details</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" id="modal-body">
+                    <!-- Modal content will be populated by JavaScript -->
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for learning more about tests -->
+    <div class="modal fade" id="learnMoreModal" tabindex="-1" aria-labelledby="learnMoreModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="learnMoreModalLabel">
+                        <i class="fa-solid fa-book-open-reader"></i> About BDQ Tests
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>
+                        <a href="https://github.com/tdwg/bdq/tree/master/tg2" target="_blank">
+                            Browse the TDWG Tests and Assertions Task Group repo
+                            <i class="fa-solid fa-arrow-up-right-from-square ms-1" aria-label="External link"></i>
+                        </a>
+                    </p>
+                    <h6 class="fw-bold">Small Checks</h6>
+                    <p>BDQ Tests are bite-sized rules that look at one specific part of a record—usually a single Darwin Core field like country, date, or coordinates. They don't judge the whole record at once; they focus on one thing and keep the result simple: OK, needs fixing, or can't be checked. "Can't be checked" usually means the field is missing, unreadable, or the external reference list wasn't available.</p>
+
+                    <h6 class="fw-bold">Simple Question, Simple Answer</h6>
+                    <p>Each test is written like a plain question ("Is countryCode a real ISO code?") and returns a plain outcome. Validation tests say "OK" or "Not OK" with a brief note; Amendment tests suggest a cleaned value ("Change to '2021-10-28'"); Measures return a number ("3 fields filled"). If the test can't decide, it says so and explains why, so you know whether to supply more data, fix a format, or skip that check.</p>
+
+                    <h6 class="fw-bold">Test Types</h6>
+                    <ul>
+                        <li><strong>Validation:</strong> Checks if a value is acceptable (in a list, in range, right format, consistent with other fields).</li>
+                        <li><strong>Amendment:</strong> Suggests a cleaned/standardized value (e.g., turns "2021-28-10" into "2021-10-28").</li>
+                        <li><strong>Measure:</strong> Counts or summarizes something (e.g., how many fields are filled).</li>
+                        <li><strong>Issue/Assertion:</strong> Flags something noteworthy (e.g., a missing or unexpected value).</li>
+                    </ul>
+
+                    <h6 class="fw-bold">Common Things They Check</h6>
+                    <ul>
+                        <li>Filled or empty fields ("Is there a value?").</li>
+                        <li>Valid values against a reference list (countries, taxa, codes).</li>
+                        <li>Format and pattern (dates, IDs, coordinates).</li>
+                        <li>Ranges and relationships (min ≤ max, lat/long in range).</li>
+                        <li>Consistency across fields (date parts agree, coordinates match uncertainty).</li>
+                    </ul>
+
+                    <h6 class="fw-bold">Examples</h6>
+                    <ul>
+                        <li>"Checks if countryCode is a valid ISO code."</li>
+                        <li>"Fixes dateIdentified to a proper date."</li>
+                        <li>"Checks if minimumDepth ≤ maximumDepth."</li>
+                        <li>"Checks if occurrenceID looks like a real ID."</li>
+                        <li>"Counts how many fields are filled."</li>
+                    </ul>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- Custom JavaScript -->
+    <script src="app.js"></script>
+</body>
 </html>

@@ -1,0 +1,2 @@
+number_of_records_in_dataset,no_of_tests_run,no_of_test_results,no_of_amendments,no_of_filled_in,no_of_unique_non_compliant_validations,no_of_unique_issues,list_of_all_columns_tested
+100,15,85,25,0,8,4,"dwc:countryCode,dwc:country,dwc:phylum,dwc:minimumDepthInMeters,dwc:maximumDepthInMeters,dwc:eventDate,dwc:decimalLatitude,dwc:decimalLongitude,dwc:scientificName,dwc:taxonRank"

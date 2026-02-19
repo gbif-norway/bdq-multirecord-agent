@@ -1,0 +1,59 @@
+reference-data:
+  root-dir: ${REFERENCE_DATA_ROOT:${user.home}/.bdq/reference-data}
+  warmup-timeout: PT90S
+  datasets:
+    natural-earth-admin0:
+      source: classpath:reference-data/natural-earth-admin0.geojson
+      checksum: 45f41865adec4f86602c2cd05c0e29cd8b437614bf2f5b5a863d12463202cae4
+      filename: natural-earth-admin0.geojson
+      format: GEOJSON
+      warmup: true
+    iso-3166-country-codes:
+      source: classpath:reference-data/iso-3166.json
+      checksum: 234b8fec32dc2addc6a2b4b015636fdf6d4fde782f02a7efc2f4d29ebd715f8b
+      filename: iso-3166.json
+      format: JSON
+      warmup: true
+    iana-time-zones:
+      source: classpath:reference-data/iana-time-zones.json
+      checksum: 494c31dbfc80cd10d58ed5438b800ffbb78867b06e86d0e7056296087dc4b935
+      filename: iana-time-zones.json
+      format: JSON
+      warmup: false
+    gbif-backbone-taxonomy:
+      source: classpath:reference-data/gbif-backbone-taxonomy.json
+      checksum: e580037b6d324c2fc5d079dcae5236b26802fa0b63be087a2fa04520f7f5ae36
+      filename: gbif-backbone-taxonomy.json
+      format: JSON
+      warmup: true
+    gbif-vocabularies:
+      source: classpath:reference-data/gbif-vocabularies.json
+      checksum: 8111124499ec021293310675850ac01d2a0b97085bdc71f44d851e5691d93e2b
+      filename: gbif-vocabularies.json
+      format: JSON
+      warmup: true
+  caches:
+    gbif-taxonomy:
+      maximum-size: 50000
+      expire-after: PT24H
+    worms:
+      maximum-size: 25000
+      expire-after: PT48H
+    irmng:
+      maximum-size: 25000
+      expire-after: PT48H
+    global-names:
+      maximum-size: 20000
+      expire-after: PT24H
+    geolocate:
+      maximum-size: 20000
+      expire-after: PT12H
+    point-to-country:
+      maximum-size: 100000
+      expire-after: PT24H
+  spatial:
+    grid-size-degrees: 0.1
+  http-cache:
+    enabled: true
+    ttl: PT12H
+    directory: http-cache
