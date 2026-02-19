@@ -86,32 +86,17 @@ ENV JAVA_OPTS="-Xmx2g -Xms512m"
 # Expose only port 8080 (Python FastAPI) - Java BDQ API runs internally on 8081
 EXPOSE 8080
 
-# Create startup script to run both services
+# Create startup script: start Python immediately so Cloud Run sees port 8080 listening.
+# BDQ API starts in background - Python /health returns 503 until it's ready.
 RUN echo '#!/bin/bash\n\
 set -e\n\
-# Start BDQ API in background on port 8081\n\
-echo "Starting BDQ API..."\n\
+# Start BDQ API in background on port 8081 (Spring Boot can take 30-60s to warm up)\n\
+echo "Starting BDQ API in background..."\n\
 java $JAVA_OPTS -jar /app/bdq-api.jar --server.port=8081 &\n\
-BDQ_PID=$!\n\
 \n\
-# Wait for BDQ API to be ready (up to 60 seconds)\n\
-echo "Waiting for BDQ API to start..."\n\
-for i in {1..60}; do\n\
-  if curl -f http://localhost:8081/actuator/health > /dev/null 2>&1; then\n\
-    echo "BDQ API is ready"\n\
-    break\n\
-  fi\n\
-  if [ $i -eq 60 ]; then\n\
-    echo "BDQ API failed to start after 60 seconds"\n\
-    kill $BDQ_PID 2>/dev/null || true\n\
-    exit 1\n\
-  fi\n\
-  sleep 1\n\
-done\n\
-\n\
-# Start Python FastAPI on port 8080\n\
-echo "Starting Python FastAPI..."\n\
-exec python -m uvicorn app.main:app --host 0.0.0.0 --port 8080\n\
+# Start Python FastAPI immediately - Cloud Run requires port listening within timeout\n\
+echo "Starting Python FastAPI on port ${PORT:-8080}..."\n\
+exec python -m uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8080}\n\
 ' > /app/start.sh && chmod +x /app/start.sh
 
 # Run startup script
