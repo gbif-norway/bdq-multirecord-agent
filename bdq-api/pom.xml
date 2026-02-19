@@ -108,7 +108,7 @@
         </plugins>
     </build>
 
-    <!-- Repositories required by FilteredPush dependencies (GBIF, GeoTools) -->
+    <!-- Repositories required by FilteredPush dependencies (GBIF, GeoTools, SNAPSHOTs e.g. rdfbeans) -->
     <repositories>
         <repository>
             <id>gbif-all</id>
@@ -118,6 +118,13 @@
             <id>osgeo-geotools</id>
             <name>Open Source Geospatial Foundation - GeoTools</name>
             <url>https://repo.osgeo.org/repository/geotools-releases/</url>
+        </repository>
+        <repository>
+            <id>sonatype-oss-snapshots</id>
+            <url>https://oss.sonatype.org/content/repositories/snapshots</url>
+            <snapshots>
+                <enabled>true</enabled>
+            </snapshots>
         </repository>
     </repositories>
 </project>

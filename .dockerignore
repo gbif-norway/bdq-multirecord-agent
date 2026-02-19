@@ -61,6 +61,6 @@ docker-compose*.yml
 
 # Java/Maven (built inside image; no need to send)
 bdq-api/target
-bdq-api/lib
+bdq-api/lib/**/target
 
 # Note: bdq-spec/ submodule is intentionally included (needed for BDQ test mappings)

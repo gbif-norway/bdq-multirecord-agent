@@ -3,12 +3,19 @@ FROM maven:3.9-eclipse-temurin-17 AS java-builder
 
 WORKDIR /bdq-api
 
-# Copy BDQ API source and pom.xml (FilteredPush comes from Maven repos)
+# Copy BDQ API and FilteredPush libs (submodules built below)
 COPY bdq-api/pom.xml .
 COPY bdq-api/src ./src
 COPY bdq-api/TG2_tests.csv .
+COPY bdq-api/lib ./lib
 
-# Build BDQ API (Maven downloads FilteredPush from repositories in pom.xml)
+# Build and install FilteredPush libs into local Maven repo (dependency order: sci_name_qc first, then geo_ref_qc)
+RUN cd lib/sci_name_qc && mvn install -DskipTests && cd ../.. \
+ && cd lib/geo_ref_qc && mvn install -DskipTests && cd ../.. \
+ && cd lib/event_date_qc && mvn install -DskipTests && cd ../.. \
+ && cd lib/rec_occur_qc && mvn install -DskipTests && cd ../..
+
+# Build BDQ API (resolves FilteredPush SNAPSHOTs from local repo)
 RUN mvn clean package -DskipTests
 
 # Python application stage
