@@ -30,9 +30,20 @@ RUN if [ -d "bdq-api-temp/lib" ] && [ "$(ls -A bdq-api-temp/lib 2>/dev/null)" ] 
     fi && \
     rm -rf bdq-api-temp
 
+# Build and install rdfbeans 2.3-SNAPSHOT from source (required by FilteredPush libs via ffdq-api)
+# rdfbeans:2.3-SNAPSHOT is not available in Maven repos, so we clone and build it
+RUN mkdir -p /tmp/rdfbeans-build && \
+    cd /tmp/rdfbeans-build && \
+    git clone --depth 1 https://github.com/cyberborean/rdfbeans.git . && \
+    # Change version to 2.3-SNAPSHOT in pom.xml
+    sed -i 's/<version>[0-9.]*<\/version>/<version>2.3-SNAPSHOT<\/version>/' pom.xml 2>/dev/null || \
+    sed -i '/<artifactId>rdfbeans<\/artifactId>/,/<version>/s/<version>.*<\/version>/<version>2.3-SNAPSHOT<\/version>/' pom.xml && \
+    mvn clean install -DskipTests -s /bdq-api/settings.xml && \
+    cd /bdq-api && \
+    rm -rf /tmp/rdfbeans-build || echo "Warning: rdfbeans build may have failed"
+
 # Build and install FilteredPush libs into local Maven repo (dependency order: sci_name_qc first, then geo_ref_qc)
 # Use Maven settings.xml to access Sonatype OSS snapshots
-# Note: rdfbeans:2.3-SNAPSHOT may not be available - if build fails, the submodules may need local modifications
 RUN cd lib/sci_name_qc && mvn install -DskipTests -s ../../settings.xml && cd ../.. \
  && cd lib/geo_ref_qc && mvn install -DskipTests -s ../../settings.xml && cd ../.. \
  && cd lib/event_date_qc && mvn install -DskipTests -s ../../settings.xml && cd ../.. \
