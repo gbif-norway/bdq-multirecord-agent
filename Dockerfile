@@ -3,18 +3,14 @@ FROM maven:3.9-eclipse-temurin-17 AS java-builder
 
 WORKDIR /bdq-api
 
-# Copy BDQ API source and pom.xml
+# Copy BDQ API source and pom.xml (no lib/ - FilteredPush comes from Maven repos)
 COPY bdq-api/pom.xml .
 COPY bdq-api/src ./src
-COPY bdq-api/lib ./lib
 COPY bdq-api/TG2_tests.csv .
-
-# Copy application properties if they exist (create directory first if needed)
 RUN mkdir -p src/main/resources
 COPY bdq-api/src/main/resources/ ./src/main/resources/ || true
 
-# Build BDQ API (Maven will download dependencies from repositories)
-# Note: FilteredPush libraries are available as Maven dependencies, not built from submodules
+# Build BDQ API (Maven downloads FilteredPush from repositories in pom.xml)
 RUN mvn clean package -DskipTests
 
 # Python application stage
