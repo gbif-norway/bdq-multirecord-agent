@@ -3,13 +3,22 @@ FROM maven:3.9-eclipse-temurin-17 AS java-builder
 
 WORKDIR /bdq-api
 
+# Install git (needed for cloning FilteredPush libs)
+RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
+
 # Copy BDQ API source and pom.xml
 COPY bdq-api/pom.xml .
 COPY bdq-api/src ./src
 COPY bdq-api/TG2_tests.csv .
 
-# Copy FilteredPush libs (submodules initialized by Cloud Build)
-COPY bdq-api/lib ./lib
+# Clone FilteredPush libraries directly from GitHub
+# These are git submodules, but we clone them here to ensure they're available
+# even if submodules weren't initialized in Cloud Build
+RUN mkdir -p lib && \
+    git clone --depth 1 https://github.com/FilteredPush/sci_name_qc.git lib/sci_name_qc && \
+    git clone --depth 1 https://github.com/FilteredPush/geo_ref_qc.git lib/geo_ref_qc && \
+    git clone --depth 1 https://github.com/FilteredPush/event_date_qc.git lib/event_date_qc && \
+    git clone --depth 1 https://github.com/FilteredPush/rec_occur_qc.git lib/rec_occur_qc
 
 # Build and install FilteredPush libs into local Maven repo (dependency order: sci_name_qc first, then geo_ref_qc)
 RUN cd lib/sci_name_qc && mvn install -DskipTests && cd ../.. \
