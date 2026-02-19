@@ -30,12 +30,10 @@ RUN if [ -d "bdq-api-temp/lib" ] && [ "$(ls -A bdq-api-temp/lib 2>/dev/null)" ] 
     fi && \
     rm -rf bdq-api-temp
 
-# Build and install rdfbeans as 2.3-SNAPSHOT (required by FilteredPush libs via ffdq-api)
-# rdfbeans:2.3-SNAPSHOT is not in Maven repos; we build 2.2 from source and install as 2.3-SNAPSHOT
-RUN mkdir -p /tmp/rdfbeans-build && cd /tmp/rdfbeans-build && \
-    git clone --depth 1 https://github.com/cyberborean/rdfbeans.git . && \
-    mvn clean package -DskipTests -q && \
-    JAR=$(find target -name "rdfbeans-*.jar" ! -name "*-sources*" | head -1) && \
+# Install rdfbeans 2.2 as 2.3-SNAPSHOT (required by FilteredPush libs via ffdq-api)
+# rdfbeans:2.3-SNAPSHOT is not in Maven repos; we download 2.2 from Maven Central and install as 2.3-SNAPSHOT
+RUN mvn dependency:get -Dartifact=org.cyberborean:rdfbeans:2.2 -q && \
+    JAR="/root/.m2/repository/org/cyberborean/rdfbeans/2.2/rdfbeans-2.2.jar" && \
     mvn install:install-file \
       -DgroupId=org.cyberborean \
       -DartifactId=rdfbeans \
@@ -44,8 +42,7 @@ RUN mkdir -p /tmp/rdfbeans-build && cd /tmp/rdfbeans-build && \
       -Dfile="$JAR" \
       -DgeneratePom=true \
       -DcreateChecksum=true \
-      -s /bdq-api/settings.xml && \
-    cd /bdq-api && rm -rf /tmp/rdfbeans-build
+      -s /bdq-api/settings.xml
 
 # Build and install FilteredPush libs into local Maven repo (dependency order: sci_name_qc first, then geo_ref_qc)
 # Use Maven settings.xml to access Sonatype OSS snapshots
