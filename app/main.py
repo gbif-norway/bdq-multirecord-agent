@@ -1,5 +1,6 @@
 import os
 import io
+import asyncio
 import traceback
 from typing import Dict, Any
 from contextlib import asynccontextmanager
@@ -15,7 +16,6 @@ from app.services.bdq_api_service import BDQAPIService
 from app.services.csv_service import CSVService
 from app.services.llm_service import LLMService
 from app.services.minio_service import MinIOService
-from app.services.cloud_tasks_service import CloudTasksService
 from app.utils.helper import log, str_snapshot
 import pandas as pd
 
@@ -25,7 +25,6 @@ bdq_api_service = BDQAPIService()
 csv_service = CSVService()
 llm_service = LLMService()
 minio_service = MinIOService()
-cloud_tasks_service = CloudTasksService()
 
 # Load environment variables
 load_dotenv()
@@ -89,117 +88,96 @@ async def health_check():
         )
 
 async def _handle_email_processing(email_data: Dict[str, Any]):
-    try:
-        log(str(email_data))
-        csv_data, original_filename = email_service.extract_csv_attachment(email_data)
-        if not csv_data:
-            await email_service.send_error_reply(email_data, "No CSV attachment found. Please attach a CSV file with biodiversity data.")
-            return
+    log(str(email_data))
+    csv_data, original_filename = email_service.extract_csv_attachment(email_data)
+    if not csv_data:
+        return
 
-        df, core_type = csv_service.parse_csv_and_detect_core(csv_data)
-        if not core_type:
-            await email_service.send_error_reply(email_data, "CSV must contain either 'occurrenceID' or 'taxonID' column to identify the core type.")
-            return
+    df, core_type = csv_service.parse_csv_and_detect_core(csv_data)
+    if not core_type:
+        return
 
-        # Upload original processed DataFrame to MinIO
-        original_csv = minio_service.upload_dataframe(df, original_filename, "original")
+    # Upload original processed DataFrame to MinIO
+    original_csv = minio_service.upload_dataframe(df, original_filename, "original")
 
-        # Run tests on dataset; returns unique results with counts
-        try:
-            unique_test_results = await bdq_api_service.run_tests_on_dataset(df, core_type)
-        except Exception as bdq_error:
-            log(f"BDQ API error during test execution: {bdq_error}", "ERROR")
-            await email_service.send_error_reply(
-                email_data,
-                f"Error running BDQ tests: {str(bdq_error)}. Please try again in a few moments."
-            )
-            return
+    # Run tests on dataset; returns unique results with counts
+    unique_test_results = await bdq_api_service.run_tests_on_dataset(df, core_type)
 
-        # Upload unique results (for the dashboard) and amended dataset to MinIO
-        unique_test_results_csv = minio_service.upload_dataframe(unique_test_results, original_filename, "test_results_unique")
-        
-        # Generate summary stats using unique results (more efficient and accurate)
-        summary_stats = _get_summary_stats_from_unique_results(unique_test_results, core_type, len(df))
-        amended_dataset = csv_service.generate_amended_dataset(df, unique_test_results, core_type)
-        amended_csv = minio_service.upload_dataframe(amended_dataset, original_filename, "amended")
-        
-        # Build curated focus set joined with TG2 test metadata (untruncated)
-        curated_df = csv_service.build_curated_joined_results(unique_test_results)
-        curated_csv_content = csv_service.dataframe_to_csv_string(curated_df) if curated_df is not None and not curated_df.empty else None
+    # Upload unique results (for the dashboard) and amended dataset to MinIO
+    unique_test_results_csv = minio_service.upload_dataframe(unique_test_results, original_filename, "test_results_unique")
+    
+    # Generate summary stats using unique results (more efficient and accurate)
+    summary_stats = _get_summary_stats_from_unique_results(unique_test_results, core_type, len(df))
+    amended_dataset = csv_service.generate_amended_dataset(df, unique_test_results, core_type)
+    amended_csv = minio_service.upload_dataframe(amended_dataset, original_filename, "amended")
+    
+    # Build curated focus set joined with TG2 test metadata (untruncated)
+    curated_df = csv_service.build_curated_joined_results(unique_test_results)
+    curated_csv_content = csv_service.dataframe_to_csv_string(curated_df) if curated_df is not None and not curated_df.empty else None
 
-        # Get sender display name for greeting enforcement
-        def _extract_sender_name(ed: Dict[str, Any]) -> str:
-            raw_from = None
-            headers = ed.get('headers') if isinstance(ed.get('headers'), dict) else None
-            if headers:
-                raw_from = headers.get('from') or ed.get('from')
-            else:
-                raw_from = ed.get('from')
-            if not raw_from:
-                return None
-            import re
-            # Try "Name <email@example.org>"
-            m = re.match(r'\s*"?([^"<]+)"?\s*<[^>]+>', str(raw_from))
-            if m:
-                return m.group(1).strip()
-            # Fallback to local-part of email
-            m2 = re.search(r'([A-Za-z0-9_.+-]+)@', str(raw_from))
-            if m2:
-                return m2.group(1)
+    # Get sender display name for greeting enforcement
+    def _extract_sender_name(ed: Dict[str, Any]) -> str:
+        raw_from = None
+        headers = ed.get('headers') if isinstance(ed.get('headers'), dict) else None
+        if headers:
+            raw_from = headers.get('from') or ed.get('from')
+        else:
+            raw_from = ed.get('from')
+        if not raw_from:
             return None
+        import re
+        # Try "Name <email@example.org>"
+        m = re.match(r'\s*"?([^"<]+)"?\s*<[^>]+>', str(raw_from))
+        if m:
+            return m.group(1).strip()
+        # Fallback to local-part of email
+        m2 = re.search(r'([A-Za-z0-9_.+-]+)@', str(raw_from))
+        if m2:
+            return m2.group(1)
+        return None
 
-        recipient_name = _extract_sender_name(email_data)
+    recipient_name = _extract_sender_name(email_data)
 
-        # Get LLM analysis using unique results
-        prompt = llm_service.create_prompt(
-            email_data,
-            core_type,
-            summary_stats,
-            str_snapshot(unique_test_results),
-            str_snapshot(df),
-            curated_csv_content,
-            failed_tests=bdq_api_service.failed_tests if hasattr(bdq_api_service, 'failed_tests') else None
-        )
-        log(prompt)
+    # Get LLM analysis using unique results
+    prompt = llm_service.create_prompt(
+        email_data,
+        core_type,
+        summary_stats,
+        str_snapshot(unique_test_results),
+        str_snapshot(df),
+        curated_csv_content,
+        failed_tests=bdq_api_service.failed_tests if hasattr(bdq_api_service, 'failed_tests') else None
+    )
+    log(prompt)
 
-        # Convert DataFrames to CSV strings for LLM
-        unique_results_csv_content = csv_service.dataframe_to_csv_string(unique_test_results)
-        original_csv_content = csv_service.dataframe_to_csv_string(df)
-        llm_analysis = llm_service.generate_openai_intelligent_summary(
-            prompt,
-            unique_results_csv_content,
-            original_csv_content,
-            curated_csv_text=curated_csv_content,
-            recipient_name=recipient_name
-        )
-        
-        # Generate dashboard URL (unique + amended only)
-        dashboard_url = minio_service.generate_dashboard_url(unique_test_results_csv, amended_csv)
-        
-        # Combine summary stats + LLM analysis + breakdown button
-        body = _format_summary_stats_html(summary_stats, core_type, len(df)) + llm_analysis
-        if dashboard_url:
-            body = _format_breakdown_button_html(dashboard_url) + body
-        
-        # Send reply email
-        await email_service.send_results_reply(email_data, body)
-    except Exception as e:
-        log(f"Error in email processing: {e}", "ERROR")
-        log(f"Traceback: {traceback.format_exc()}", "ERROR")
-        # Try to send error email, but don't fail if that also fails
-        try:
-            await email_service.send_error_reply(
-                email_data,
-                f"An unexpected error occurred while processing your request: {str(e)}"
-            )
-        except Exception as email_error:
-            log(f"Failed to send error email: {email_error}", "ERROR")
+    # Convert DataFrames to CSV strings for LLM
+    unique_results_csv_content = csv_service.dataframe_to_csv_string(unique_test_results)
+    original_csv_content = csv_service.dataframe_to_csv_string(df)
+    llm_analysis = llm_service.generate_openai_intelligent_summary(
+        prompt,
+        unique_results_csv_content,
+        original_csv_content,
+        curated_csv_text=curated_csv_content,
+        recipient_name=recipient_name
+    )
+    
+    # Generate dashboard URL (unique + amended only)
+    dashboard_url = minio_service.generate_dashboard_url(unique_test_results_csv, amended_csv)
+    
+    # Combine summary stats + LLM analysis + breakdown button
+    body = _format_summary_stats_html(summary_stats, core_type, len(df)) + llm_analysis
+    if dashboard_url:
+        body = _format_breakdown_button_html(dashboard_url) + body
+    
+    # Send reply email
+    await email_service.send_results_reply(email_data, body)
     
 
 @app.post("/email/incoming")
 async def process_incoming_email(request: Request):
     """
-    Accept incoming email and immediately return 200. Heavy processing runs via Cloud Tasks.
+    Accept incoming email and immediately return 200.
+    Heavy processing runs asynchronously in the background.
     """
     body = await request.body()
     log(f"Received request with {len(body)} bytes")
@@ -213,75 +191,14 @@ async def process_incoming_email(request: Request):
             content={"status": "error", "message": "Invalid JSON in request"}
         )
     
-    # Create Cloud Task for email processing
-    if not cloud_tasks_service.is_enabled():
-        log("Cloud Tasks not configured", "ERROR")
-        return JSONResponse(
-            status_code=503,
-            content={
-                "status": "error",
-                "message": "Cloud Tasks not configured. Please set required environment variables."
-            }
-        )
-    
-    task_name = cloud_tasks_service.create_email_processing_task(email_data)
-    if not task_name:
-        log("Failed to create Cloud Task", "ERROR")
-        return JSONResponse(
-            status_code=500,
-            content={
-                "status": "error",
-                "message": "Failed to queue email for processing"
-            }
-        )
-    
-    log(f"Email processing queued via Cloud Tasks: {task_name}")
+    asyncio.create_task(_handle_email_processing(email_data))
     return JSONResponse(
         status_code=200,
         content={
             "status": "accepted",
-            "message": "Email queued for processing",
-            "task_name": task_name
+            "message": "Email accepted for processing"
         }
     )
-
-@app.post("/tasks/process-email")
-async def process_email_task(request: Request):
-    """
-    Worker endpoint called by Cloud Tasks to process email.
-    This endpoint is invoked by Cloud Tasks service, not directly by Apps Script.
-    """
-    # Verify this is called by Cloud Tasks
-    cloud_tasks_queue = request.headers.get("X-CloudTasks-QueueName")
-    if cloud_tasks_queue:
-        log(f"Processing Cloud Task from queue: {cloud_tasks_queue}")
-    else:
-        log("Warning: /tasks/process-email called without Cloud Tasks headers", "WARNING")
-    
-    try:
-        email_data = await request.json()
-    except json.JSONDecodeError as e:
-        log(f"Invalid JSON in Cloud Task request: {e}", "ERROR")
-        return JSONResponse(
-            status_code=400,
-            content={"status": "error", "message": "Invalid JSON in request"}
-        )
-    
-    # Process email - errors will cause Cloud Tasks to retry
-    try:
-        await _handle_email_processing(email_data)
-        return JSONResponse(
-            status_code=200,
-            content={"status": "processed", "message": "Email processed successfully"}
-        )
-    except Exception as e:
-        log(f"Error processing email task: {e}", "ERROR")
-        log(f"Traceback: {traceback.format_exc()}", "ERROR")
-        # Return 500 so Cloud Tasks will retry
-        return JSONResponse(
-            status_code=500,
-            content={"status": "error", "message": str(e)}
-        )
 
 @app.get("/debug/llm-analysis")
 async def debug_llm_analysis(
