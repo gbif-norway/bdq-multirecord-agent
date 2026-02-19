@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
 COPY bdq-api/pom.xml .
 COPY bdq-api/src ./src
 COPY bdq-api/TG2_tests.csv .
+COPY bdq-api/.mvn.settings.xml ./settings.xml
 
 # Clone FilteredPush libraries directly from GitHub
 # These are git submodules, but we clone them here to ensure they're available
@@ -21,13 +22,14 @@ RUN mkdir -p lib && \
     git clone --depth 1 https://github.com/FilteredPush/rec_occur_qc.git lib/rec_occur_qc
 
 # Build and install FilteredPush libs into local Maven repo (dependency order: sci_name_qc first, then geo_ref_qc)
-RUN cd lib/sci_name_qc && mvn install -DskipTests && cd ../.. \
- && cd lib/geo_ref_qc && mvn install -DskipTests && cd ../.. \
- && cd lib/event_date_qc && mvn install -DskipTests && cd ../.. \
- && cd lib/rec_occur_qc && mvn install -DskipTests && cd ../..
+# Use Maven settings.xml to access Sonatype OSS snapshots for rdfbeans dependency
+RUN cd lib/sci_name_qc && mvn install -DskipTests -s ../../settings.xml && cd ../.. \
+ && cd lib/geo_ref_qc && mvn install -DskipTests -s ../../settings.xml && cd ../.. \
+ && cd lib/event_date_qc && mvn install -DskipTests -s ../../settings.xml && cd ../.. \
+ && cd lib/rec_occur_qc && mvn install -DskipTests -s ../../settings.xml && cd ../..
 
 # Build BDQ API (resolves FilteredPush SNAPSHOTs from local repo)
-RUN mvn clean package -DskipTests
+RUN mvn clean package -DskipTests -s settings.xml
 
 # Python application stage
 FROM python:3.11-slim
