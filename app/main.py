@@ -52,8 +52,13 @@ async def root():
 async def health_check():
     """Health check endpoint that verifies BDQ API is ready"""
     import requests
-    bdq_port = os.getenv("BDQ_API_PORT", "8081")
-    bdq_health_url = f"http://localhost:{bdq_port}/actuator/health"
+    explicit_bdq_api = os.getenv("BDQ_API", "").strip()
+    if explicit_bdq_api:
+        bdq_base = explicit_bdq_api.rstrip("/")
+    else:
+        bdq_port = os.getenv("BDQ_API_PORT", "8081")
+        bdq_base = f"http://localhost:{bdq_port}"
+    bdq_health_url = f"{bdq_base}/actuator/health"
     
     try:
         resp = requests.get(bdq_health_url, timeout=2)
@@ -171,7 +176,14 @@ async def _handle_email_processing(email_data: Dict[str, Any]):
     
     # Send reply email
     await email_service.send_results_reply(email_data, body)
-    
+
+async def _handle_email_processing_safe(email_data: Dict[str, Any]):
+    """Run email processing in background and always consume/log exceptions."""
+    try:
+        await _handle_email_processing(email_data)
+    except Exception as e:
+        log(f"Background email processing failed: {e}", "ERROR")
+        log(traceback.format_exc(), "ERROR")
 
 @app.post("/email/incoming")
 async def process_incoming_email(request: Request):
@@ -191,7 +203,7 @@ async def process_incoming_email(request: Request):
             content={"status": "error", "message": "Invalid JSON in request"}
         )
     
-    asyncio.create_task(_handle_email_processing(email_data))
+    asyncio.create_task(_handle_email_processing_safe(email_data))
     return JSONResponse(
         status_code=200,
         content={

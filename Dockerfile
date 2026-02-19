@@ -81,7 +81,7 @@ ENV PYTHONUNBUFFERED=1
 ENV PORT=8080
 ENV BDQ_API_PORT=8081
 ENV PYTHONPATH=/app
-ENV JAVA_OPTS="-Xmx2g -Xms512m"
+ENV JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=70.0 -XX:InitialRAMPercentage=25.0"
 
 # Expose only port 8080 (Python FastAPI) - Java BDQ API runs internally on 8081
 EXPOSE 8080

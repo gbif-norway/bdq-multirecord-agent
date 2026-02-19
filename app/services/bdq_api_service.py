@@ -25,12 +25,16 @@ class BDQTest:
 
 
 class BDQAPIService:
-    """Service for interacting with BDQ API (now running locally in the same container)"""
+    """Service for interacting with BDQ API."""
     
     def __init__(self):
-        # Use localhost since BDQ API is now running in the same container
+        # Prefer explicit BDQ_API (Cloud Run secret/env). Fallback to local sidecar.
+        explicit_bdq_api = os.getenv("BDQ_API", "").strip()
         bdq_port = os.getenv("BDQ_API_PORT", "8081")
-        self.bdq_api_base = f"http://localhost:{bdq_port}"
+        if explicit_bdq_api:
+            self.bdq_api_base = explicit_bdq_api.rstrip("/")
+        else:
+            self.bdq_api_base = f"http://localhost:{bdq_port}"
         self.tests_endpoint = f"{self.bdq_api_base}/api/v1/tests"  # tests_endpoint returns an of dicts that look like BDQTest
         self.batch_endpoint = f"{self.bdq_api_base}/api/v1/tests/run/batch"  # see readme
         self.failed_tests: List[str] = []
@@ -91,12 +95,13 @@ class BDQAPIService:
         """Filter tests that can be applied to the CSV columns"""
         import time
         
+        all_tests: List[BDQTest] = []
         for attempt in range(max_retries):
             try:
                 resp = requests.get(self.tests_endpoint, timeout=30)
                 resp.raise_for_status()
                 all_tests = [BDQTest(**test) for test in resp.json()]
-                return all_tests
+                break
             except requests.exceptions.ConnectionError as e:
                 # BDQ API might not be ready yet (cold start)
                 wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
@@ -113,6 +118,10 @@ class BDQAPIService:
             except requests.exceptions.RequestException as e:
                 log(f"Failed to fetch BDQ tests list: {e}", "ERROR")
                 raise
+
+        if not all_tests:
+            log("BDQ tests endpoint returned no tests", "ERROR")
+            return []
         
         applicable_tests = [
             test for test in all_tests
