@@ -3,10 +3,12 @@ FROM maven:3.9-eclipse-temurin-17 AS java-builder
 
 WORKDIR /bdq-api
 
-# Copy BDQ API and FilteredPush libs (submodules built below)
+# Copy BDQ API source and pom.xml
 COPY bdq-api/pom.xml .
 COPY bdq-api/src ./src
 COPY bdq-api/TG2_tests.csv .
+
+# Copy FilteredPush libs (submodules initialized by Cloud Build)
 COPY bdq-api/lib ./lib
 
 # Build and install FilteredPush libs into local Maven repo (dependency order: sci_name_qc first, then geo_ref_qc)
