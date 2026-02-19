@@ -54,8 +54,8 @@ RUN cd lib/sci_name_qc && mvn install -DskipTests -s ../../settings.xml && cd ..
 # Build BDQ API (resolves FilteredPush SNAPSHOTs from local repo)
 RUN mvn clean package -DskipTests -s settings.xml
 
-# Python application stage (bookworm has openjdk-17; trixie only has openjdk-21)
-FROM python:3.11-bookworm-slim
+# Python application stage (slim-bookworm has openjdk-17; newer Debian only has openjdk-21)
+FROM python:3.11-slim-bookworm
 
 WORKDIR /app
 
