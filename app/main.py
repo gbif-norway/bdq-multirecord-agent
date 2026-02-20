@@ -53,44 +53,40 @@ async def health_check():
     """Health check endpoint that verifies BDQ API is ready"""
     import requests
     explicit_bdq_api = os.getenv("BDQ_API", "").strip()
+    bdq_port = os.getenv("BDQ_API_PORT", "8081")
+    local_bdq_base = f"http://localhost:{bdq_port}"
+    candidate_bases = [local_bdq_base]
     if explicit_bdq_api:
-        bdq_base = explicit_bdq_api.rstrip("/")
-    else:
-        bdq_port = os.getenv("BDQ_API_PORT", "8081")
-        bdq_base = f"http://localhost:{bdq_port}"
-    bdq_health_url = f"{bdq_base}/actuator/health"
-    
-    try:
-        resp = requests.get(bdq_health_url, timeout=2)
-        if resp.status_code == 200:
-            return JSONResponse(
-                status_code=200,
-                content={
-                    "status": "healthy",
-                    "python_service": "ready",
-                    "bdq_api": "ready"
-                }
-            )
-        else:
-            return JSONResponse(
-                status_code=503,
-                content={
-                    "status": "unhealthy",
-                    "python_service": "ready",
-                    "bdq_api": "not_ready",
-                    "bdq_api_status": resp.status_code
-                }
-            )
-    except requests.exceptions.RequestException as e:
-        return JSONResponse(
-            status_code=503,
-            content={
-                "status": "unhealthy",
-                "python_service": "ready",
-                "bdq_api": "not_ready",
-                "error": str(e)
-            }
-        )
+        candidate_bases.insert(0, explicit_bdq_api.rstrip("/"))
+
+    errors = []
+    for bdq_base in candidate_bases:
+        bdq_health_url = f"{bdq_base}/actuator/health"
+        try:
+            resp = requests.get(bdq_health_url, timeout=2)
+            if resp.status_code == 200:
+                return JSONResponse(
+                    status_code=200,
+                    content={
+                        "status": "healthy",
+                        "python_service": "ready",
+                        "bdq_api": "ready",
+                        "bdq_api_base": bdq_base,
+                    }
+                )
+            errors.append(f"{bdq_base} status={resp.status_code}")
+        except requests.exceptions.RequestException as e:
+            errors.append(f"{bdq_base} error={e}")
+
+    return JSONResponse(
+        status_code=503,
+        content={
+            "status": "unhealthy",
+            "python_service": "ready",
+            "bdq_api": "not_ready",
+            "errors": errors,
+        }
+    )
 
 async def _handle_email_processing(email_data: Dict[str, Any]):
     log(str(email_data))
