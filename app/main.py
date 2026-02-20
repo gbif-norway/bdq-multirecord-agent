@@ -91,7 +91,16 @@ async def health_check():
         )
 
 async def _handle_email_processing(email_data: Dict[str, Any]):
-    log(str(email_data))
+    headers = email_data.get("headers") if isinstance(email_data.get("headers"), dict) else {}
+    attachments = email_data.get("attachments") if isinstance(email_data.get("attachments"), list) else []
+    log(
+        "Processing email: "
+        f"messageId={email_data.get('messageId')} "
+        f"threadId={email_data.get('threadId')} "
+        f"from={headers.get('from')} "
+        f"subject={headers.get('subject')} "
+        f"attachments={len(attachments)}"
+    )
     csv_data, original_filename = email_service.extract_csv_attachment(email_data)
     if not csv_data:
         return

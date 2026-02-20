@@ -148,6 +148,9 @@ class BDQAPIService:
         log(f"Running {len(applicable_tests)} tests: [{', '.join(_shorten_test_id(test.id) for test in applicable_tests)}]")
 
         for test in applicable_tests:
+            log(
+                f"Starting test {test.id}: type={test.type}, actedUpon={len(test.actedUpon)}, consulted={len(test.consulted)}"
+            )
             test_columns = test.actedUpon + test.consulted
             if not test_columns:
                 # Defensive, though all tests should act on at least one column
