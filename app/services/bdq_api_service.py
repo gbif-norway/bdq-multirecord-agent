@@ -28,35 +28,11 @@ class BDQAPIService:
     """Service for interacting with BDQ API."""
     
     def __init__(self):
-        # Prefer explicit BDQ_API (Cloud Run secret/env). Keep local sidecar as fallback.
-        explicit_bdq_api = os.getenv("BDQ_API", "").strip()
         bdq_port = os.getenv("BDQ_API_PORT", "8081")
-        self.local_bdq_api_base = f"http://localhost:{bdq_port}"
-        if explicit_bdq_api:
-            self.bdq_api_base = explicit_bdq_api.rstrip("/")
-        else:
-            self.bdq_api_base = self.local_bdq_api_base
-        self.tests_endpoint = ""
-        self.batch_endpoint = ""
-        self._set_endpoints()
-        self.failed_tests: List[str] = []
-
-    def _set_endpoints(self) -> None:
-        """Refresh endpoint URLs from current base URL."""
+        self.bdq_api_base = f"http://localhost:{bdq_port}"
         self.tests_endpoint = f"{self.bdq_api_base}/api/v1/tests"
         self.batch_endpoint = f"{self.bdq_api_base}/api/v1/tests/run/batch"
-
-    def _switch_to_local_fallback(self, reason: Exception) -> bool:
-        """Switch from remote BDQ_API to local sidecar when remote is unavailable."""
-        if self.bdq_api_base == self.local_bdq_api_base:
-            return False
-        log(
-            f"Switching BDQ API from {self.bdq_api_base} to local fallback {self.local_bdq_api_base} due to: {type(reason).__name__}: {reason}",
-            "WARNING",
-        )
-        self.bdq_api_base = self.local_bdq_api_base
-        self._set_endpoints()
-        return True
+        self.failed_tests: List[str] = []
     
     def _post_batch(self, payload: List[Dict[str, Any]], max_retries: int = 3) -> Tuple[bool, Optional[List[Dict[str, Any]]]]:
         """Post the payload to local BDQ API service with retry logic.
@@ -79,24 +55,22 @@ class BDQAPIService:
                     )
                     return False, None
                 return True, results
-            except requests.exceptions.RequestException as e:
-                if self._switch_to_local_fallback(e):
-                    continue
-                if isinstance(e, (requests.exceptions.ConnectionError, requests.exceptions.SSLError)):
-                    # BDQ API might not be ready yet (cold start)
-                    wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
-                    if attempt < max_retries - 1:
-                        log(
-                            f"BDQ API not ready (attempt {attempt + 1}/{max_retries}), retrying in {wait_time}s: {e}",
-                            "WARNING",
-                        )
-                        time.sleep(wait_time)
-                        continue
+            except (requests.exceptions.ConnectionError, requests.exceptions.SSLError) as e:
+                # BDQ API might not be ready yet (cold start)
+                wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
+                if attempt < max_retries - 1:
                     log(
-                        f"BDQ batch request failed after {max_retries} attempts: {type(e).__name__}: {e}",
-                        "ERROR",
+                        f"BDQ API not ready (attempt {attempt + 1}/{max_retries}), retrying in {wait_time}s: {e}",
+                        "WARNING",
                     )
-                    return False, None
+                    time.sleep(wait_time)
+                    continue
+                log(
+                    f"BDQ batch request failed after {max_retries} attempts: {type(e).__name__}: {e}",
+                    "ERROR",
+                )
+                return False, None
+            except requests.exceptions.RequestException as e:
                 log(
                     f"BDQ batch request failed: {type(e).__name__}: {e}",
                     "ERROR",
@@ -122,21 +96,19 @@ class BDQAPIService:
                 resp.raise_for_status()
                 all_tests = [BDQTest(**test) for test in resp.json()]
                 break
-            except requests.exceptions.RequestException as e:
-                if self._switch_to_local_fallback(e):
+            except (requests.exceptions.ConnectionError, requests.exceptions.SSLError) as e:
+                # BDQ API might not be ready yet (cold start)
+                wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
+                if attempt < max_retries - 1:
+                    log(
+                        f"BDQ API not ready for tests list (attempt {attempt + 1}/{max_retries}), retrying in {wait_time}s: {e}",
+                        "WARNING",
+                    )
+                    time.sleep(wait_time)
                     continue
-                if isinstance(e, (requests.exceptions.ConnectionError, requests.exceptions.SSLError)):
-                    # BDQ API might not be ready yet (cold start)
-                    wait_time = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
-                    if attempt < max_retries - 1:
-                        log(
-                            f"BDQ API not ready for tests list (attempt {attempt + 1}/{max_retries}), retrying in {wait_time}s: {e}",
-                            "WARNING",
-                        )
-                        time.sleep(wait_time)
-                        continue
-                    log(f"Failed to fetch BDQ tests list after {max_retries} attempts: {e}", "ERROR")
-                    raise
+                log(f"Failed to fetch BDQ tests list after {max_retries} attempts: {e}", "ERROR")
+                raise
+            except requests.exceptions.RequestException as e:
                 log(f"Failed to fetch BDQ tests list: {e}", "ERROR")
                 raise
 

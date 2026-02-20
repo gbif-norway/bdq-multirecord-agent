@@ -24,6 +24,7 @@ steps:
   args: ['run','deploy','bdq-multirecord-agent',
          '--image','gcr.io/${PROJECT_ID}/github.com/gbif-norway/bdq-multirecord-agent:${COMMIT_SHA}',
          '--region','europe-west1',
+         '--remove-secrets','BDQ_API',
          '--allow-unauthenticated']
 
 images:
