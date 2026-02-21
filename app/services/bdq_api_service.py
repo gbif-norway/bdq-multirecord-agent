@@ -89,12 +89,55 @@ class BDQAPIService:
         """Filter tests that can be applied to the CSV columns"""
         import time
         
+        log(
+            "Fetching BDQ tests list: "
+            f"endpoint={self.tests_endpoint}, "
+            f"csv_columns={len(csv_columns)}, "
+            f"max_retries={max_retries}"
+        )
+
         all_tests: List[BDQTest] = []
         for attempt in range(max_retries):
             try:
-                resp = requests.get(self.tests_endpoint, timeout=30)
+                attempt_num = attempt + 1
+                timeout_seconds = 30
+                attempt_start = time.time()
+                log(
+                    "BDQ tests list request start: "
+                    f"attempt={attempt_num}/{max_retries}, "
+                    f"url={self.tests_endpoint}, "
+                    f"timeout={timeout_seconds}s"
+                )
+
+                resp = requests.get(self.tests_endpoint, timeout=timeout_seconds)
+                request_duration = time.time() - attempt_start
+                content_type = resp.headers.get("Content-Type", "")
+                content_length = resp.headers.get("Content-Length", "unknown")
+                log(
+                    "BDQ tests list response received: "
+                    f"attempt={attempt_num}/{max_retries}, "
+                    f"status={resp.status_code}, "
+                    f"duration={request_duration:.2f}s, "
+                    f"content_type={content_type}, "
+                    f"content_length={content_length}"
+                )
                 resp.raise_for_status()
-                all_tests = [BDQTest(**test) for test in resp.json()]
+
+                tests_payload = resp.json()
+                if not isinstance(tests_payload, list):
+                    log(
+                        "Unexpected BDQ tests response type: "
+                        f"{type(tests_payload).__name__}",
+                        "ERROR"
+                    )
+                    raise ValueError("BDQ tests response was not a list")
+
+                all_tests = [BDQTest(**test) for test in tests_payload]
+                log(
+                    "BDQ tests list parsed successfully: "
+                    f"attempt={attempt_num}/{max_retries}, "
+                    f"total_tests={len(all_tests)}"
+                )
                 break
             except (requests.exceptions.ConnectionError, requests.exceptions.SSLError) as e:
                 # BDQ API might not be ready yet (cold start)
@@ -108,8 +151,31 @@ class BDQAPIService:
                     continue
                 log(f"Failed to fetch BDQ tests list after {max_retries} attempts: {e}", "ERROR")
                 raise
+            except requests.exceptions.ReadTimeout as e:
+                log(
+                    "BDQ tests list request timed out: "
+                    f"attempt={attempt + 1}/{max_retries}, "
+                    f"url={self.tests_endpoint}, "
+                    f"error={type(e).__name__}: {e}",
+                    "ERROR"
+                )
+                raise
+            except ValueError as e:
+                log(
+                    "Failed to parse BDQ tests list JSON: "
+                    f"attempt={attempt + 1}/{max_retries}, "
+                    f"error={type(e).__name__}: {e}",
+                    "ERROR"
+                )
+                raise
             except requests.exceptions.RequestException as e:
-                log(f"Failed to fetch BDQ tests list: {e}", "ERROR")
+                log(
+                    "Failed to fetch BDQ tests list request: "
+                    f"attempt={attempt + 1}/{max_retries}, "
+                    f"url={self.tests_endpoint}, "
+                    f"error={type(e).__name__}: {e}",
+                    "ERROR"
+                )
                 raise
 
         if not all_tests:
