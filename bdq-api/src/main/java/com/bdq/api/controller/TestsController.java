@@ -13,6 +13,8 @@ import org.datakurator.ffdq.annotations.ActedUpon;
 import org.datakurator.ffdq.annotations.Consulted;
 // Avoid name clash with java.lang.reflect.Parameter by referencing fully-qualified name when needed
 import org.datakurator.ffdq.api.DQResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
@@ -20,11 +22,15 @@ import org.springframework.web.bind.annotation.*;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Method;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @RestController
 @RequestMapping("/api/v1/tests")
 @Tag(name = "BDQ Tests", description = "List and run BDQ tests implemented by FilteredPush libraries")
 public class TestsController {
+
+    private static final Logger log = LoggerFactory.getLogger(TestsController.class);
+    private static final long SLOW_ITEM_WARN_MS = 5000L;
 
     @Autowired
     private TestRegistry registry;
@@ -52,18 +58,105 @@ public class TestsController {
         int size = requests.size();
         if (size == 0) return Collections.emptyList();
 
-        int maxThreads = Math.min(Math.max(Runtime.getRuntime().availableProcessors(), 2), 8);
+        long batchStartNs = System.nanoTime();
+        String requestId = UUID.randomUUID().toString().substring(0, 8);
+        String primaryTestId = requests.get(0) != null ? requests.get(0).getId() : null;
+        boolean homogeneousIds = true;
+        for (RunTestRequest r : requests) {
+            String currentId = (r != null) ? r.getId() : null;
+            if (!Objects.equals(primaryTestId, currentId)) {
+                homogeneousIds = false;
+                break;
+            }
+        }
+
+        int availableCpus = Math.max(Runtime.getRuntime().availableProcessors(), 1);
+        int maxThreads = Math.min(Math.max(availableCpus, 1), 8);
+        log.info(
+                "runBatch start: requestId={}, size={}, threads={}, primaryTestId={}, homogeneousIds={}",
+                requestId,
+                size,
+                maxThreads,
+                primaryTestId,
+                homogeneousIds
+        );
+
+        if (size == 1) {
+            RunTestRequest single = requests.get(0);
+            String singleTestId = (single != null) ? single.getId() : null;
+            long singleStartNs = System.nanoTime();
+            try {
+                ValidationResponse response = runSingle(single);
+                long singleDurationMs = java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - singleStartNs);
+                log.info(
+                        "runBatch complete: requestId={}, size=1, failed=0, durationMs={}, testId={}",
+                        requestId,
+                        singleDurationMs,
+                        singleTestId
+                );
+                return List.of(response);
+            } catch (Exception e) {
+                String msg = (e.getMessage() != null) ? e.getMessage() : e.getClass().getSimpleName();
+                long singleDurationMs = java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - singleStartNs);
+                log.error(
+                        "runBatch item failed: requestId={}, index=0, testId={}, errorType={}, message={}",
+                        requestId,
+                        singleTestId,
+                        e.getClass().getSimpleName(),
+                        msg
+                );
+                log.info(
+                        "runBatch complete: requestId={}, size=1, failed=1, durationMs={}, testId={}",
+                        requestId,
+                        singleDurationMs,
+                        singleTestId
+                );
+                return List.of(new ValidationResponse("INTERNAL_PREREQUISITES_NOT_MET", "", msg));
+            }
+        }
+
         java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(maxThreads);
         try {
             List<java.util.concurrent.CompletableFuture<ValidationResponse>> futures = new ArrayList<>(size);
-            for (RunTestRequest r : requests) {
+            AtomicInteger completedCount = new AtomicInteger(0);
+            for (int i = 0; i < size; i++) {
+                final int itemIndex = i;
+                final RunTestRequest r = requests.get(i);
                 futures.add(java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+                    String itemTestId = (r != null) ? r.getId() : null;
+                    long itemStartNs = System.nanoTime();
                     try {
-                        return runSingle(r);
+                        ValidationResponse response = runSingle(r);
+                        long itemDurationMs = java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - itemStartNs);
+                        if (itemDurationMs >= SLOW_ITEM_WARN_MS) {
+                            log.warn(
+                                    "runBatch slow item: requestId={}, index={}, testId={}, durationMs={}, status={}, result={}",
+                                    requestId,
+                                    itemIndex,
+                                    itemTestId,
+                                    itemDurationMs,
+                                    response != null ? response.getStatus() : null,
+                                    response != null ? response.getResult() : null
+                            );
+                        }
+                        return response;
                     } catch (Exception e) {
                         // Do not fail whole batch; map error to a response shape
                         String msg = (e.getMessage() != null) ? e.getMessage() : e.getClass().getSimpleName();
+                        log.error(
+                                "runBatch item failed: requestId={}, index={}, testId={}, errorType={}, message={}",
+                                requestId,
+                                itemIndex,
+                                itemTestId,
+                                e.getClass().getSimpleName(),
+                                msg
+                        );
                         return new ValidationResponse("INTERNAL_PREREQUISITES_NOT_MET", "", msg);
+                    } finally {
+                        int done = completedCount.incrementAndGet();
+                        if (done == size || done % 500 == 0) {
+                            log.info("runBatch progress: requestId={}, completed={}/{}", requestId, done, size);
+                        }
                     }
                 }, pool));
             }
@@ -71,6 +164,19 @@ public class TestsController {
             for (java.util.concurrent.CompletableFuture<ValidationResponse> f : futures) {
                 out.add(f.join());
             }
+
+            long failed = out.stream()
+                    .filter(Objects::nonNull)
+                    .filter(r -> "INTERNAL_PREREQUISITES_NOT_MET".equals(r.getStatus()))
+                    .count();
+            long batchDurationMs = java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - batchStartNs);
+            log.info(
+                    "runBatch complete: requestId={}, size={}, failed={}, durationMs={}",
+                    requestId,
+                    size,
+                    failed,
+                    batchDurationMs
+            );
             return out;
         } finally {
             pool.shutdown();
