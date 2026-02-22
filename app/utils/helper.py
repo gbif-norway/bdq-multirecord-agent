@@ -199,7 +199,23 @@ def _snapshot_df(df_obj):
     max_rows, max_columns, max_str_len = 10, 10, 70
 
     # Truncate long strings in cells
-    df = df_obj.apply(lambda col: col.astype(str).map(lambda x: (x[:max_str_len - 3] + '...') if len(x) > max_str_len else x))
+    def _truncate_cell(value):
+        if value is None:
+            text = ""
+        else:
+            try:
+                if pd.isna(value):
+                    text = ""
+                else:
+                    text = str(value)
+            except Exception:
+                text = str(value)
+
+        if len(text) > max_str_len:
+            return text[:max_str_len - 3] + "..."
+        return text
+
+    df = df_obj.apply(lambda col: col.map(_truncate_cell))
 
     # Truncate columns
     if len(df.columns) > max_columns:
